@@ -1,0 +1,150 @@
+{
+  "title": "末班车 EP01",
+  "ratio": "9:16",
+  "style": "Live-action, naturalistic drama, cinematic",
+  "synopsis": "林岚在深夜车站咖啡馆等了四十分钟，迟到的父亲带着一个她不想听到的消息走进来。",
+  "characters": [
+    {
+      "id": "lin_lan",
+      "name": "林岚",
+      "identity_phrase": "a woman in her late twenties with shoulder-length black hair, an oval face, dark brown eyes and a dark-green field jacket over a white tee",
+      "voice_phrase": "a woman in her late twenties with a low, slightly husky voice and an unhurried pace",
+      "reference_images": ["assets/lin_lan_face.png", "assets/lin_lan_outfit.png"],
+      "voice_reference": null
+    },
+    {
+      "id": "father",
+      "name": "林父",
+      "identity_phrase": "a man in his late fifties with a short grey beard, deep-set eyes, a weathered face and a navy wool coat",
+      "voice_phrase": "a man in his fifties with a deep, quiet voice",
+      "reference_images": ["assets/father_face.png"],
+      "voice_reference": null
+    }
+  ],
+  "scenes": [
+    {
+      "id": "station_cafe",
+      "name": "the station café at night",
+      "description": "a small station café at night: one laminate counter, three stools, a humming drinks fridge, cool fluorescent light inside and warm street light through the rain-streaked front window",
+      "reference_images": ["assets/scene_station_cafe.png"]
+    }
+  ],
+  "props": [
+    {
+      "id": "paper_cup",
+      "name": "the paper coffee cup",
+      "description": "a plain white paper coffee cup with a brown cardboard sleeve",
+      "reference_images": []
+    }
+  ],
+  "segments": [
+    {
+      "id": "s01",
+      "duration": 10,
+      "mode": "ref2va",
+      "scene_id": "station_cafe",
+      "character_ids": ["lin_lan"],
+      "prop_ids": ["paper_cup"],
+      "hook_type": "hook",
+      "style": "Live-action, naturalistic drama, cinematic",
+      "shots": [
+        {
+          "index": 1, "start": 0,
+          "framing": "a medium shot from across the counter",
+          "camera": "The camera pushes in with small amplitude at slow speed",
+          "action": "<Subject 1> sits on the middle stool facing the camera, both hands wrapped around the paper cup, eyes on the door; she checks her phone, exhales, and looks up as the door bell rings",
+          "dialogue": [],
+          "on_screen_characters": ["lin_lan"]
+        },
+        {
+          "index": 2, "start": 6.0,
+          "framing": "a close-up on her face",
+          "camera": "The camera holds a static shot",
+          "action": "her jaw tightens, she sets the cup down without looking away from the door",
+          "dialogue": [
+            {"speaker": "lin_lan", "language": "Chinese", "text": "你迟到了四十分钟。", "delivery": "flatly, without raising her voice"}
+          ],
+          "on_screen_characters": ["lin_lan"]
+        }
+      ],
+      "soundscape": "Rain on the front window, the low hum of a drinks fridge, a phone screen tapped twice, the door bell ringing once at 00:05 followed by wet footsteps and a paper cup set down on laminate.",
+      "music": "N/A",
+      "continuity": "",
+      "end_state": "<Subject 1> staring past the camera toward the door, cup set down in front of her",
+      "negatives": "No other customers, no signage text, no subtitles"
+    },
+    {
+      "id": "s02",
+      "duration": 12,
+      "mode": "ref2va",
+      "scene_id": "station_cafe",
+      "character_ids": ["father", "lin_lan"],
+      "prop_ids": [],
+      "hook_type": "setup",
+      "style": "Live-action, naturalistic drama, cinematic",
+      "shots": [
+        {
+          "index": 1, "start": 0,
+          "framing": "a medium shot of the doorway",
+          "camera": "The camera holds a static shot",
+          "action": "<Subject 1> steps in from frame right with rain on his shoulders, stops, and faces the camera; he does not take off his coat",
+          "dialogue": [
+            {"speaker": "father", "language": "Chinese", "text": "末班车停了，我是走过来的。", "delivery": "quietly"}
+          ],
+          "on_screen_characters": ["father"]
+        },
+        {
+          "index": 2, "start": 5.0,
+          "framing": "an over-the-shoulder shot from behind <Subject 1>, who stands at frame right, a head taller",
+          "camera": "The camera tracks right with small amplitude at slow speed",
+          "action": "<Subject 2> faces the camera from her stool at frame left; she studies him, then slides the cup toward him across the counter",
+          "dialogue": [
+            {"speaker": "lin_lan", "language": "Chinese", "text": "坐吧，还热着。", "delivery": "after a pause"}
+          ],
+          "on_screen_characters": ["father", "lin_lan"]
+        },
+        {
+          "index": 3, "start": 9.5,
+          "framing": "a close-up on <Subject 1>'s hands",
+          "camera": "The camera holds a static shot",
+          "action": "his hand closes around the cup but does not lift it; the hand is trembling slightly",
+          "dialogue": [],
+          "on_screen_characters": ["father"]
+        }
+      ],
+      "soundscape": "The door bell fades, wet footsteps on tile, a paper cup sliding on laminate, the drinks fridge hum, rain steady on the window.",
+      "music": "N/A",
+      "continuity": "The café, lighting and <Subject 2>'s position on the middle stool are unchanged from the previous segment; the cup stands where she set it down.",
+      "end_state": "<Subject 1>'s trembling hand around the cup in close-up",
+      "negatives": "No other customers, no signage text, no subtitles"
+    },
+    {
+      "id": "s03",
+      "duration": 8,
+      "mode": "i2va",
+      "first_frame": "assets/s03_first_frame.png",
+      "scene_id": "station_cafe",
+      "character_ids": ["father", "lin_lan"],
+      "prop_ids": [],
+      "hook_type": "cliffhanger",
+      "style": "Live-action, naturalistic drama, cinematic",
+      "shots": [
+        {
+          "index": 1, "start": 0,
+          "framing": "a two-shot across the counter, 林父 at frame right facing 林岚 at frame left",
+          "camera": "The camera pushes in with small amplitude at slow speed toward 林父",
+          "action": "林父 looks up from the cup, holds her gaze, and speaks; 林岚 listens with her mouth closed and does not move",
+          "dialogue": [
+            {"speaker": "father", "language": "Chinese", "text": "你妈的事……医生今天给了我一个日期。", "delivery": "slowly, each word deliberate"}
+          ],
+          "on_screen_characters": ["father", "lin_lan"]
+        }
+      ],
+      "soundscape": "Rain on the window, the fridge hum dropping away as he speaks, a single distant train horn at the very end.",
+      "music": "A single sustained low cello note enters under the last word and holds, no swell.",
+      "continuity": "Same positions, lighting and wardrobe as the previous segment.",
+      "end_state": "a hard hold on 林岚's frozen face as the train horn sounds",
+      "negatives": "No other customers, no signage text, no subtitles"
+    }
+  ]
+}

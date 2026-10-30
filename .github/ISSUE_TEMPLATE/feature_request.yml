@@ -1,10 +1,18 @@
-name: Feature Request
-description: Suggest a new patch or improvement
+name: 新增资料 / 工作流建议
+description: 分享一个新的 H3 短剧案例、提示词技巧、开源项目或工作流改进
 labels: ["enhancement"]
 body:
-  - type: textarea
-    id: description
+  - type: input
+    id: source
     attributes:
-      label: What would you like?
+      label: 来源链接
+      placeholder: "X 帖 / GitHub 仓库 / B 站视频 / 博客"
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: 要点
+      description: 它做了什么、用了什么参数或提示词写法、效果如何、与现有文档的关系。
     validations:
       required: true

@@ -1,34 +1,23 @@
-name: Bug Report
-description: Report a problem with ClawGod
+name: 文档勘误 / 代码问题
+description: 报告文档中的错误、过期信息，或 pipeline 代码的 bug
 labels: ["bug"]
 body:
   - type: input
-    id: os
+    id: location
     attributes:
-      label: OS
-      placeholder: "e.g. macOS 15.3 / Ubuntu 24.04 / Windows 11"
+      label: 位置
+      placeholder: "例如 docs/02-api-reference.md §2.2 或 pipeline/h3_client.py:120"
     validations:
       required: true
-
-  - type: input
-    id: claude-version
-    attributes:
-      label: Claude Code Version
-      placeholder: "e.g. 2.1.90 (run: claude --version)"
-    validations:
-      required: true
-
   - type: textarea
     id: description
     attributes:
-      label: What happened?
-      description: Paste error messages if any.
-      render: shell
+      label: 问题描述
+      description: 错在哪里？正确的信息是什么？请附来源链接（官方文档优先）。
     validations:
       required: true
-
   - type: textarea
-    id: screenshot
+    id: repro
     attributes:
-      label: Screenshot (optional)
-      description: Drag and drop if helpful.
+      label: 复现步骤（代码问题时填写）
+      render: shell
