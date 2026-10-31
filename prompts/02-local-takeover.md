@@ -40,7 +40,8 @@ LLM：Ollama 便携版（E:\AI\Ollama_seller，qwen3-vl:4b）、XB_llama 可加�
 0. 启动 ComfyUI：优先用闲兔启动器的 8188 实例（如果它不加载 shared-models.yaml 导致模型找不到，改用 Start-Seller-Test.ps1 的 8190 实例，二选一）。GET /system_stats 与 /object_info 确认上节列出的 H3 节点全部存在，把 /object_info 保存到 pipeline/local/object_info.json 备查。
 1. 导出 API 格式：在前端分别打开 02 导演台、01 图生视频、首尾帧样例、03 SeedVR2，用「导出（API）」另存为 pipeline/local/workflows/*.api.json。不要自己写脚本转换 UI 格式（子图、SetNode/GetNode、旁路节点会出错）。如果前端操作必须由我来做，把精确步骤写给我，我来导出。
 2. 原样回放：把导出的 02 API JSON 不改任何参数 POST 到 /prompt，确认能出片。读懂 XiantuVideoEditorWorkbench 节点 widgets_values 里那段 JSON 的结构（分镜数组、每镜素材、提示词、模式、时长、续接重叠），写一个 patch 函数能替换分镜列表。
-3. 自建最小工作流（推荐作为主路线，比导演台的 JSON 字符串更稳）：用核心节点搭 h3_segment_ref2va.api.json：UNETLoader(ref2va int8) → LoraLoaderModelOnly(ref2v_turbo_4step, 1.0) → MiniMaxH3MemoryEfficientSageAttentionPatch 或 ActivationChunkStar7 → CLIPLoader(qwen3vl nvfp4) → CLIPTextEncode → H3RefBatch(≤9 图) + H3ReferenceAudio(≤3) → MiniMaxH3ReferenceToVideo → EmptyMiniMaxH3LatentAV(宽/高/帧数) → SamplerCustomAdvanced(er_sde + ManualSigmas 1,0.9375,0.8333,0.625,0，照搬 02) → VAEDecode 视频 + 音频 → CreateVideo/SaveVideo 带音轨。再搭 h3_segment_i2va.api.json（fl2va + fl2v_turbo_8step，照搬 01 的 4 步 res_multistep）。帧数按 17k+5 网格、24fps 换算。每个工作流在 pipeline/local/workflows/README.md 里记录每个可改输入的节点 id 与字段名。
+2b. 导演台的程序化入口：ComfyUI_MiniMaxH3_Director 支持「导演包」`*.mmxpack.zip`（pack.json + shared_params/shared_params.json + asset_groups/NN/group.json + Picture1..9 / Audio1..3 / start.jpg / end.jpg；timeline.json 可省略）。读该插件 README 的导演包一节，写一个 storyboard JSON → mmxpack 的转换函数；这比修改 Xiantu Workbench 的 JSON 字串稳得多，优先评估它能否作为主路线。段间引导上下文帧数用 22。
+3. 自建最小工作流（备选，比导演台的 JSON 字符串更稳）：用核心节点搭 h3_segment_ref2va.api.json：UNETLoader(ref2va int8) → LoraLoaderModelOnly(ref2v_turbo_4step, 1.0) → MiniMaxH3MemoryEfficientSageAttentionPatch 或 ActivationChunkStar7 → CLIPLoader(qwen3vl nvfp4) → CLIPTextEncode → H3RefBatch(≤9 图) + H3ReferenceAudio(≤3) → MiniMaxH3ReferenceToVideo → EmptyMiniMaxH3LatentAV(宽/高/帧数) → SamplerCustomAdvanced(er_sde + ManualSigmas 1,0.9375,0.8333,0.625,0，照搬 02) → VAEDecode 视频 + 音频 → CreateVideo/SaveVideo 带音轨。再搭 h3_segment_i2va.api.json（fl2va + fl2v_turbo_8step，照搬 01 的 4 步 res_multistep）。帧数按 17k+5 网格、24fps 换算。每个工作流在 pipeline/local/workflows/README.md 里记录每个可改输入的节点 id 与字段名。
 4. 补工具：安装带 ffprobe 的 ffmpeg（winget install Gyan.FFmpeg 或下载 gyan full build，<1GB），确认 ffmpeg 含 libass（字幕烧录需要）。
 
 ## 第三阶段：逐项实测，每项通过才进下一项（每次只跑一个任务）
@@ -68,6 +69,13 @@ T8 拼接字幕：T3 + T6 两段用仓库 stitch.py 拼接并烧 SRT（需改造
 2. run_episode_local.py --dry-run 看提示词与节点参数；
 3. 实际生成每段 1 个候选 → 失败段重试 1 次 → SeedVR2 放大 → stitch 拼接烧字幕；
 4. 产出 ep01_test.mp4 与 .srt，连同 test-log.md、映射表、《接管报告》交给我。《接管报告》要包含：最终采用的工作流与参数、每段耗时与显存、与云端 API 路线相比缺的能力（Context-IR、2K、15 秒以上）及影响、我今后只需要做的事（提供剧本、挑候选）、以及必须由我决定的事项。
+
+## 写提示词时的额外纪律（来自 ComfyUI-H3-Multishot 的 PROMPTING.md 实测）
+- H3 以 CFG 1.0 运行、没有负分支，否定句会被渲染出来：用正向锁定（"只有两个人在场"）代替 "no other people"。
+- 5 秒镜头放不下一句完整台词加收尾；台词预算 = 自然语速念完 + 约 4 秒安静，10 秒约 15 个英文词 / 约 30 个汉字。
+- 非首镜开头保持上一镜收尾姿态静止约 2 秒再开口；每镜结束留 2 秒落定。
+- 角色外貌与场景光线描述每段逐字相同；每镜必须有可区分的物理状态变化。
+- 场景切换处不要续接，直接硬切重开链。
 
 ## 规则
 - 不删除、不覆盖我现有的任何工作流、模型、输出文件；要改的工作流先复制到 pipeline/local/workflows/ 再改。

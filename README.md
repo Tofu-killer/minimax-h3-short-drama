@@ -24,6 +24,7 @@
 | [06 开源项目剖析](docs/06-case-studies.md) | 火宝短剧、Hailuo‑AI‑Short‑Drama‑Studio、MiniMax‑H3‑Codex‑Drama、官方 skills、ComfyUI 生态、提示词生成器 |
 | [07 社区经验](docs/07-community-insights.md) | X、B 站四个教程、公众号、英文评测的共识与弱点清单、平台差异 |
 | [08 来源清单](docs/08-sources.md) | 全部阅读过的 URL |
+| [10 B 站课程与「秋叶教程」笔记](docs/10-bilibili-h3-course-notes.md) | 辨析「秋叶」H3 课程的来源，提炼课程大纲，梳理导演台 / Multishot / 双采 / 去油 / 乱念台词等本地短剧生态的关键技术点 |
 | [09 Toonflow 剖析](docs/09-toonflow-analysis.md) | 20k star 开源短剧平台的架构、13 步 skill、H3 供应商协议、ComfyUI 接入方式、MCP 接管路线，以及与本仓库的组合建议 |
 
 ## 参考实现与模板

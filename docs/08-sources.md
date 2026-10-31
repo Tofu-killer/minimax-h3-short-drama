@@ -45,6 +45,15 @@
 - https://www.bilibili.com/video/BV1gPb963EJb/
 - https://www.bilibili.com/video/BV1pgGc6BELe/（仅标题）
 
+## B 站 H3 本地短剧生态（docs/10 用到的）
+- https://hailuoai.com/h3-open
+- https://github.com/AIMixer/ComfyUI_MiniMaxH3_Director
+- https://github.com/jlucasmcrell/ComfyUI-H3-Multishot（README、PROMPTING.md、SETTINGS.md、INSTALL.md）
+- https://github.com/ptmaster/ComfyUI-PT_H3ConcatAVLatent
+- https://github.com/suihe1/short-drama-production
+- https://developer.aliyun.com/article/1765587
+- B 站页面 20 余条，BV 号见 docs/10 §6
+
 ## 中文教程 / 文章
 - https://www.woshipm.com/share/6305282.html — 一人手搓！AI 漫剧从0到1详细教程
 - https://www.atlascloud.ai/blog/tips/hailuo-ai-api-automated-workflows
