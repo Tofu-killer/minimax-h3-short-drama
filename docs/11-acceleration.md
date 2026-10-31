@@ -62,3 +62,30 @@ Multishot 的建议：**先把所有加速开关关掉、reserve 设 0 跑一次
 2. `run_episode_local` 草稿模式用 4 步出 2 候选，中选段 8 步重跑或直接作二采输入。
 3. FL2V 工作流把 SigmaShift 从 12 改 6 做 A/B。
 4. 在 test‑log 里记录每段「步数 / 版本 / 耗时 / 显存 / 主观质量」，一周后用数据定默认值。
+
+## 8. lightx2v/Minimax‑h3‑Turbo 文件清单（魔搭镜像，2026‑10‑20 更新）
+
+24 个权重文件，命名规则 `minimax_h3_{fl2v|ref2v}_turbo_{4|8}step_v{版本}[_768p]{_bf16|_comfyui_bf16}`。**没有 `768p` 后缀的是 544p 训练版**（训练 shift 12/3）；`768p` 版按 1344×768 训练，shift 6/3。ComfyUI 用 `_comfyui_bf16`（约 1.96 GB），其余 bf16 约 1.38 GB，`fl2v_4step_v1.1_768p_fp8` 为 34 GB 整合版不要下。
+
+| 变体 | 可用版本 | 4090 @768p 推荐 |
+|------|----------|-----------------|
+| FL2V 4 步 | v0.1(544p)、v1.0/1.1/1.2/1.3 (768p) | v1.3 与 v1.2 A/B |
+| FL2V 8 步 | v1.0(544p)、v1.0/1.1 (768p) | **v1.1_768p** |
+| REF2V 4 步 | v0.1(544p)、v1.0 (768p) | v1.0_768p |
+| REF2V 8 步 | v1.0/1.1 (768p) | **v1.1_768p** |
+
+官方规格表只覆盖到 v1.0；在线 Studio 当前用 FL2V 8 步 v1.0 768p，8 NFE、视频 shift 6、音频 shift 3。参考图 resize 选 `match`。
+
+## 9. 「为什么我 4090 比别人 5070 还慢」排查清单
+
+| 可能原因 | 判断方法 | 处理 |
+|----------|----------|------|
+| 分辨率：别人跑 544p（960×544 / 864×480），你跑 1344×768，像素 2.3 倍 | 同工作流改 864×480 对比 | 草稿用 544p，成片再 768p 或二采放大 |
+| 工作流走了非 Turbo 分支：20 步 + CFG 6（CFG>1 每步两遍） | 看采样节点实际 steps / cfg | 确认 Turbo 开关为 True，CFG 1.0，4–8 步 |
+| 双采 / SelfLift 多步 | 04 工作流 10 步 + refine | 只对中选段落跑 |
+| LoRA 为 544p 版却在 768p 用、shift 12 | 文件名无 `768p` | 换 768p 版，shift 6/3 |
+| 显存溢出回落到系统内存（Windows 默认允许，不报错只变慢） | 1344×768 比 864×480 慢 >5 倍；任务管理器「共享 GPU 内存」上涨 | NVIDIA 控制面板 → CUDA 系统内存回退策略 → 首选无回退；开 ActivationChunkStar7 / 分块 FFN |
+| 未用 Sage Attention | 启动日志 `Using pytorch attention` | 安装 sageattention，接 KJNodes `MiniMaxH3MemoryEfficientSageAttentionPatch`，约 1.5–2× |
+| 驱动显存降级导致随机慢渲染 | 同参数偶发慢 3 倍 | Multishot 的 driver headroom 规则：留显存余量，重启 ComfyUI |
+
+基准参考：3090，736×1280，192 帧，Turbo 每步 67–98 s（Multishot 实测）；4090 约快 1.7 倍，1344×768 / 10 s / 4 步不溢出应在 5 分钟上下。
