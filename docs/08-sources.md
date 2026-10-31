@@ -28,6 +28,7 @@
 - https://github.com/wobushannes/Drehbuch--Referenzanker-Generator （`src/utils/windowPromptFormatter.ts`、`anchorParser.ts`）
 - https://github.com/shijincai/MiniMax-H3
 - https://github.com/CARRYYOOAI/AutoVideo-MiniMax-Pipeline
+- https://github.com/HBAI-Ltd/Toonflow-app（本地克隆 master @ d7366e3，读取 README、AGENTS.md、docs/development.md、packages/providers、packages/skills、packages/mcp、packages/teams、packages/nodes/videoGenerationNode）
 - https://github.com/wjluoxiao/ComfyUI-JZL-MiniMax-H3（B 站简介引用，未抓取）
 - https://github.com/Larryvrh/ComfyUI-MiniMax-H3-Turbo（未抓取）
 

@@ -62,13 +62,17 @@
 | qihanqihan-gif/ComfyUI-MiniMaxH3-Steering | steering / cache / prompt director 节点 |
 | RunningHub 工作流「ki_MiniMax H3_多参分镜硬控流」「AITUDOU 全能参考 数字人 人物音频一致性」 | B 站教程配套的在线工作流，多参考图 + 音频一致性 |
 
-## 6. 其他工具
+## 6. HBAI-Ltd/Toonflow-app（Toonflow）
+
+20k star 的 MIT 开源短剧/漫剧平台：无限画布 + Agent skill + 供应商插件 + MCP。它的 13 步制作 skill、台词计时口径、三停点纪律与本仓库高度一致，但没有 H3 专属提示词语法、没有合成导出，H3 通过两家转售商供应商接入（协议即官方 v2）。详见 [09 Toonflow 剖析](09-toonflow-analysis.md)。
+
+## 7. 其他工具
 
 - **wobushannes/Drehbuch--Referenzanker-Generator**：把要点和参考图转成**严格单行、带时间码**的 H3 提示词（`window1: (00:00.000–00:14.000) …`，14 s 一窗），锚点 `@Subject1_Name`、`@Building1`、`@Floorplan1`；每个人物附「反克隆」句 `unique facial structure corresponding 100% to reference image @Subject1_…, zero feature transfer from other actors`。本地 LM Studio 视觉模型分析参考图。
 - **forgewebO1/awesome-minimax-h3-prompts**：20 条「可溯源」提示词，均标注来自 MiniMax 官方指南或官方 X 帖，包含竖屏吸血鬼短剧 teaser、武侠正反打、仙侠分镜等短剧向案例（见 `docs/04` §7.4）。
 - **CARRYYOOAI/AutoVideo-MiniMax-Pipeline**：面向旧 Video‑01 的批量提交/队列/导出脚本，H3 时代仅作并发管理参考。
 
-## 7. 对本项目参考实现的启发（已落地到 `pipeline/`）
+## 8. 对本项目参考实现的启发（已落地到 `pipeline/`）
 
 1. 段落化分镜 JSON（火宝 + 官方六列表）。
 2. 分镜字段 **全部** 进入提示词（修正 Short‑Drama‑Studio 的漏发）。
