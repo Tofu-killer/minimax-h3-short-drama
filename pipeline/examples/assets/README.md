@@ -7,3 +7,4 @@
 - `s03_first_frame.png` — 第三段首帧（双人隔柜台对望，9:16）
 
 本地路径会被 `h3_client.py` 自动转成 data URI；也可以直接填公网 URL 或 `mm_file://` id。
+- `prop_paper_cup.png` — 道具白底单品图（示例占位）

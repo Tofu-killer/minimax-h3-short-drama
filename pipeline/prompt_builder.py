@@ -129,8 +129,9 @@ def build_ref2va(ep: Episode, seg: Segment) -> BuiltPrompt:
             content.append(image_item(p.reference_images[0], "reference_image"))
             subj = f"<Subject {len(defs) + 1}>"
             labels[pid] = subj
-            defs.append(f"{subj} is {p.name} in <Picture {pic}>: {p.description}")
-            retention.append(f"{subj}: fully_preserved - geometry, colour and material are retained.")
+            defs.append(f"{subj} is {p.name}, the exact item shown in <Picture {pic}>: {p.description}")
+            retention.append(f"{subj}: fully_preserved - the item's shape, colour, markings and material are retained exactly; "
+                             f"no other item is substituted.")
 
     def subj_label(cid: str) -> str:
         return labels.get(cid, ep.char(cid).name)

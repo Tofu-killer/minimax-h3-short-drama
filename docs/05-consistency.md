@@ -74,7 +74,18 @@ Never transfer facial traits from Image 3 or visual styling from Audio/Video 1.
 - 关键脸部镜头走 I2VA 首帧而非纯 Ref2VA。
 - 2 个节拍以内的片段最容易保持主体一致（Kapwing）。
 
-## 8. 本地 ComfyUI 路线的额外手段
+## 8. 道具：不绑定参考图，模型一定会编
+
+实测案例（`docs/reviews/ep01_test`）：威龙从保险柜拿出的「红色物品」是模型虚构的，因为那一段 content 里只有人物和场景图，道具库 1683 张三角洲物品图一张都没进请求。规则：
+
+1. **道具库目录化**：`pipeline/catalog.py build <物品文件夹> --kind prop` 生成 catalog JSON，稀有度（红/黄/紫/蓝/绿/白）从文件夹或文件名解析存进 `rarity` 字段。
+2. **分镜只能从目录里选道具**：LLM 分镜 system prompt 已加规则；`catalog.py check` 会拦住「台词/动作提到了目录里的物品但没绑定」和「红色的东西 / 贵重物品」这类泛指。
+3. **绑定即进请求**：`prop_ids` 里的道具自动以 `reference_image` 进入 content，六段式里写成 `<Subject N> is <name>, the exact item shown in <Picture N>`，retention 写 `fully_preserved - shape, colour, markings and material retained exactly; no other item is substituted`。
+4. **关键道具镜头走 I2VA**：拿起、展示、交接的特写用首帧图把道具放进构图，比纯参考稳。
+5. **稀有度颜色框后期叠**：三角洲的红/黄/紫/蓝/绿/白是 UI 元素，不要让 H3 画发光边框（它只会画成模糊红光），由 `stitch.py` 或剪辑按 `rarity` 叠加游戏风格的框和标签，和字幕同一原则。
+6. **参考位预算**：每段最多 9 张图，建议 角色 2–3 张 × 2 人 + 场景 1 + 道具 1–2，道具优先给本段的"交接物"。
+
+## 9. 本地 ComfyUI 路线的额外手段
 
 - Codex‑Drama 附带 **Qwen Image Edit 一致性工作流**：用 1–2 张参考把分镜静帧改成同一人，再送 I2VA。
 - RunningHub 上的「ki_MiniMax H3_多参分镜硬控流」「AITUDOU 全能参考 数字人 人物音频一致性」工作流，本质都是：多角度角色图 + 场景图 + 音频参考 一次性喂给 Ref2VA 节点。

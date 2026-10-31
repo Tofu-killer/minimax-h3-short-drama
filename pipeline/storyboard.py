@@ -41,6 +41,7 @@ class Prop:
     name: str
     description: str
     reference_images: list[str] = field(default_factory=list)
+    rarity: Optional[str] = None     # 三角洲 loot tier: red/gold/purple/blue/green/white; overlaid in post, not rendered
 
 
 @dataclass
@@ -173,6 +174,8 @@ def validate_episode(ep: Episode) -> list[str]:
         for p in seg.prop_ids:
             if p not in pids:
                 problems.append(f"{tag}: unknown prop_id {p}")
+            elif not ep.prop(p).reference_images:
+                problems.append(f"{tag}: prop {p} bound without a reference image; the model will invent its look")
         if seg.mode not in ("ref2va", "i2va", "fl2va", "t2va"):
             problems.append(f"{tag}: unknown mode {seg.mode}")
         if seg.mode in ("i2va", "fl2va") and not seg.first_frame:
