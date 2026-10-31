@@ -27,6 +27,11 @@
 
 ## 参考实现与模板
 
+```bash
+git clone https://github.com/Tofu-killer/minimax-h3-short-drama.git
+cd minimax-h3-short-drama
+```
+
 - [`pipeline/`](pipeline/README.md)：官方 API 异步客户端、分镜 JSON schema 与校验器、三段式/六段式提示词构建器、并发批量生成（草稿 / 成片 / 2K 重生成）、ffprobe QC + FFmpeg 拼接 + 自动字幕，附 LLM 编剧/分镜/节奏审计 Agent 的 system prompt 与 30 秒示例集。
   ```bash
   cd pipeline && pip install -r requirements.txt

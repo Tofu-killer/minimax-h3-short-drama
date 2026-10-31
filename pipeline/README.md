@@ -16,6 +16,7 @@ pipeline/
 ## 使用
 
 ```bash
+git clone https://github.com/Tofu-killer/minimax-h3-short-drama.git && cd minimax-h3-short-drama/pipeline
 pip install -r requirements.txt
 export MINIMAX_API_KEY=sk-...
 # 国内站：export MINIMAX_API_BASE=https://api.minimaxi.com
