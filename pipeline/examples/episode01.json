@@ -67,7 +67,7 @@
           "start": 0,
           "framing": "a medium shot from across the counter",
           "camera": "The camera pushes in with small amplitude at slow speed",
-          "action": "<Subject 1> sits on the middle stool facing the camera, both hands wrapped around the paper cup, eyes on the door; she checks her phone, exhales, and looks up as the door bell rings",
+          "action": "{lin_lan} sits on the middle stool facing the camera, both hands wrapped around the paper cup, eyes on the door; she checks her phone, exhales, and looks up as the door bell rings",
           "dialogue": [],
           "on_screen_characters": [
             "lin_lan"
@@ -95,7 +95,7 @@
       "soundscape": "Rain on the front window, the low hum of a drinks fridge, a phone screen tapped twice, the door bell ringing once at 00:05 followed by wet footsteps and a paper cup set down on laminate.",
       "music": "N/A",
       "continuity": "",
-      "end_state": "<Subject 1> staring past the camera toward the door, cup set down in front of her",
+      "end_state": "{lin_lan} staring past the camera toward the door, cup set down in front of her",
       "negatives": "No other customers, no signage text, no subtitles"
     },
     {
@@ -116,7 +116,7 @@
           "start": 0,
           "framing": "a medium shot of the doorway",
           "camera": "The camera holds a static shot",
-          "action": "<Subject 1> steps in from frame right with rain on his shoulders, stops, and faces the camera; he does not take off his coat",
+          "action": "{father} steps in from frame right with rain on his shoulders, stops, and faces the camera; he does not take off his coat",
           "dialogue": [
             {
               "speaker": "father",
@@ -132,9 +132,9 @@
         {
           "index": 2,
           "start": 5.0,
-          "framing": "an over-the-shoulder shot from behind <Subject 1>, who stands at frame right, a head taller",
+          "framing": "an over-the-shoulder shot from behind {father}, who stands at frame right, a head taller",
           "camera": "The camera tracks right with small amplitude at slow speed",
-          "action": "<Subject 2> faces the camera from her stool at frame left; she studies him, then slides the cup toward him across the counter",
+          "action": "{lin_lan} faces the camera from her stool at frame left; she studies him, then slides the cup toward him across the counter",
           "dialogue": [
             {
               "speaker": "lin_lan",
@@ -151,7 +151,7 @@
         {
           "index": 3,
           "start": 9.5,
-          "framing": "a close-up on <Subject 1>'s hands",
+          "framing": "a close-up on {father}'s hands",
           "camera": "The camera holds a static shot",
           "action": "his hand closes around the cup but does not lift it; the hand is trembling slightly",
           "dialogue": [],
@@ -162,8 +162,8 @@
       ],
       "soundscape": "The door bell fades, wet footsteps on tile, a paper cup sliding on laminate, the drinks fridge hum, rain steady on the window.",
       "music": "N/A",
-      "continuity": "The café, lighting and <Subject 2>'s position on the middle stool are unchanged from the previous segment; the cup stands where she set it down.",
-      "end_state": "<Subject 1>'s trembling hand around the cup in close-up",
+      "continuity": "The café, lighting and {lin_lan}'s position on the middle stool are unchanged from the previous segment; the cup stands where she set it down.",
+      "end_state": "{father}'s trembling hand around the cup in close-up",
       "negatives": "No other customers, no signage text, no subtitles"
     },
     {

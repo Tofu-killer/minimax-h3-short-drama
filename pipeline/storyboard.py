@@ -213,6 +213,15 @@ def validate_episode(ep: Episode) -> list[str]:
         if any(w in seg.soundscape.lower() for w in ("tense", "sad", "紧张", "悲伤")) and len(seg.soundscape) < 40:
             problems.append(f"{tag}: soundscape is a mood word, write concrete sounds")
 
+    # hand-off state: every segment except the first needs continuity, every segment needs an end_state
+    for i, seg in enumerate(ep.segments):
+        if not seg.end_state.strip():
+            problems.append(f"segment {seg.id}: end_state is empty; the next segment cannot pick up positions")
+        if i > 0 and not seg.continuity.strip():
+            problems.append(f"segment {seg.id}: continuity is empty; positions/wardrobe will drift from the previous segment")
+        for sh in seg.shots:
+            if len(sh.action.split()) < 8:
+                problems.append(f"segment {seg.id} shot {sh.index}: action is too short to be a start→change→end description")
     # consecutive static dialogue segments (Short-Drama-Studio rule)
     static_run = 0
     for seg in ep.segments:

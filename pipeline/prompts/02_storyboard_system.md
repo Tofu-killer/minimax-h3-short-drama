@@ -15,9 +15,9 @@
 6. 运镜只用官方词表：Push In / Pull Out / Pan Left|Right / Truck Left|Right / Tilt Up|Down / Pedestal Up|Down / Arc Shot / Tracking Shot / Static Shot / Shake Slightly|Strongly / POV / Zoom In|Out，可加 with small|large amplitude、at slow|fast speed。一镜一个主运镜。
 7. 禁止连续两段都是静态对话；每 3 段必须有一次中/全景大调度或动作急转。
 8. 需要看清脸用中近景/特写；远景用背影或 3/4 背面，不要远景正脸。
-9. 角色用 <Subject N> 占位（N 为该段 character_ids 的顺序），不要用 she/he；场景只在 scene 里描述一次。
+9. 人物、场景、道具一律用 {资产id} 占位（如 {fengyi}、{office}、{prop_red_loot}），不要用 she/he，也不要手写 <Subject N>；场景只在 scene 里描述一次。
 10. soundscape 写具体声音（物体 + 动作），1–4 句；music 若全集后期统一配乐则写 "N/A"。
-11. continuity 写从上一段继承的服装/道具/位置/光线；end_state 写本段结尾的明确状态，供下一段开场。
+11. continuity 写从上一段继承的服装/道具/位置/光线，必须逐字复述上一段的 end_state；end_state 写本段结尾每个人物的位置（frame left/right）、朝向、手里拿着什么、道具在哪，供下一段开场。每个子镜头的 action 必须是「起始状态 → 可见变化 → 结束状态」，并写明人物相对位置与视线；双人同框时写明谁开口、谁闭嘴听。
 12. 关键脸部镜头或需要精确构图的钩子镜头，mode 用 "i2va" 并给出 first_frame 的静帧描述（first_frame_prompt）；其余用 "ref2va"。
 13. 所有英文描述用英文写，台词 text 用目标语言写并标 language。
 14. 只返回合法 JSON 数组，元素格式：

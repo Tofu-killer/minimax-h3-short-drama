@@ -8,6 +8,7 @@ Reference labels <Picture N> / <Audio N> are numbered by position in the content
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from h3_client import audio_item, image_item, text_item
@@ -42,6 +43,21 @@ def render_dialogue(d: Dialogue, who: str, sid: str) -> str:
     return f"{who} ({sid}) says{delivery}: {line}"
 
 
+PLACEHOLDER = re.compile(r"\{([A-Za-z0-9_\u4e00-\u9fff-]+)\}")
+
+
+def fill(text: str, labels: dict[str, str]) -> str:
+    """Replace {asset_id} tokens with the label assigned for this segment (<Subject N> or a name).
+    Writing asset ids instead of hand-numbered <Subject N> keeps the storyboard valid when the
+    builder changes the numbering (characters first, then scene, then props)."""
+    def sub(m):
+        key = m.group(1)
+        if key not in labels:
+            raise KeyError(f"placeholder {{{key}}} is not an asset bound to this segment")
+        return labels[key]
+    return PLACEHOLDER.sub(sub, text)
+
+
 @dataclass
 class BuiltPrompt:
     text: str
@@ -51,15 +67,16 @@ class BuiltPrompt:
 
 # ---------------------------------------------------------------- shared body
 
-def _shot_sentences(ep: Episode, seg: Segment, sh: Shot, is_first: bool, subj_label) -> str:
+def _shot_sentences(ep: Episode, seg: Segment, sh: Shot, is_first: bool, subj_label, labels: dict[str, str] | None = None) -> str:
     parts = []
     head = f"[Shot {sh.index}]"
     if not is_first:
         head += f" At {timecode(sh.start)}, the shot cuts to"
-    action = sh.action.strip()
+    action = fill(sh.action.strip(), labels or {})
+    framing = fill(sh.framing, labels or {})
     if action and action[-1] not in ".!?。！？":
         action += "."
-    parts.append(f"{head} {sh.framing}: {action}")
+    parts.append(f"{head} {framing}: {action}")
     if sh.camera:
         parts.append(sh.camera.rstrip(".") + ".")
     sids = speaker_ids(seg)
@@ -116,7 +133,7 @@ def build_ref2va(ep: Episode, seg: Segment) -> BuiltPrompt:
         content.append(image_item(sc.reference_images[0], "reference_image"))
         subj = f"<Subject {len(defs) + 1}>"
         labels[sc.id] = subj
-        defs.append(f"{subj} is {sc.name} in <Picture {pic}>: {sc.description}")
+        defs.append(f"{subj} is {sc.name} in <Picture {pic}>: {sc.description.rstrip('.')}.")
         retention.append(f"{subj}: partially_preserved - layout, lighting and set dressing are retained; "
                          f"never transfer facial traits from <Picture {pic}>.")
     else:
@@ -129,21 +146,29 @@ def build_ref2va(ep: Episode, seg: Segment) -> BuiltPrompt:
             content.append(image_item(p.reference_images[0], "reference_image"))
             subj = f"<Subject {len(defs) + 1}>"
             labels[pid] = subj
-            defs.append(f"{subj} is {p.name}, the exact item shown in <Picture {pic}>: {p.description}")
+            defs.append(f"{subj} is {p.name}, the exact item shown in <Picture {pic}>: {p.description.rstrip('.')}.")
             retention.append(f"{subj}: fully_preserved - the item's shape, colour, markings and material are retained exactly; "
                              f"no other item is substituted.")
+
+    # every bound asset gets a label even without a reference image (name fallback)
+    for cid in seg.character_ids:
+        labels.setdefault(cid, ep.char(cid).name)
+    for pid in seg.prop_ids:
+        labels.setdefault(pid, ep.prop(pid).name)
+    labels.setdefault(sc.id, sc.name)
 
     def subj_label(cid: str) -> str:
         return labels.get(cid, ep.char(cid).name)
 
-    shots_txt = " ".join(_shot_sentences(ep, seg, sh, i == 0, subj_label) for i, sh in enumerate(seg.shots))
-    scene_lead = f"{seg.style}. {sc.description}" if sc.id not in labels or not labels[sc.id].startswith("<") \
+    shots_txt = " ".join(_shot_sentences(ep, seg, sh, i == 0, subj_label, labels) for i, sh in enumerate(seg.shots))
+    scene_lead = f"{seg.style}. {sc.description.rstrip('.')}." if not labels[sc.id].startswith("<") \
         else f"{seg.style}. The setting is {labels[sc.id]}."
-    body = f"{scene_lead} {seg.continuity + ' ' if seg.continuity else ''}{shots_txt}"
+    continuity = fill(seg.continuity, labels)
+    body = f"{scene_lead} {continuity + ' ' if continuity else ''}{shots_txt}"
     if seg.end_state:
-        body += f" The segment ends with {seg.end_state}."
+        body += f" The segment ends with {fill(seg.end_state, labels)}."
     if seg.negatives:
-        body += f" {seg.negatives}."
+        body += f" {fill(seg.negatives, labels)}."
 
     summary = (f"[reference generation{' + audio reference' if aud else ''}] {seg.hook_type + ': ' if seg.hook_type else ''}"
                f"{len(seg.shots)} shot{'s' if len(seg.shots) > 1 else ''}, {seg.duration} seconds, {ep.ratio}.")
@@ -182,18 +207,22 @@ def build_three_part(ep: Episode, seg: Segment) -> BuiltPrompt:
         return f"{c.name}, {c.identity_phrase}"
 
     sc = ep.scene(seg.scene_id)
-    shots_txt = " ".join(_shot_sentences(ep, seg, sh, i == 0, subj_label) for i, sh in enumerate(seg.shots))
+    labels = {cid: ep.char(cid).name for cid in seg.character_ids}
+    labels.update({pid: ep.prop(pid).name for pid in seg.prop_ids})
+    labels[sc.id] = sc.name
+    shots_txt = " ".join(_shot_sentences(ep, seg, sh, i == 0, subj_label, labels) for i, sh in enumerate(seg.shots))
     anchor = ""
     if seg.mode in ("i2va", "fl2va"):
         anchor = (" The opening frame shown in <Picture 1> is preserved: appearance, clothing, position and set "
                   "layout stay as established.")
-    body = f"{seg.style}, {sc.description}{anchor} {seg.continuity + ' ' if seg.continuity else ''}{shots_txt}"
+    continuity = fill(seg.continuity, labels)
+    body = f"{seg.style}, {sc.description.rstrip('.')}.{anchor} {continuity + ' ' if continuity else ''}{shots_txt}"
     if seg.mode == "fl2va":
         body += " The shot settles into the pose, spacing and composition established by Picture 2 at the end."
     elif seg.end_state:
-        body += f" The segment ends with {seg.end_state}."
+        body += f" The segment ends with {fill(seg.end_state, labels)}."
     if seg.negatives:
-        body += f" {seg.negatives}."
+        body += f" {fill(seg.negatives, labels)}."
 
     text = (
         header +

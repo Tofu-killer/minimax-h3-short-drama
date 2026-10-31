@@ -10,7 +10,9 @@ pipeline/
 ├── run_episode.py      # 批量生成：并发、幂等 manifest、草稿/成片/2K 重生成三种模式、可选 IR 改写、成本预估
 ├── stitch.py           # ffprobe 技术 QC → 统一转码 → concat → 从分镜生成 SRT 并烧录 → 可选配乐 ducking
 ├── prompts/            # LLM Agent system prompt：大纲、分镜拆解、节奏审计
-└── examples/episode01.json   # 3 段 30 秒示例集（Ref2VA ×2 + I2VA ×1）
+├── catalog.py          # 资产目录：扫物品/角色/场景文件夹生成 JSON（含稀有度），并检查分镜是否绑定了提到的道具
+├── examples/episode01.json   # 3 段 30 秒示例集（Ref2VA ×2 + I2VA ×1）
+└── examples/fengyi_ep01.json # 《蜂医的复仇》EP01 重写示例：5 段 42 秒，双人、道具交接、逐段交接状态
 ```
 
 ## 使用
@@ -41,7 +43,8 @@ python stitch.py examples/episode01.json --clips out/末班车_EP01/clips --out 
 
 - 一个 `segment` = 一次生成（4–15 s），`shots` 为其内部子镜头，第一镜 `start` 必须为 0。
 - `mode`: `ref2va`（默认，多参考图）| `i2va`（首帧）| `fl2va`（首尾帧）| `t2va`。
-- 角色在 `action` 里用 `<Subject N>` 占位（N 为该段 `character_ids` 顺序）；`i2va/t2va` 模式下自动替换为「姓名 + 识别短语」。
+- 在 `framing / action / continuity / end_state / negatives` 里用 **`{资产id}`** 占位（如 `{fengyi}`、`{office}`、`{prop_red_loot}`），构建器按本段绑定顺序（人物 → 场景 → 道具）分配 `<Subject N>` 并替换；没有参考图的资产回退为名字。不要手写 `<Subject N>`，编号会随绑定变化而错位。
+- 校验器会拦：`end_state` 为空、非首段 `continuity` 为空、`action` 少于 8 个词（写不出 起始→变化→终态）。
 - `identity_phrase` / `voice_phrase` 整季逐字复用。
 - 校验器会拦住：时长越界、台词密度超标（字数 ÷ 4.5 + 2 s）、一镜多人开口、未知资产 ID、连续三段静态对话。
 
