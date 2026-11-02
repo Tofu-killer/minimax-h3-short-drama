@@ -117,3 +117,23 @@ Multishot 的建议：**先把所有加速开关关掉、reserve 设 0 跑一次
 2. Cache 类（DaSiWa / lihaoyun6 / EasyCache）只能同 seed A/B 后再用，口型与参考保持最易受损。
 3. 同 seed 同参数重跑会命中 ComfyUI 结果缓存秒出，抽卡务必换 seed。
 4. DaSiWa 的 Continuity Segment / Join Clips 与 RefMod 库是长视频与资产管理的好思路，流程跑通后再评估。
+
+## 11. 本机实测：稀疏注意力 vs SageAttention（RTX 4090，2026‑11‑02）
+
+条件：YZ 双采工作流副本，864×480，10 秒，同段、同提示词、同步数与 LoRA；先预热，再用 seed+1 计时（同 seed 会命中 ComfyUI 结果缓存）。
+
+| 组 | 配置 | 第二次耗时 | 显存峰值 | 清晰度（拉普拉斯） |
+|----|------|-----------|----------|-------------------|
+| A | comfy kitchen + BlockSparseAttention（tau 1.3，从 20% 步起）+ MiniMaxLowVRAMAttention 4 | 138 s | 24.0 GB* | 2026 |
+| B | PathchSageAttentionKJ(auto) + MiniMaxH3MemoryEfficientSageAttentionPatch，旁路稀疏 / kitchen / LowVRAM | 134 s | 24.0 GB* | 2204（+9%） |
+| C | B + MiniMaxLowVRAMAttention 4 | **不可用**：第 1 步 693 s（A 为 41 s），16 分钟后中断，无 OOM | 23.5 GB | — |
+
+\* ComfyUI 尽量常驻模型，峰值不代表实际需求。
+
+结论：
+1. 864×480 / 10 s 约 2 分钟，与社区「2 分钟出 10 秒」一致；
+2. 低分辨率下 token 少，稀疏注意力几乎不省时间；Sage 速度持平、画质不差 → 抽卡档用 Sage；
+3. **Sage 与 MiniMaxLowVRAMAttention 实测不能同时开**（尽管 KJNodes 源码注释称可组合），会走极慢路径，原因未验证；
+4. 待测：1344×768 一对，稀疏注意力在高 token 数下才可能拉开差距，且关闭 LowVRAM 后需确认是否爆显存。
+
+注意：清晰度对比必须两组同 seed；计时用的 seed+1 两组也要一致。
