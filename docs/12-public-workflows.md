@@ -77,3 +77,27 @@
 3. **衔接**：`official/video_minimax_h3_i2v_continuation.json`，首帧 = 上段最后一帧（`ffmpeg -sseof -0.05`）。
 4. **成片**：中选段按导演台二采配置精修（latent 3D 放大 → 3 步 beta denoise 0.2）。
 5. 这四个 JSON 都是 UI 格式，程序化调用前在前端「导出（API）」一次，节点 id 记进 `pipeline/local/workflows/README.md`。
+
+## 8. WhaleTrans Director（jingyu000/ComfyUI-MiniMaxH3-WhaleTrans-Director，GPL‑3.0）
+
+调研 2026‑11‑02，克隆源码逐文件阅读。61★、18 次提交，2026‑10 下旬活跃。
+
+**来历**：基于 Songssx/ComfyUI‑MiniMaxH3‑TimelineDirector（742★）的增强版，保留其全部节点（时间线导演台、素材规划台、规划编码器、Omni 素材包提示词桥、有限分段采样、音频锁定母带、循环续段、片段去重），新增 6 个节点：`WhaleTransLoop` / `WhaleTransLoopVariable` / `WhaleTransAccumulateSaveVideo`（用 ComfyUI 官方 expand 递归展开实现循环，不改核心文件）、`H3HighRefineGuide`、`H3LatentResolution`、`H3LatentShrink`。
+
+**长视频衔接机制（最有价值的部分）**：
+- 每段提示词用 `--- SEGMENT ---` 独占行或 JSON 数组分隔；不足时重复最后一段。
+- 上一段的完整 AV latent 回传，取末尾 `overlap_frames`（示例 48 帧 = 2 秒）作为下一段开头的 direct latent guide 钉住；解码后去掉重复的重叠帧再累积保存。
+- 非首段自动在 `[Shot 1]` 后插入一句提示（原文）："The opening 00:00.000‑00:02.000 is a fixed latent continuation from the preceding segment. Describe this opening as the preceding segment's final shot, preserving character positions, environment, motion, camera path, lighting, color, and sound before introducing new action." 这句可直接用于我们自己的续写段提示词。
+- 全局 latent 缓存 + key 引用，多段不重复占显存；每次点运行自动清理上次中断残留，从第 1 段开始。
+
+**二段式采样（示例工作流）**：一采 608×352、ref2va hybrid 剪枝 bf16 + ref2v_turbo_4step_v0.1、shift 12/3 → LBH‑123‑AI 3D latent 放大 1.5× → `H3HighRefineGuide`（guide_frames 22，把放大后的 latent 作为同尺寸 direct guide 注入，解决导演台条件与放大 latent 尺寸不匹配）→ 二采 beta 8 步（SplitSigmas 4 + ExtendIntermediateSigmas）→ 去重 → 累积保存。注意力后端 comfy kitchen。示例里大量节点按分组旁路，需用 rgthree Fast Groups Bypasser 打开对应组。
+
+**依赖**：ComfyUI ≥ 0.35.1；LBH‑123‑AI/Comfyui_Minimax_h3_latent_Upscaler 插件 + `minimax_h3_latent_upscaler_3d_fp16.safetensors`（约 691 MB，放 `models/latent_upscale_models/`）。
+
+**安全与风险**：
+- 源码里唯一的 `subprocess` 是调用 ComfyUI 自带 ffmpeg 生成低清预览；仅注册两个本地路由（media_info、preview_proxy）；仓库源码中未见外发网络请求。
+- README v8.0 宣传的「多服务商 LLM 提示词优化（智谱 / Ollama / DeepSeek 等）」在仓库 JS 源码中**没有找到对应代码**；README 推荐从 Releases zip 安装，zip 内容可能与仓库不同，安装前应比对。
+- 注册了 `Loop` / `LoopVariable` / `AccumulateSaveVideo` 这类通用别名，可能与其他节点包同名冲突。
+- GPL‑3.0，工作流 JSON 未收录进本仓库。
+
+**适用**：想在 ComfyUI 内一次跑完多段长视频、段间用 latent 重叠衔接时使用；与本仓库 `pipeline/` 的「逐段生成 + FFmpeg 拼接」互补。示例用的是 544p 旧 LoRA 与 608×352 一采，换成 768p LoRA 与 Sage 需自行改。
