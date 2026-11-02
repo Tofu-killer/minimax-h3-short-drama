@@ -101,3 +101,23 @@
 - GPL‑3.0，工作流 JSON 未收录进本仓库。
 
 **适用**：想在 ComfyUI 内一次跑完多段长视频、段间用 latent 重叠衔接时使用；与本仓库 `pipeline/` 的「逐段生成 + FFmpeg 拼接」互补。示例用的是 544p 旧 LoRA 与 608×352 一采，换成 768p LoRA 与 Sage 需自行改。
+
+## 9. OpenMontage（calesthio/OpenMontage，AGPL‑3.0）
+
+调研 2026‑11‑02，克隆源码阅读。约 7.5 万星（抖音截图里的 4.2 万已过时），2026‑03 创建，10 月仍在更新，143 个测试文件。
+
+**是什么**：给 Claude Code / Codex / Cursor 这类编程 Agent 用的视频制作框架。Agent 读 `AGENT_GUIDE.md`，按 `pipeline_defs/` 的 12 条流水线（解说动画、动画、角色动画、电影感、纪录片蒙太奇、口播、数字人、配音本地化、播客转视频、录屏演示、切片工厂、混合）逐阶段执行，调用 `tools/` 里上百个工具（图像、视频、TTS、音乐、素材库检索、Remotion 合成、WhisperX 词级字幕、ffprobe 自检）。
+
+**和 H3 的关系**：
+- 官方 API：`tools/video/minimax_video.py` 直接支持 `MiniMax-H3`（v2 content 接口，国际/国内两个地址），另有 fal.ai（`hailuo-03`）与 Runway 路线。
+- 本地：`comfyui_video.py` 的 `minimax_h3_local` **不带工作流**，必须自己提供导出的 API 格式工作流和输出节点 id；内置的本地 ComfyUI 工作流只有 WAN 2.2 和 FLUX 2。
+- 源码里没有 H3 专用提示词写法（未出现 `subject_definitions`、`integrated_multimodal_description`、`<d>[…]`），也没有多角色对白短剧流水线；`cinematic` 流水线定位是预告片、品牌片和「短剧式剪辑」，偏素材驱动。
+
+**值得借鉴**：
+- 参考视频拆解（`skills/meta/video-reference-analyst.md`）：粘贴爆款视频 → 分析节奏、钩子、场景、关键帧、风格 → 给出 2–3 个差异化方案、成本估算和样片，再开始制作。对应抖音文案里的「拉片复刻」。
+- 交付前自检：ffprobe 校验、帧采样、音量分析、字幕检查、承诺核对（「说好 60 秒就必须 60 秒」）。
+- 每个工具附带成本与耗时估算、供应商选择打分和决策日志。
+
+**分支**：`charliewwdev/OpenMontage`（Drama Studio，11 星）把它改成了短剧网页工作室（剧本 → 角色 → 场景 → 道具 → 分镜 → 配音 → 剪辑），但视频走火山方舟 Seedream / Seedance 付费接口，不支持本地 H3。
+
+**结论**：适合「一句话出解说片 / 拉片复刻 / 自动剪辑配乐字幕」，不适合直接拿来做本地 H3 对白短剧。可借鉴它的参考视频拆解与交付自检，生成环节继续用本仓库的 H3 流程。
