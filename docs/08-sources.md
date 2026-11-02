@@ -52,6 +52,9 @@
 - https://github.com/ptmaster/ComfyUI-PT_H3ConcatAVLatent
 - https://github.com/suihe1/short-drama-production
 - https://developer.aliyun.com/article/1765587
+- https://github.com/darksidewalker/ComfyUI-DaSiWa-Nodes（README、docs/minimax_h3_cache.md、docs/minimax_h3_director.md）与 https://github.com/darksidewalker/dasiwa-comfyui-workflows（C‑MMH3‑33）
+- https://github.com/neng320/minimax-h3-local-deployment（README、qa-benchmarks.md）
+- https://www.runninghub.ai/post/2094938114493083650/
 - B 站页面 20 余条，BV 号见 docs/10 §6
 
 ## 中文教程 / 文章

@@ -89,3 +89,31 @@ Multishot 的建议：**先把所有加速开关关掉、reserve 设 0 跑一次
 | 驱动显存降级导致随机慢渲染 | 同参数偶发慢 3 倍 | Multishot 的 driver headroom 规则：留显存余量，重启 ComfyUI |
 
 基准参考：3090，736×1280，192 帧，Turbo 每步 67–98 s（Multishot 实测）；4090 约快 1.7 倍，1344×768 / 10 s / 4 步不溢出应在 5 分钟上下。
+
+## 10. DaSiWa 节点包与「2 分钟出 10 秒」的真相（2026‑11‑02 补充）
+
+**DaSiWa**（`darksidewalker/ComfyUI-DaSiWa-Nodes`，GPL‑3.0，173★ / 571 commits）是画质与长视频取向的节点包：Director 时间轴 + RefMod 参考库 + Prompt Forge、Continuity Segment Prepare/Decode/Publish + Join Clips（长视频分段续接）、Tiled/Enhanced Upscale、RTX 帧生成与超分、LLM 写提示词，以及 `MiniMaxH3Cache`。其最新工作流 C‑MMH3‑33：fl2va + ref2va 剪枝 int8，**25 步** res_multistep simple，shift 11/4，**无 Turbo LoRA，Cache 节点默认旁路**。
+
+`MiniMaxH3Cache`：缓存整个 H3 Transformer 块堆栈的残差，当采样 token 特征变化小于 `reuse_threshold`（默认 0.05）时整段跳过；作用区间 `start_percent/end_percent` 0.15–0.90，连续命中上限 `max_steps` 2。文档明言**没有实测加速与画质数据**，「显示的加速比只是理论块跳过比例」，要求同 seed A/B 检查音频连续性、运动稳定性与参考保持。源自 lihaoyun6/ComfyUI‑MiniMaxH3‑Cache。
+
+**「2 分钟出 10 秒」**：RunningHub「Dasiwa‑MiniMax H3‑Dynamic Strongest‑Single Sample」（作者青橙Lab）页面无此声明、无显卡与分辨率；节点为 T8 `MiniMaxH3DualClockSamplerT8` + `MiniMaxH3AudioConditioningT8` + SageAttention，与 DaSiWa 节点无关（「Dasiwa」疑指 DaSiWa 融合模型，未核实）。
+
+**有数据的基准**（`neng320/minimax-h3-local-deployment`，RTX 4060 Ti 16G，2026‑08‑08，5 秒片）：
+
+| 配置 | 耗时 | 画质 |
+|------|------|------|
+| 剪枝 int8，864×480，12 步，Sage | 109 s | 剪枝细节弱 |
+| 剪枝，1056×608 | 180 s | |
+| 剪枝，1344×768，20 步 | 360 s | |
+| 完整 int8，640×640，8 步 Turbo，无加速 | 391 s | 基线 |
+| 同上 + **SageAttention** | **300 s** | 无损，推荐 |
+| 同上 + TE‑Speed | 195 s | **文字乱码、手嘴变形，弃用** |
+| 冷启动（JIT 编译 + 34G 载入） | 490–818 s | 第 2 条起才是真实速度 |
+
+换算到 4090（约 2.5–3×）：480p + Turbo + Sage 的 10 秒片约 1.5–2 分钟，1344×768 约 5–8 分钟。所谓「很快」基本都是 480p 抽卡档。
+
+结论：
+1. **SageAttention 是唯一反复验证「提速且无损」的加速**（1.3–1.5×）；TE‑Speed 在 8 步 Turbo + int8 下失真，不用。
+2. Cache 类（DaSiWa / lihaoyun6 / EasyCache）只能同 seed A/B 后再用，口型与参考保持最易受损。
+3. 同 seed 同参数重跑会命中 ComfyUI 结果缓存秒出，抽卡务必换 seed。
+4. DaSiWa 的 Continuity Segment / Join Clips 与 RefMod 库是长视频与资产管理的好思路，流程跑通后再评估。
