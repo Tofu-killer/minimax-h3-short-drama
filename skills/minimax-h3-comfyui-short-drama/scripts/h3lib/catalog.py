@@ -82,7 +82,8 @@ def check(episode_path: Path, catalog_path: Path) -> list[str]:
         bound_names = {x.name for pid in seg.prop_ids for x in ep.props if x.id == pid}
         for pid, ns in names.items():
             item = cat[pid]
-            if Path(str(item.get("path", item.get("file", "")))).name in bound_files or any(n in bound_names for n in ns if n):
+            item_files = {Path(f).name for f in item.get("reference_images", [])}
+            if (item_files & bound_files) or any(n in bound_names for n in ns if n):
                 continue
             if any(n and n in text for n in ns) and pid not in bound:
                 problems.append(f"segment {seg.id}: mentions catalog item {pid!r} ({ns[0]}) but prop_ids does not bind it")
