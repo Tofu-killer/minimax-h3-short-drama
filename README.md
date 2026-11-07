@@ -28,6 +28,17 @@
 | [12 公开工作流盘点](docs/12-public-workflows.md) | 官方 10 个原生模板、导演台、lightx2v、Multishot 逐节点参数；按用途推荐；JSON 已收进 `workflows/` |
 | [11 加速方案](docs/11-acceleration.md) | Turbo LoRA 版本、步数、shift、强度建议，画质代价与规避，其他加速手段叠加原则 |
 | [09 Toonflow 剖析](docs/09-toonflow-analysis.md) | 20k star 开源短剧平台的架构、13 步 skill、H3 供应商协议、ComfyUI 接入方式、MCP 接管路线，以及与本仓库的组合建议 |
+| [13 GitHub 全量调研](docs/13-github-survey/00-catalog.md) | 1750+ 个 H3 相关仓库目录 + 7 簇源码级精读（导演台、续接、加速、提示词工具、agent skill、画质、LoRA），每簇附可写进 skill 的规则 |
+
+## 可安装 Skill（GitHub 全量调研的沉淀）
+
+[`skills/minimax-h3-comfyui-short-drama/`](skills/minimax-h3-comfyui-short-drama/SKILL.md)：给 Claude Code / Codex / OpenCode 等 agent 安装后，它就知道如何在本地 ComfyUI 上用 H3 从剧本做到成片——环境盘点、24 GB 草稿档 / 精修档加速组合、官方格式提示词与短剧对白规则、分镜与角色卡、段间续接、768P→1080p 画质流水线、QC 与拼接、生态地图与禁忌清单，附校验 / 构建 / 提交 / QC 脚本与 eval 用例。
+
+```bash
+npx skills add https://github.com/Tofu-killer/minimax-h3-short-drama --skill minimax-h3-comfyui-short-drama
+```
+
+调研底稿：[`docs/13-github-survey/`](docs/13-github-survey/00-catalog.md)——1924 个 GitHub 仓库枚举 → 1750+ 相关 → 7 簇 ~170 个仓库源码级精读。
 
 ## 参考实现与模板
 

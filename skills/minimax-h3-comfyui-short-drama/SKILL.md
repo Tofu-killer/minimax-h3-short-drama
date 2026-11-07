@@ -25,10 +25,10 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 | 1 | 确认风格（电影质感 / 漫剧）、画幅（16:9 默认 1344×768 草稿）、单集时长、每段时长 | `assets/style-*.md` |
 | 2 | 建角色卡（脸 / 服装 / 全身 3 图）、场景空景、道具白底图、2–15 s 干净音色；写识别短语 + 声音短语 | `references/storyboard-and-assets.md` §3 |
 | 3 | 把剧本切成 8–15 s 段（草稿期 5–10 s），每段 2–4 子镜头，用 `{asset_id}` 占位符写；跑 `scripts/validate_episode.py` | `references/storyboard-and-assets.md` §1–2 |
-| 4 | `scripts/build_prompts.py` 生成每段提示词与媒体顺序；人工过一遍 §8 自检清单 | `references/prompt-format.md` |
+| 4 | `scripts/build_prompts.py` 生成每段提示词与媒体顺序；`scripts/lint_prompt.py` 机检，FAIL 不提交；本地 Ollama 改写只用于三段式，六段式手写 | `references/prompt-format.md` |
 | 5 | 草稿档（Turbo 8 步 + Sage + 768P）每段 2–4 个 seed；`scripts/comfy_submit.py --batch` | `references/local-stack-and-acceleration.md`、`references/comfyui-nodes.md` |
-| 6 | 中选段精修：latent 超分二采 / 像素超分 / 续接修补 | `references/quality-pipeline.md`、`references/continuity-long-video.md` |
-| 7 | `scripts/qc_probe.py` + `scripts/contact_sheet.sh`；字幕后期烧；统一铺乐；concat | `references/qc-and-assembly.md` |
+| 6 | 中选段**同 seed** 精修：LBH latent 放大 + σ 0.45 二采（音频钉死）→ 1920×1088；小脸先修再放大；只有单镜 > 15 s 才续接 | `references/quality-pipeline.md`、`references/continuity-long-video.md` |
+| 7 | `scripts/qc_probe.py` + `scripts/contact_sheet.sh` + 人眼复核；剪掉段尾 1 s 定格、裁起始音节；字幕后期烧；统一响度与铺乐；concat | `references/qc-and-assembly.md` |
 
 生态里每类任务该选哪个仓库、为什么，见 `references/ecosystem-map.md`；所有已知禁忌集中在 `references/pitfalls.md`。
 
@@ -46,6 +46,14 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 10. **抽卡有上限**：同一提示词 3 次同样问题 = 改提示词或分镜，不是换 seed。
 11. **每段写 `end_state` 与 `continuity`**，下一段从上一段终态开场；跨段衔接优先「尾帧→首帧」或 latent 续接节点，不写「continue the previous video」。
 12. **可复现**：任何一段都能从 `prompts/ + bible/ + project.yaml` 重生成；参数写进 `logs/takes.csv`。
+13. **短剧默认硬切，不续接**：每镜 5–8 s 独立 Ref2VA + 同一组参考图 + 音色锚；一条续接链 ≤ 4 段，链上关 Spectrum、不改分辨率 / LoRA / shift。
+14. **段尾写 0.5 s 收束 + 1 s 定格，拼接时剪掉**；下一段同时投喂母版（角色板 / 场景母版）与截取的末帧，首镜同档景别起手。
+15. **有台词的镜头整镜只做说话**；单段说话人 ≤ 2；台词文字永不经 LLM 改写；说话重讲 / 含糊先换 seed。
+16. **每步落盘 + 选择卡**：会花 GPU 时间的步骤前给用户一张选择卡（推荐项放第一），产物带 seed / 参数 / 哈希，重跑幂等跳过已完成段。
+
+## 单段样片先行
+
+先做 1 段「最能暴露问题」的样片（主角正脸 + 一句中文对白 + 一次有动机运镜 + 手部道具）走完 0–7，再扩到 30 s（约 3 段），再 60 s。每次重抽只改一个变量；同一错误连续两批无改善就回上层（资产 / 分镜），不再抽卡。
 
 ## 和用户沟通时
 
@@ -64,6 +72,7 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 | `scripts/qc_probe.py <mp4…> --expect-seconds 10 --expect-size 1344x768` | ffprobe 技术 QC：分辨率/时长/帧率/音轨/削波/冻结/黑场 |
 | `scripts/contact_sheet.sh <mp4…>` | 4×3 联络表，供视觉 QC |
 | `scripts/extract_tail_frame.py <mp4> --out tail.png --trim-freeze 1.0` | 截末帧（duration−0.2 s）作下一段首帧/参考，并剪掉声明的 1 s 定格 |
+| `scripts/lint_prompt.py <prompt.txt> --seconds 10 --images 4 --audios 1` | 提示词机检：字段顺序、时码递增与 1.2 s 下限、17k+5 有效时长、`<d>` 配对、标签先定义后引用、retention 关键词、否定句、静止句、全角符号、字数 |
 | `scripts/fetch_official_guides.sh` | 拉取 MiniMax 官方提示词指南原文作对照 |
 | `scripts/h3lib/catalog.py build <dir> --kind prop` | 把道具图目录化（稀有度从路径解析），供 `--catalog` 检查 |
 

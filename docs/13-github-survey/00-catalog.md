@@ -2,7 +2,19 @@
 
 抓取日期：2026-11-07。方法：对 GitHub Search API 跑 29 组查询（`minimax h3`、`minimaxh3`、`hailuo`、`ref2va`、`fl2va`、`topic:minimax-h3`、`topic:comfyui minimax` 等，每组最多 300 条），去重后得到 1924 个仓库，按「名称/描述/topic 同时命中 H3 与 MiniMax/ComfyUI」过滤出 1753 个相关仓库（已剔除 API 中转/报价类刷榜仓库 171 个左右）。其中 ComfyUI 相关 **991** 个，非 ComfyUI（skill、API、部署、提示词库等）**762** 个。
 
-分类标签由关键词自动打上，仅作导航；精读结论见同目录下的 `01-*.md` 到 `09-*.md`，提炼后的可安装 skill 见仓库根目录 `skills/`。
+分类标签由关键词自动打上，仅作导航。源码级精读按簇分在：
+
+| 文件 | 簇 | 仓库数 |
+|------|----|------|
+| [01-directors-and-timelines.md](01-directors-and-timelines.md) | 导演台 / 时间线 / 分镜编排 | 23 |
+| [02-long-video-continuation.md](02-long-video-continuation.md) | 长视频 / 片段续接 | 19 |
+| [03-acceleration.md](03-acceleration.md) | 加速 / 显存 / 量化 / 注意力 / 缓存 / 蒸馏 | 29 |
+| [04-prompting-tools.md](04-prompting-tools.md) | 提示词工具 / 本地 Context-IR / 案例库 | 23 |
+| [05-agent-skills-and-drama-pipelines.md](05-agent-skills-and-drama-pipelines.md) | Agent skill 套件 / 短剧漫剧全自动流水线 | 26 |
+| [06-quality-upscale-refine-control.md](06-quality-upscale-refine-control.md) | latent 超分 / 精修 / 人脸 / 音频 / 单帧 / ControlNet / 换人 | 27 |
+| [07-lora-training-and-misc.md](07-lora-training-and-misc.md) | LoRA 训练 / 风格与角色 LoRA / 可控性杂项 / 多卡 | 20+ |
+
+全部结论提炼成可安装 skill：[`skills/minimax-h3-comfyui-short-drama/`](../../skills/minimax-h3-comfyui-short-drama/SKILL.md)。
 
 原始数据：`docs/13-github-survey/data/relevant.json`（含 stars、forks、license、topics、命中查询）。
 
