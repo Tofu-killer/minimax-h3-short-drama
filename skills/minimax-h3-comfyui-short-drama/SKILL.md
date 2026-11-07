@@ -40,7 +40,7 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 4. **台词预算 ≤ (段长−2 s)×4.5 字**；超了拆段，不要让角色说快。
 5. **参考媒体一职责一张图**：脸 / 服装 / 环境 / 道具 / 音色分开；编号用脚本替换，不手写 `<Picture N>`。
 6. **剧情里出现的道具必须有参考图并声明 `the exact item shown in <Picture N>`**，否则模型一定会编；等级框、UI、字幕一律后期叠。
-7. **CFG 固定 1.0**；Turbo LoRA 用与分辨率匹配的版本（1344×768 用 `_768p_` 版，SigmaShift 视频 6 / 音频 3；544p 版配 12 / 3）。
+7. **CFG 固定 1.0**；Turbo LoRA 用与分辨率匹配的版本（1344×768 用 `_768p_` 版）；SigmaShift：FL2V 768p 版视频 6 / 音频 3，Ref2V 与 544p 版 12 / 3（lightx2v 官方只对 FL2V 推荐 6）。
 8. **加速只叠「无损 + 一个蒸馏」**：SageAttention（或 Sol-Attn）+ 一个 Turbo/PDD LoRA；不叠加两个蒸馏 LoRA，不把 SageAttention 与 `MiniMaxLowVRAMAttention` 同开，不在精修档开 Spectrum / BlockSparse 等有损方案。
 9. **先关掉所有加速跑一次基线**，再逐个打开，记录每段「步数 / LoRA / 分辨率 / 耗时 / 显存 / 评分」。
 10. **抽卡有上限**：同一提示词 3 次同样问题 = 改提示词或分镜，不是换 seed。

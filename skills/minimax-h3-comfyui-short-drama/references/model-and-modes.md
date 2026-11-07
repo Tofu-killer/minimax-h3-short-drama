@@ -18,7 +18,7 @@
 | DiT（不剪枝，画质更稳） | `minimax_h3_{fl2va,ref2va}_int8_convrot.safetensors` | 31.7 GiB（靠 offload，慢） |
 | 文本编码器 | `qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors`（type=`minimax`） | 14.6 GiB |
 | VAE | 官方视频 VAE + 音频 VAE（fp8mix 对或 fp16/fp32） | 4.9 GiB + 0.6 GiB |
-| 加速 LoRA | lightx2v `minimax_h3_{fl2v,ref2v}_turbo_{4,8}step_v1.x_768p_comfyui_bf16.safetensors`（带 `768p` 后缀的才是 1344×768 训练版，shift 6/3；无后缀是 544p 版，shift 12/3） | 1.8–2.0 GiB |
+| 加速 LoRA | lightx2v `minimax_h3_{fl2v,ref2v}_turbo_{4,8}step_v1.x_768p_comfyui_bf16.safetensors`（带 `768p` 后缀的才是 1344×768 训练版；无后缀是 544p 版。SigmaShift：FL2V 768p 用 6/3，Ref2V 与 544p 版用 12/3） | 1.8–2.0 GiB |
 
 来源：MiniMax-AI/awesome-minimax-h3-integration（官方维护的生态索引，2026-11）。
 

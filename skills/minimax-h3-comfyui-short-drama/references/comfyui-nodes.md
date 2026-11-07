@@ -13,7 +13,7 @@
 | `MiniMaxH3ImageToVideo` | prompt, width, height, length, `first_frame?`, `last_frame?` → positive + latent | FL2VA 权重；0/1/2 张图 = T2VA / I2VA（或 L2VA）/ FL2VA。官方模板默认 1344×768、`res_multistep` + `simple`、Turbo 8 步 LoRA 强度 1 |
 | `MiniMaxH3AddGuide` | positive, vae, audio_vae, latent, `image?`（单帧或 5/22/39…帧的片段）, `audio?`, `frame_idx`（负数从尾部数） → positive | **多关键帧 / 片段锚定**：把一张图或一小段视频（含音轨）钉在任意帧；可链式多个。续接类节点大多基于它：上一段最后 22 帧锚在 frame 0 |
 | `MiniMaxH3ReferenceToVideo` | prompt, vae, audio_vae, width, height, length, `ref_image_size`（`match`/`max`）, `ref_image_1..9`, `ref_video_1..3`, `ref_video_audio_1..3`, `ref_audio_1..3` → positive + latent | Ref2VA 权重。**编号顺序 = 先图（Picture 1..i）、再视频（每个视频的音轨 Audio j 紧跟在 Video k 前）、最后独立音频**。`match` 把参考缩到生成画布面积（省显存），`max` 用 2048 短边（身份更准、更慢）。不接 vae 时参考只进文本编码器 |
-| `MiniMaxH3SigmaShift`（显示名 ModelSamplingMiniMaxH3） | model, shift_video 12, shift_audio 3 | 768p Turbo LoRA 改 6 / 3；544p 版保持 12 / 3 |
+| `MiniMaxH3SigmaShift`（显示名 ModelSamplingMiniMaxH3） | model, shift_video 12, shift_audio 3 | FL2V 768p Turbo LoRA 改 6 / 3；Ref2V 与 544p 版保持 12 / 3 |
 | `MiniMaxH3FunControlNetApply` | model, controlnet 权重, strength 1.0, start/end_percent, `control_video?`, `mask?`, `source_video?` | alibaba-pai Fun-Controlnet-Union（Canny/Depth/HED/MLSD/Pose + 修补），单文件 ~6.8 GiB，CFG 保持 1 |
 | `MiniMaxH3LatentUpscaleWithModel` | latent upscale model（LBH 系列权重）, samples, width 2560, height 1440 | 只放大视频 latent，音频原样透传；做「草稿→精修二采」的第一步 |
 | `PH3ImageConditioning` | prompt, width/height(0=自动), image_1..9 | p-h3-image 单帧出图分支（角色卡 / 剧照） |
@@ -36,7 +36,7 @@
 
 ```
 UNETLoader(ref2va_pruned_int8) → LoraLoaderModelOnly(ref2v_turbo_8step_v1.1_768p, 1.0)
-  → PathchSageAttentionKJ(auto) [KJNodes] → MiniMaxH3SigmaShift(6, 3) → model
+  → PathchSageAttentionKJ(auto) [KJNodes] → MiniMaxH3SigmaShift(12, 3)（FL2V 768p 用 6, 3）→ model
 CLIPLoader(qwen3vl nvfp4, minimax) → clip
 LoadImage ×N（按 media.json 顺序）→ MiniMaxH3ReferenceToVideo(prompt, 1344×768, 243, match) → positive, latent
 SamplerCustomAdvanced(noise seed, model, positive, res_multistep, simple 8, latent) → latent
