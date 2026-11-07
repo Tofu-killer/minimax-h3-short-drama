@@ -22,6 +22,8 @@
 
 **API 格式里的 Autogrow 键名**：`ref_images` / `ref_videos` / `ref_video_audios` / `ref_audios` 是嵌套对象，子键从 0 计：`"ref_images": {"ref_image_0": ["<LoadImage id>", 0], "ref_image_1": …}`。写成列表不报错但参考被**静默忽略、出图全黑**（两个独立项目踩到）。`comfy_submit.py --set` 无法直接写嵌套键，用导出的 API JSON 作模板、只替换 LoadImage 的 `image`。
 
+**FL2VA 链必须接 `VAEDecodeAudio`**：`MiniMaxH3ImageToVideo` 输出的是 AV latent，只接 `VAEDecode` 会误以为「FL2VA 没有音频」。
+
 **Ref2VA 不要照 FL2VA 经验把 `shift_video` 改 6**：整条全黑（manju-studio 实测）；Ref2VA 用 12 / 3 或按 LoRA 说明。
 
 版本提示：FunControl 与 LatentUpscaleWithModel 是 2026-10 之后进主线的；ComfyUI 0.37 若没有这两个节点，先用社区节点 `wyzborrero/ComfyUI-H3-FunControl`、`LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler`，或升级 ComfyUI（升级前确认 Spark-H3 / FeiHou 等依赖 kitchen 的节点兼容）。

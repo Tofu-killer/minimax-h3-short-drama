@@ -125,6 +125,12 @@ def main():
         ctx = body[max(0, nm.start() - 40): nm.end() + 40]
         if not NEG_OK.search(ctx): warns.append(f"negation: …{ctx.strip()}…")
     if STILL.search(body): errs.append("'completely still'-type phrase freezes the whole shot")
+    turns = len(re.findall(r"\b(turns?|spins?|turning|spinning)\b", body, re.I))
+    if turns > 1: warns.append(f"{turns} turn/spin verbs in one segment (keep <= 1; extra turns drift)")
+    micro = re.findall(r"\b(winks?|blows? a kiss|raises? (?:an |one |her |his )?eyebrows?|licks?)\b", body, re.I)
+    if micro: warns.append(f"micro-expression verbs {sorted(set(m.lower() for m in micro))} tend to force a face close-up")
+    if d_open == 0 and not re.search(r"nobody speaks|no words|no dialogue|without speaking", body, re.I):
+        warns.append("no dialogue in this segment: state it ('Nobody speaks, there are no words at all') or the model may improvise speech")
     sound = re.search(r"overall_soundscape:(.*?)(?:\n\s*\n|\Z)", text, re.S)
     music = re.search(r"non_diegetic_music:(.*?)(?:\n\s*\n|\Z)", text, re.S)
     for name, fm in (("overall_soundscape", sound), ("non_diegetic_music", music)):

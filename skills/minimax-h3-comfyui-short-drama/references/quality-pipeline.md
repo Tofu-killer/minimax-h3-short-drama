@@ -71,6 +71,13 @@
 - 道具 / 属性 / 材质类参考可用 Qwen-only 语义参考（`#tag`，不占 9/3/3 名额，256–512 px）；身份与具体帧锚才用原生 VAE 参考。
 - **局部重绘**：LanPaint（见 `lora-and-style.md`）。
 
+## 6e. 源码级补充（`12-fresh-followup.md`）
+
+- 小脸 / 面部重绘起始 σ 固定 **0.80–0.89**（BasicScheduler simple 8 步 shift 12 的 denoise 0.30–0.40 即此区间）；低于 0.6 保留错脸型（三方独立一致）。
+- 像素超分**默认不做**，Lanczos 到交付尺寸；真要做选 RTX VSR（6 s 片 14 s）而非 FlashVSR（220–335 s）；2.5 Mbps 平台压缩后差别可忽略。
+- 空间局部重绘：latent 遮罩只能是 32 px 方块（2×2 patch 最大池化），羽化只在像素域做（expand 6 → feather 6 贴回；面部 feather 24）；LanPaint 去除物体用硬 0/1 像素遮罩 + `NumSteps 2 / Lambda 5 / StepSize 0.2 / Image First / blend_overlap 11`；遮罩要覆盖到段末。
+- 挂 Fun-ControlNet 时不开任何跳块 / 缓存加速：Union 注入块 0/10/20/30/40 与 FinalLayer 必须原生；两个块级缓存同挂不报错但静默出错图。
+
 ## 7. 禁忌
 
 - LoRA 文件必须是带 alpha 的 `*_comfyui_alpha8` 或官方 `*_comfyui_bf16`；缺 PEFT alpha 的会把更新放大 ~16 倍整幅融化。

@@ -17,6 +17,7 @@
 | [09-long-tail-skills-and-misc.md](09-long-tail-skills-and-misc.md) | 长尾扫描：skill / 案例库 / 部署 / API（15 个精读 + 60 余个归类） | 85 |
 | [10-unread-followup.md](10-unread-followup.md) | 补读 01–09 的「未读完」清单（70 项 + 24 个新仓库），含矛盾裁决 | 24+ |
 | [11-fresh-repos.md](11-fresh-repos.md) | 枚举截止后新出现 / 最近一周活跃的仓库（12 个有源码级新实证） | 36 |
+| [12-fresh-followup.md](12-fresh-followup.md) | 新仓库的 16 个关键源码文件逐行补读（阈值、拼接常数、6 处矛盾裁决） | 10 |
 
 全部结论提炼成可安装 skill：[`skills/minimax-h3-comfyui-short-drama/`](../../skills/minimax-h3-comfyui-short-drama/SKILL.md)。
 

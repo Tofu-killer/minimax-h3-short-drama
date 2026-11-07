@@ -43,6 +43,13 @@
 - 生成时声音行全集统一「安静房间底噪 + 动作声 + 干净人声」，环境声 / 音效 / 配乐后期按场景连续铺；原生对白音色每段漂 1.7 半音，用 seed-vc 统一而不是 TTS 重配（egguy886）。
 - `fully_copy` 语音有 ~0.45 s 系统位移；`reference` 音色迁移受角色表观性别强拉——`<Subject>` 描述与音色性别要一致；`Subject N = S N = Audio N` 三线同号并与接线顺序一致。
 
+## 5c. 补充（`12-fresh-followup.md`）
+
+- 多人对白段末尾加 `They speak naturally… Those are the only words.`，单人加 `After that nobody says anything else.`；无台词段写 `Nobody speaks, there are no words at all`。
+- 一段 ≤ 1 次 `turn / spin`；禁 wink / blow a kiss / raise eyebrow / lick（会切脸特写）；LoRA 触发词不进有台词段。
+- 长独白镜用**四分之三正面**，侧脸近景 ≤ 2 s；Dolly Zoom 单独出 6–7 s 单镜再裁 3.2 s 替入，不在 15 s 多镜段内做。
+- 动作镜用首尾帧时写 `Between these two frames the motion is continuous and physically connected, not a cut`。
+
 ## 6. 题材判断（garycaogan 盲评）
 
 - 动漫 / cos 题材 H3 直出可胜 Seedance（4:0）；**中文真人对白戏直出 0:4 输，垫首帧后 4:0 赢**——真人对白段必须先出首帧（或每镜一张分镜图，第一张作后续参考）再 I2VA / Ref2VA。

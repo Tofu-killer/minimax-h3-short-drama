@@ -74,6 +74,16 @@
 - 两端钉死的桥接镜头至少 5 s，并把到达状态写进文本（`…ends with her at the doorway`）。
 - 描述正文 350–500 词；参考 ≤ 9 图 / 3 视频 / 3 音频 / 总 12 件，参考视频/音频各 2–15 s；**要保人物卡时不要同时挂参考视频**（视频里的人脸和音轨会压倒 `<Picture>`/`<Audio>`）。
 
+## 5e. 源码级补充（`12-fresh-followup.md`）
+
+- 上下文长度按机制分写：**Motion-Context 钉头取 5+17k（22/39/56）**、音频单独 `audio_context_length 18`；**遮罩 AV 前缀取 39+51k（39/90/141/192）**——56 只对前者合法。
+- 续接链某段 N 次全败时**保留末次并跳过依赖它的后续段直到下一个硬切**，不要在坏段上继续续。
+- 同场景下一段**首镜禁全景、禁锁位**，跳两级景别开 CU / ECU / MCU 或动作冲击 MS，并写明桥接类型（Cut on Action / Gaze / Barrier Match / Impact Smash）；跨空间必加一段「物理到达」过渡。
+- 视频编辑式分段 Ref2VA：参考视频与配套音轨必须**按本窗口时间段切片**后再编码；运动引导 latent 必须是 2+5k token 且与当前分辨率一致，否则重建引导。
+- 「已知角色进空镜 / 回到已改变状态」：`AddGuide frame_idx 0` 钉空景首帧 + `AddGuide frame_idx -1` 钉终态图 + 身份参考；写 `At 00:01.000, immediately after the initial empty one-second view … walks into the shot from offscreen beyond the near LEFT edge`；`retention_analysis` 写物权台账（谁持有什么）。
+- 对白先入（prelap）段的音频参考会导致**重复词**，验收必须听完整段；场景参考可用罗盘命名的四向空景（north / south / east / west）替代单张母版。
+- 续接段提示词只描述上段末帧画面内之物；续接段 ≤ 1 个 `then`。
+
 ## 6. 每段结束的检查
 
 - 钉头是否被渲染成定格：Motion-Context `tests/freeze_detect.py`，或本 skill 的 `scripts/qc_probe.py`（freezedetect）。
