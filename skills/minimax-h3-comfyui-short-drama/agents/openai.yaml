@@ -1,0 +1,4 @@
+interface:
+  display_name: "MiniMax H3 × ComfyUI 短剧生产"
+  short_description: "本地 ComfyUI 上用 MiniMax H3 从剧本做到成片：加速组合、官方格式提示词、分镜与角色卡、续接、超分、QC"
+  default_prompt: "读取 SKILL.md，先盘点我的 ComfyUI 环境（GPU、模型、LoRA、自定义节点、现有工作流），然后按流程帮我做一段 16:9 的 H3 短剧样片。"
