@@ -61,6 +61,9 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 - 用户问「别人 5070 为什么比我 4090 快」：对比分辨率（544p vs 768p）、步数、是否 Turbo、是否 Windows CUDA 系统内存回退、是否 Sage。给出同口径基准再比。
 - 给出耗时估算时注明口径：分辨率 × 时长 × 步数 × 硬件，并引用 `local-stack-and-acceleration.md` 的基准表。
 - 用户在海外（无 ModelScope / 网盘）时，只给 HuggingFace / GitHub 链接；文件名以 Comfy-Org / lightx2v 的 HF 仓库为准。
+- **只回答问到的范围**：问加速就给两档配置与下载清单，不要把画质流水线、生态黑名单整段搬进来；基准数字一律标注「单机实测，口径 分辨率×时长×步数」。
+- **写提示词时只写参考图里真实存在的锚点**（门、灯、标志）；看不到参考图就用泛指或先问用户，不要凭想象给场景加元素。
+- 不确定 ComfyUI 节点的输入口名称时，以 `references/comfyui-nodes.md`（来自核心源码）为准，不要发明 `duration` / `aspect_ratio` / `prompt_optimizer` 之类的参数。
 
 ## 脚本
 
