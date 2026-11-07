@@ -42,3 +42,41 @@
 - with_skill prompt passes `lint_prompt.py` (0 errors, 0 warnings, 3 shots, 10.125 s), uses the six fields, `<d>[Chinese]` with (S1)/(S2), correct `ref_image_N` = `<Picture N>` wiring, one speaker per shot with the listener's mouth closed, and `non_diegetic_music: N/A`.
 - without_skill prompt fails lint (5 errors): Chinese free text, curly quotes, no [Shot N], no field labels, pictures never referenced; it also invents API-style node params (`duration`, `aspect_ratio`, `prompt_optimizer`, a `scene` port) that the ComfyUI node lacks.
 - Baseline still got the dramatic structure and positive phrasing right, which is why A3 passed; that is the clearest sign A3 is under-specified.
+
+## Round 2 — splits-60s-script-into-segments, decides-continuation-for-long-shot (graded from outputs only)
+
+| case | with_skill | without_skill |
+|---|---|---|
+| splits-60s-script-into-segments | 6/6 | 1/6 |
+| decides-continuation-for-long-shot | 4/5 | 1/5 |
+
+### Assertion weaknesses
+
+**splits-60s-script-into-segments**
+- A5 (dialogue budget) passed for the baseline because the script only has 39 Chinese characters over 60 s; any split satisfies (duration−2)×4.5. The assertion only discriminates on "states the budget rule", and "中文正常语速约 3–4 字/秒" was enough. A harder check: the per-shot budget (每镜 ≤ 18 字, 4 s ≤ 12 字), or a script with one 30+ char line that must be split across shots.
+- A1 fixes "5–7 segments" but the skill's own rule is 60 s ÷ 12 s ≈ 5 ± 20% → 4–6; a 4-segment plan at 15 s each would be skill-compliant yet fail. Conversely the 4–15 s per-segment bound is loose: a 15 s dialogue segment is the thing the skill warns against. Consider "no segment > 12 s unless it carries a long walk/monologue".
+- A6 is the only mechanically verifiable assertion and it carried all the signal this round. Nothing checks `lint_prompt.py` on the built prompts, the `<Picture N>` wiring order (character → scene → prop), or that voice refs go only to speaking characters — which is exactly where the with_skill run found a real builder bug (build_prompts.py attaches `<Audio N>` for every character).
+- No assertion checks fidelity to the script's lines. The baseline rewrote 「上面的人是你爸」 as 「上面的人……是你爸。」 and added terminal periods; the skill says lines are never LLM-rewritten and are checked character by character. A "dialogue text equals the script verbatim" check is cheap and discriminating.
+- No assertion checks the 17k+5 frame grid (8/10/12 s → 192/243/294 frames) or that prompt timecodes stay under the effective duration; the with_skill answer got this right and the baseline's "6s/10s 档位 ... 裁掉多余帧" shows it is where baselines go wrong.
+
+**decides-continuation-for-long-shot**
+- A1 asks the response to "first check whether the monologue can be broken with a reaction or insert shot", but the user prompt says 「中间不切镜」 explicitly. The with_skill answer named the hard-cut default and dismissed it in one clause without offering an insert shot, which I failed strictly. Either the assertion should accept "names hard-cut default and explains why it is overridden", or the prompt should drop the no-cut constraint so pushing back is clearly the right behaviour. As written it mostly measures willingness to contradict the user.
+- A5 is an or-list ("warns about >4 joins / recommends ≥12 steps or a locked audio track, and ≤4 segments"). The baseline passed by recommending a generic external audio track and 2 segments while never mentioning dulling, 12 steps, or the H3 `noise_mask=0` mechanism. Split it: (a) 12 steps or Hard AV / noise_mask=0 for dialogue chains, (b) >4 joins dulling warning. 25 s → 2 segments makes the ≤4 clause trivially true for every answer.
+- A2 and A3 are strong and did the discriminating work (baseline 0/2). A4 is also good but could add "does not instruct the user to write negated camera text (`no camera movement, no cut`)" — the baseline's prompt pattern does exactly that.
+- No assertion checks frame-grid arithmetic for the chain (311+311−22 = 600 = 25.000 s), which the with_skill run got right and the baseline hand-waved ("多数视频 VAE 要求 4n+1 帧"). No assertion checks the explanation of *why* tail-frame→I2VA is bad for a monologue (loses the `<Audio 1>` timbre slot) — the clearest H3-specific signal in the with_skill answer.
+- Nothing checks adherence to the skill's own segment-length guidance for Motion-Context (124–192 frames per segment); the with_skill answer used 311-frame segments. Whether that is a deviation worth penalising is a skill-author call, but it is invisible to the current assertions.
+
+### Per-case comparison
+
+**splits-60s-script-into-segments**
+- with_skill produced the full pipeline artefact set: validated `episode.json` (grader re-ran `validate_episode.py` → OK, 6 segments, 60 s), six built prompts that pass lint, media wiring tables, placeholder asset specs, `cues.srt`, and a 10-point rationale that cites the skill rules (one speaker per shot, listener mouth closed, prop bound with its own image, end_state → continuity, hard cuts).
+- with_skill also surfaced a real skill defect: `build_prompts.py` attaches a voice reference to every character in a segment, contradicting SKILL step 2; the executor post-processed outside the skill into `prompts_final/`. This should be fixed in the builder (only attach `<Audio N>` for characters with dialogue in the segment).
+- without_skill made 10 × 6 s segments, one per beat/line, with no sub-shots, no end_state/continuity, no prop reference, API-style node fields (negative prompt, duration tiers), and silently edited a line of dialogue. Its reasoning ("超过 10 秒后半段容易漂脸") is the generic video-model heuristic the skill exists to override.
+- Baseline's only pass (A5) is a property of the input script, not of the answer.
+- Minor with_skill slips: counted 「所以……我们……」 as 6 chars (4), and the builder-emitted retention text still carries whitelisted negations ("Do not reuse the reference's background", "never transfer facial traits").
+
+**decides-continuation-for-long-shot**
+- with_skill named the right node and exact params (Motion-Context 0.7.1, 22/18, Trim match_tail, Save/Load Latent, LoadLatent never to the decoder), the PrefixStream 39-frame alternative, the Multishot/0.37 and Spectrum warnings, the WhaleTrans seam sentence, 2.4 s no-new-action, 12-step dialogue rule, >4-join dulling, and a complete six-field second-segment prompt. All frame arithmetic verified.
+- with_skill's one miss is the A1 "offer an insert shot first" step; it acknowledged the hard-cut default and moved on because the user forbade cuts. It also went beyond the ask (first-frame still + AddGuide, 1280×704, full QC/stitch section), making a long answer longer.
+- without_skill is a reasonable generic latent-continuation recipe (cut on a breath, identical sampler settings, pass latents not mp4, Color Match, small test first) and is honest about not knowing parameter names, but it mischaracterises Multishot and WhaleTrans, prefers PrefixStream on a guess, writes negated camera text into the prompt, and guesses a 4n+1 frame rule.
+- Baseline's single pass (A5) comes from the or-list wording; its "locked audio track" depends on an a2v mode it cannot confirm and falls back to TTS re-dub + external lip-sync, i.e. not an H3 solution.

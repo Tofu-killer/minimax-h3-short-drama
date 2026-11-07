@@ -4,4 +4,4 @@ focus: trace
 weight: 1
 ---
 
-Dialogue per segment respects roughly 4 Chinese characters per second (total chars ≤ (duration−2)×4.5) and the result states the budget rule.
+Every dialogue line appears verbatim as written in the script (no added ellipses, punctuation or paraphrase), each line is assigned to a shot long enough for it at ~4 chars/s, and the result states the budget rule it applied.

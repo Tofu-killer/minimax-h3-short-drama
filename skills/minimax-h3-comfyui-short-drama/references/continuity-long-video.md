@@ -10,7 +10,7 @@
 - 接缝 FFmpeg 直拼或 4 帧叠化；音频接点放在新段前 0.75 s 内最安静处，40 ms 等功率交叉；**台词不要写在段首/段尾 0.75 s 内**；
 - H3 输出音频是 32 kHz，concat 脚本从文件读采样率，不要写死 48000。
 
-只有「单个镜头必须 > 15 s」（长走位、长独白、歌唱）才启用续接，且**一条链 ≤ 4 段**，更长就在自然转场处重启链并换新的参考锚。
+只有「单个镜头必须 > 15 s」（长走位、长独白、歌唱）才启用续接，且**一条链 ≤ 4 段**，更长就在自然转场处重启链并换新的参考锚。即使用户要求「中间不切镜」，也先用一句话说明硬切 / 插入反应镜的代价与收益，再按用户决定走续接。
 
 ## 2. 两种底层机制
 
@@ -24,7 +24,7 @@
 ## 3. 推荐（RTX 4090，16:9，30–60 s 短剧）
 
 1. **硬切 + Ref2VA 独立成镜**（见 §1）。
-2. **必须续接（Ref2VA）：NikoDemon80/ComfyUI-H3-Motion-Context 0.7.1** —— 不 patch 核心、启动自检。`MiniMaxH3MotionContext context_length=22, audio_context_length=18`；`context_latent` 走 `SaveLatent/LoadLatent`（Load 0 / Save 1 起步）；`Trim match_tail=True`；Load Latent 不接解码器。配 8 步 euler/simple + `ref2v_turbo_8step_v1.1_768p`，1280×704 或 1280×768，每段 124–192 帧。**Spectrum 必须 bypass**。
+2. **必须续接（Ref2VA）：NikoDemon80/ComfyUI-H3-Motion-Context 0.7.1** —— 不 patch 核心、启动自检。`MiniMaxH3MotionContext context_length=22, audio_context_length=18`；`context_latent` 走 `SaveLatent/LoadLatent`（Load 0 / Save 1 起步）；`Trim match_tail=True`；Load Latent 不接解码器。配 8 步 euler/simple + `ref2v_turbo_8step_v1.1_768p`（有对白 ≥ 12 步），1280×704 或 1280×768，**每段 124–192 帧**（更长的段接缝更漂、显存更紧；4090 绝对上限 328 帧），一条链 ≤ 4 段。**Spectrum 必须 bypass**。
 3. **要抽卡 / 分支 / 从任意历史镜头接力：knoic/ComfyUI-MiniMaxH3-PrefixStream（MIT）** —— `Continuation Config = Native Masked AV, continuation_frames 39`，`Applier.context_latent` 接上段完整采样 latent，`Trim Prefix` 接解码后的 IMAGE/AUDIO，`Long Video Stitcher crossfade_frames 4 / luminance_match on / luminance_fade_frames 16 / crossfade_ms 15`，`video_context_denoise` 保持 0。
 4. **分镜图钉关键帧的长镜头（FL2VA）：Herrgott v1.4** —— `masked_context_frames 39`、`duration_mode = Net New Content`、`audio_tail_carryover = Full Previous Tail`、每段带新的 Last Frame 作画质重置。它会装 PackedLayout wrapper，不与 tritant / LongMedia 同装。
 5. **一体化导演台：seesee75-commits/ComfyUI-MiniMaxH3-Director（GPL-3.0，ComfyUI ≥ 0.37）** —— 原生 Loop 把任意时长切成 ~10 s render part，22 帧画面钉 + 24 帧音频钉，16 GB 卡实测 1280×704。附带测量规则见 §4。

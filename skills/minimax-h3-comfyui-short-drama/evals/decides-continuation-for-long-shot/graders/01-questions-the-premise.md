@@ -4,4 +4,4 @@ focus: trace
 weight: 1
 ---
 
-The response first checks whether the 25 s monologue can be broken with a reaction or insert shot (hard cut is the default) before recommending continuation.
+The response names the skill's hard-cut default (independent segments + same references) and explicitly justifies overriding it for this single uncut shot, or offers an insert/reaction shot as an alternative, before recommending latent continuation.

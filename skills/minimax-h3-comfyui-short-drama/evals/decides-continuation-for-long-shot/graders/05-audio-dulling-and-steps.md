@@ -4,4 +4,4 @@ focus: trace
 weight: 1
 ---
 
-The response warns about audio dulling after more than 4 joins / recommends ≥12 steps or a locked audio track for dialogue chains, and keeps the chain at ≤4 segments.
+The response explicitly mentions audio dulling after more than 4 joins AND recommends either >=12 steps for dialogue segments or locking the audio track (noise_mask=0 / external track), and keeps the chain at <=4 segments with each segment within the reference's 124-192 frame guidance (never above 328 frames).
