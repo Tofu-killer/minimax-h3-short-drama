@@ -81,7 +81,10 @@ def main():
     for f in ("subject_definitions", "summary", "retention_analysis", "overall_soundscape", "non_diegetic_music"):
         fm = re.search(f + r":(.*?)(?:\n\s*\n|\Z)", text, re.S)
         if fm and "<d>" in fm.group(1): errs.append(f"<d> inside {f}")
+    if "(S?)" in text: errs.append("unresolved speaker marker (S?)")
     speakers = sorted({int(x) for x in re.findall(r"\(S(\d+)", text)})
+    n_audio_defs = len(re.findall(r"<Audio \d+> is the voice", text))
+    if n_audio_defs > len(speakers): warns.append(f"{n_audio_defs} voice references but only {len(speakers)} speaker(s): attach timbre only for characters who speak in this segment")
     if speakers and speakers != list(range(1, len(speakers) + 1)): errs.append(f"speaker ids not contiguous from 1: {speakers}")
     for vo in re.finditer(r"off-screen voiceover[^<]*<d>.*?</d>(.{0,400})", text, re.S):
         if "lips" not in vo.group(1): errs.append("off-screen voiceover without 'lips remain completely closed' within 400 chars")
