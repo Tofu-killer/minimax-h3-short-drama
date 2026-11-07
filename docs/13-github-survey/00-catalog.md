@@ -13,6 +13,8 @@
 | [05-agent-skills-and-drama-pipelines.md](05-agent-skills-and-drama-pipelines.md) | Agent skill 套件 / 短剧漫剧全自动流水线 | 26 |
 | [06-quality-upscale-refine-control.md](06-quality-upscale-refine-control.md) | latent 超分 / 精修 / 人脸 / 音频 / 单帧 / ControlNet / 换人 | 27 |
 | [07-lora-training-and-misc.md](07-lora-training-and-misc.md) | LoRA 训练 / 风格与角色 LoRA / 可控性杂项 / 多卡 | 20+ |
+| [08-long-tail-comfyui.md](08-long-tail-comfyui.md) | 长尾扫描：ComfyUI 侧 8–40★（29 个有新信息精读 + 180 个归类） | 219 |
+| [09-long-tail-skills-and-misc.md](09-long-tail-skills-and-misc.md) | 长尾扫描：skill / 案例库 / 部署 / API（15 个精读 + 60 余个归类） | 85 |
 
 全部结论提炼成可安装 skill：[`skills/minimax-h3-comfyui-short-drama/`](../../skills/minimax-h3-comfyui-short-drama/SKILL.md)。
 

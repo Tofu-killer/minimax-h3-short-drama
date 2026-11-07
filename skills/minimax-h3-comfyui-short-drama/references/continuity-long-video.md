@@ -59,6 +59,11 @@
 - 两端钉死的桥接镜头至少 5 s，并把到达状态写进文本（`…ends with her at the doorway`）。
 - 描述正文 350–500 词；参考 ≤ 9 图 / 3 视频 / 3 音频 / 总 12 件，参考视频/音频各 2–15 s；**要保人物卡时不要同时挂参考视频**（视频里的人脸和音轨会压倒 `<Picture>`/`<Audio>`）。
 
+## 5b. 长尾补充
+
+- I2V 尾帧接力链用 `anchor_mode=inpaint`（复制 + 遮罩保护）而不是 keyframe（接缝帧间跳变 5.4–6.8× → 1.5–1.7×），上下文 5 帧而不是 22；换人 / 换装续接对上下文做锥形加噪 22/0.45/0.10/3 消色彩残留，加噪结果不回喂。
+- 要跨段保持音色选 FastH3 Omni 或 Pika Flex（全程 Ref2VA，第二段音色匹配 0.89–0.96 vs PDMD 0.72–0.75）；Pika Flex 每 12 段 15 s 有 233 个定格帧需 de-stutter；后段声音发闷改「只续画面、声音重生」；后段变暗变饱和改「只用末帧」。
+
 ## 6. 每段结束的检查
 
 - 钉头是否被渲染成定格：Motion-Context `tests/freeze_detect.py`，或本 skill 的 `scripts/qc_probe.py`（freezedetect）。

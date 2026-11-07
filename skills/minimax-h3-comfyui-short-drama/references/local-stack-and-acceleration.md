@@ -85,6 +85,17 @@
 8. 系统内存 ≥ 64 GB？32 GB 时加 `--disable-pinned-memory`，TE 可放 CPU（约 +27 s/次）
 9. PyTorch / CUDA 过旧 → 升到 cu128+ 后 int8 / nvfp4 核才快；显卡功耗墙拉满
 
+## 5b. 长尾实测补充（`docs/13-github-survey/08-long-tail-comfyui.md`）
+
+- **4090 单段帧数上限 328 帧**（19×17+5）：345 帧有 6/7 概率个别 step 停滞 2.5–4.8×、整段慢 3–17×；1280 宽改 **1216** 让 VAE 解码 tile 28→24、总时长 −15%；VAE tile 保持 256（512+ 不更快且 PSNR 40→21 dB 出格子）。
+- 采样期间不要轮询 ComfyUI HTTP（每次停 18–43 s，`comfy_submit.py --poll` 设 ≥ 20 s）；同配置耗时涨到 1.8× 立即重启 ComfyUI（CUDA 崩溃前兆）；渲染时关杀毒实时扫描。
+- **int8_convrot 底模上挂 LoRA 用运行时分支 / bypass，不反量化合并**：合并往返注入 ~1.5% 权重噪声而 H3 LoRA delta 只有 0.01–0.08%；多 LoRA 用 PowerLoraStack `quantized_layers=auto`，视频风格 LoRA 的 audio 模态缩到 0–0.25。装 LoRA 后日志必须出现 `208 patches attached`。
+- 同一提示词多 seed 抽卡时把条件编码落盘复用（pepikir `H3SaveConditioning/LoadConditioning` 或 CLIPCached），采样图里不放 CLIPLoader；32 GB 内存机器单图 `--cache-none`；TE 与 DiT 放 NVMe（编码 90→25 s）。
+- 若用核心 EasyCache：`end_percent` 封顶 0.70（默认 0.95 后期跳步造成织纹与色块）。
+- Turbo 无 CFG 链路的微调旋钮：Fizgig H3 Tweaks（LoRA 之后、采样器之前）`Detail & Contrast 0.15`、`Prompt Strength 0.2`、`Scene Variation ±0.1–0.3`；不与块跳过类节点同挂。
+- Sol / 块稀疏注意力只在 ≥ 768p 成片档开（1.23–1.27×）；480p 档 1.03× 且高频 −13.8%。
+- 明确别碰：HyperStep / TeaCache（无画质护栏）、AutoContext 整包（patch PackedLayout）。
+
 ## 6. 升级 ComfyUI 前检查
 
 Spark-H3 跳过 0.41（要 0.38.x–0.40.x 或 0.42.x–0.44.x）；Spectrum 需 ≥ `e377e263`；Veda ≥ 0.38；HyperFlow 在 0.37 有「Model Initializing」卡住报告（诊断 `--disable-fast-disk`）；FeiHou 流式块模式不与 kitchen 同用；核心 INT8 已进主线（旧 I8Fast 文件要转换）。

@@ -31,6 +31,19 @@
 | 跨段空间不连续、背景人物移位 | 用「continue the previous video」做续写 | 尾帧→首帧 I2VA，或 latent 续接节点（Motion-Context 类），或 FL2VA 2–4 s 转场段 |
 | 拼接处闪帧 | 边界帧重复 / 不同编码参数 concat | 统一转码后 concat；检查首尾重复帧 |
 
+## B2. 性能悬崖与隐性错误
+
+| 症状 | 原因 | 修法 |
+|------|------|------|
+| 某几步突然慢 3–17× | 4090 单段 > 328 帧（345 帧触发） | 段长 ≤ 328 帧；1280 宽改 1216 |
+| VAE 解码出格子 | tile > 256 | 保持 256 |
+| 右 / 下边缘色条 | 二采 latent 宽高为奇数 | 像素 32 倍数且 latent 偶数 |
+| 重噪二采花屏 | stock `AddNoise` 对 CONST 流二次缩放 | rockerBOO `MiniMaxH3AddNoise` |
+| LoRA 好像没生效 | 日志无 `208 patches attached` | 检查加载顺序 / 文件 |
+| 画质微糊、偏噪 | int8 底模上把 LoRA 反量化合并 | 运行时分支 / bypass |
+| 采样中途卡 18–43 s | 轮询 HTTP | 轮询间隔 ≥ 20 s |
+| 同配置越跑越慢（1.8×） | CUDA 崩溃前兆 | 重启 ComfyUI |
+
 ## C. 组合禁忌（不要同时做）
 
 - 两个蒸馏 LoRA（Turbo + PDD / FastH3 / Hyperflow / DMAD）叠加 → 过蒸馏。

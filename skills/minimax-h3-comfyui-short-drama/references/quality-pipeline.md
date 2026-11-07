@@ -59,6 +59,15 @@
 - **Ref-Patch**（FL2VA 仿 Ref2VA，112 键差分）：已有 int8 Ref2VA 时跳过。
 - **局部重绘**：LanPaint（见 `lora-and-style.md`）。
 
+## 6b. 长尾补充
+
+- 二采 / 放大前 latent 宽高必须为偶数（像素被 32 整除），否则核心 circular padding 在右 / 下边缘出色条（`H3 Latent Upscale By -jingchen573` 或自算）。
+- 手工重噪二采不用 stock `AddNoise`（CONST 流模型会被 `SamplerCustomAdvanced` 二次缩放成花屏），用 rockerBOO `MiniMaxH3AddNoise`，音频分支 sigma 按 shift 3 单独换算。
+- Ref2VA 换人保脸：脸部特写单独作 `<Picture 2>` 并在提示词点名（ArcFace +0.12），同图重复第三次无效。
+- Open-H3-Regenerate-2K 重画时保护人脸：YuNet 脸区图 + `face_strength 0.55`（脸从 σ 0.50 起），只挂 refiner LoRA、不叠 Turbo / Sharp，音频用草稿原音（ArcFace 0.52→0.91）。
+- 道具 / 属性 / 材质类参考可用 Qwen-only 语义参考（`#tag`，不占 9/3/3 名额，256–512 px）；身份与具体帧锚才用原生 VAE 参考。
+- 超分逐镜做，不对成片做；像素超分优先级：RelayVSR ×2（25 s）> RealESRGAN ×2（68 s）> SeedVR2（要纹理时）。
+
 ## 7. 禁忌
 
 - LoRA 文件必须是带 alpha 的 `*_comfyui_alpha8` 或官方 `*_comfyui_bf16`；缺 PEFT alpha 的会把更新放大 ~16 倍整幅融化。

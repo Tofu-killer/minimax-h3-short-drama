@@ -5,7 +5,7 @@
 ## 0. 两条铁律
 
 1. **描述段写英文，台词保持原语言。** 模型的文本编码器在英文结构化描述上训练；台词放在 `<d>[Chinese] …</d>` 里原样保留。
-2. **开源权重是 CFG 蒸馏版，没有负向分支。** 任何「不要 X」「no X」都会被当成正向描述渲染出来。把否定改写成正向锁定：不写 `no jetpack`，写 `his back is bare except for the plain black jacket`。
+2. **开源权重是 CFG 蒸馏版，没有负向分支。** 任何「不要 X」「no X」都会被当成正向描述渲染出来。把否定改写成正向锁定：不写 `no jetpack`，写 `his back is bare except for the plain black jacket`。真的需要「不要 X」时用节点而不是文字：`hako-mikan/comfyui-minimax-h3-negpip`（MODEL 与 CLIP 都过它，写 `(red glow:-3)`，短语优于单词，−1 精确翻转、最多约 −5，可 `@2.5-4.0` 限时段、`@v`/`@a` 限模态；装了它字面括号要写 `\(`）。
 
 ## 1. 模式与首行指令
 
