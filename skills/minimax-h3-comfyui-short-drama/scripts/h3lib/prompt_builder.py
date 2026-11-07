@@ -101,6 +101,9 @@ def build_ref2va(ep: Episode, seg: Segment) -> BuiltPrompt:
     retention: list[str] = []
     nsubj = 0                       # <Subject N> counter (audio definitions must not consume numbers)
     speakers = speaker_ids(seg)     # only characters who speak in THIS segment get a voice reference
+    audio_content: list[dict] = []  # audio is wired after all images: characters, scene, props, then audio
+    audio_defs: list[str] = []
+    audio_ret: list[str] = []
 
     # characters first (identity), then scene, then props
     for cid in seg.character_ids:
@@ -126,9 +129,9 @@ def build_ref2va(ep: Episode, seg: Segment) -> BuiltPrompt:
                          + ". Do not reuse the reference's background.")
         if c.voice_reference and cid in speakers and aud < MAX_REF_AUDIO:
             aud += 1
-            content.append(audio_item(c.voice_reference, "reference_audio"))
-            defs.append(f"<Audio {aud}> is the voice-timbre reference for {subj} ({speakers[cid]}).")
-            retention.append(f"<Audio {aud}>: reference - timbre only; do not carry its original words into the video.")
+            audio_content.append(audio_item(c.voice_reference, "reference_audio"))
+            audio_defs.append(f"<Audio {aud}> is the voice-timbre reference for {subj} ({speakers[cid]}).")
+            audio_ret.append(f"<Audio {aud}>: attribute_transfer - voice timbre only; its original words are not carried into the video.")
 
     sc = ep.scene(seg.scene_id)
     if sc.reference_images and pic < MAX_REF_IMAGES:
@@ -154,6 +157,10 @@ def build_ref2va(ep: Episode, seg: Segment) -> BuiltPrompt:
             defs.append(f"{subj} is {p.name}, the exact item shown in <Picture {pic}>: {p.description.rstrip('.')}.")
             retention.append(f"{subj}: fully_preserved - the item's shape, colour, markings and material are retained exactly; "
                              f"no other item is substituted.")
+
+    content.extend(audio_content)
+    defs.extend(audio_defs)
+    retention.extend(audio_ret)
 
     # every bound asset gets a label even without a reference image (name fallback)
     for cid in seg.character_ids:

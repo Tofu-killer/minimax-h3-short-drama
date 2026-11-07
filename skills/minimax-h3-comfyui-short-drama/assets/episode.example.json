@@ -11,7 +11,7 @@
     "assets/lin_lan_face.png",
     "assets/lin_lan_outfit.png"
    ],
-   "voice_reference": null,
+   "voice_reference": "assets/lin_lan_voice.wav",
    "identity_phrase": "a woman in her early thirties with a sharp oval face, short black hair tucked behind her ears, dark brown eyes, a fitted black suit jacket over a white shirt, and a thin silver watch on her left wrist",
    "voice_phrase": "a woman in her early thirties with a low, controlled voice and clipped, unhurried pace"
   },
@@ -21,7 +21,7 @@
    "reference_images": [
     "assets/dr_zhou_face.png"
    ],
-   "voice_reference": null,
+   "voice_reference": "assets/dr_zhou_voice.wav",
    "identity_phrase": "a man in his fifties with a lean face, grey-streaked short hair, thin gold-rimmed glasses, a white doctor's coat over a pale blue shirt, and a stethoscope around his neck",
    "voice_phrase": "a man in his fifties with a tired, gravelly voice and slow, measured delivery"
   }

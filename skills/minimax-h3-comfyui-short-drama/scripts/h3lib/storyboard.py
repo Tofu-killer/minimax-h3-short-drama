@@ -137,6 +137,7 @@ def load_episode(path: str | Path) -> Episode:
     for s in raw["segments"]:
         s = {**s, "first_frame": _resolve(base, s.get("first_frame")), "last_frame": _resolve(base, s.get("last_frame"))}
         s.pop("first_frame_prompt", None)   # LLM-stage field, not needed at generation time
+        s.setdefault("style", raw.get("style", "Live-action, cinematic"))   # episode style is the default for every segment
         shots = []
         for sh in s["shots"]:
             dl = [Dialogue(**d) for d in sh.get("dialogue", [])]
