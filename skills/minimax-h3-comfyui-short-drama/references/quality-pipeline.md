@@ -1,6 +1,6 @@
 # 画质流水线：768P 草稿 → 1920×1088 成片（含角色卡、人脸、音频、可控性）
 
-> 依据 `docs/13-github-survey/06-quality-upscale-refine-control.md`（27 个画质 / 可控性仓库源码级精读）。前提：RTX 4090 24 GB、int8_convrot、Turbo LoRA、Sage。目标 16:9 1920×1088。
+> 依据 `docs/13-github-survey/06-quality-upscale-refine-control.md`（27 个画质 / 可控性仓库源码级精读），并已并入长尾补充、补读新增与新仓库实证（`11-fresh-repos.md`）。前提：RTX 4090 24 GB、int8_convrot、Turbo LoRA、Sage。目标 16:9 1920×1088。
 
 ## 0. 几条路线一览
 
@@ -18,6 +18,7 @@
 - **带表情 / 台词的角色页**：OrbitSheets，硬切 6 视图，每视图 0.75–1 s，124 帧；写 `[Shot N] At 00:MM.mmm, the shot cuts to … locked-off static camera`，转动 ≤ 40°/s。
 - **真单帧剧照 / 首帧**：`FizgigH3StillLatent + StillDecode`，≥ 3 MP（如 2304×1296），turbo v4_step600_ema **0.38** + er_sde simple 20 步；8 MP 海报无 Turbo 50 步。不用 `minimax_h3_t1_image_vae` 解视频。
 - **姿势参考 → 角色设定单帧**：SingleFrame `Start End Frame Interpolate`（首帧姿势、末帧角色），RoPE patch 0–0.25。
+- **角色设定卡防撞脸**：每人 3–5 处骨相 + 发型 / 体型 / 体态 / 主色 / 标志六格，同项目禁复用「鼻梁挺直 / 黑发束髻 / 高挑修长」；写族裔、`height_cm + build`、一个跨场景锚点；给 H3 的参考用多张单人图而非一张多格板。
 - 三视图 LoRA 的选型与 RefMod 见 `lora-and-style.md`。
 
 ## 2. Stage 1 · 草稿抽卡
@@ -30,6 +31,8 @@
 ## 3. Stage 2 · 1 MP 阶段修补（放大前做）
 
 - **远景小脸**：Carasibana FaceRefine：Track + Crop（768 画布，`largest_face` / identity_reference）→ Ref2VA 768×768 + 角色图 → Inject Video Latent → `MiniMaxH3NativeAudioLock`（原声保口型）→ Per-Frame Denoise 小脸 1.0 / 大脸 0.35（30 px / 120 px，smooth 9）→ simple 8 步 **denoise 0.40** + 8 步 Turbo → Stitch `face_only` dilation 24 feather 24。动漫换 deepghs 检测器 + clip_vision。
+- **远景小脸（σ 重绘路线）**：只处理 **30–140 px** 的匹配脸，裁 2.6× 方框到 512²，σ 0.8 起重绘（0.6 更锐但保留错脸型），椭圆 0.75 羽化 0.35 贴回并颜色匹配。
+- **人脸身份门禁**：YuNet 0.6 + SFace，同人阈值 0.363，锁脸交付 keep 0.55（严格 0.65）；只信 ≥ 40 px 正脸、逐帧独立匹配不链式；分数是警告，真实感优先。
 - **快动作糊**：MAINodes Motion Lab de-rope（inject 0.5 / 0.7）或 RelayHires 的「4 步 DMAD 从 0.8」。
 - denoise 换算（shift 12）：`BasicScheduler denoise` 0.25 = σ 0.80，0.05 = σ 0.39；不要套 SDXL 经验，不要用 SplitSigmas 做低去噪。
 
@@ -38,9 +41,15 @@
 **首选 ResCascade**：`LTXVSeparateAVLatent` → `H3 Hires Fix`（内置 LBH 3D，`lbh_model` fp16，`width 1920 / height 1088`，**`sigma_start 0.45`**，DMAD 4step LoRA 0.8 + `steps_override 2`；无 DMAD 时 `steps_override 0` 走原生 4 步；有 FaceRefine 结果接 `face_atlas`）→ `SamplerCustomAdvanced` euler + 节点输出 sigmas → 解码；音频自动钉死为一采原声。
 
 **手搓等价**：`MinimaxH3LatentUpscaler3D`（`minimax_h3_latent_upscaler_3d_fp16.safetensors`，放 `models/latent_upscale_models/`；或原生 `MiniMaxH3LatentUpscaleWithModel`）只放大 video latent → `LTXVConcatAVLatent` 拼回原音频 → 在 1920×1088 **重建**同 prompt / 参考的 conditioning（Ref2VA 必须重建 Guider）→ `ManualSigmas 1.0, 0.7, 0.4, 0`（1 步 turbo 头 + 2 步 euler 尾；3 步尾 +17% 闪烁）→ euler + DisableNoise。
-- σ 起点含义：0.31 软、**0.45 保 take**、0.56 重画五官、0.9 换片。
-- 二采永远钉死一采音频（Tr1dae `audio_denoise=0`、bbaudio / T8 `preserve_first_pass`）。
+- σ 起点含义：0.31 软、**0.45 保 take**、0.56 重画五官、0.9 换片。**按目的选三档**：保道具 / 文字 `0.6316, 0.3158, 0`；保纹理一致 σ 0.45 起；`0.9035` 起只用于「换尺寸再抽」（会把纸箱标签改色变透明）。
+- 二采永远钉死一采音频（Tr1dae `audio_denoise=0`、bbaudio / T8 `preserve_first_pass`、LongMedia Refine 音频 exact passthrough：audio noise 0 + mask 0，16 GB 卡 refine 窗 73 帧）。
 - 二采用 euler / res_multistep 非祖先采样器；LMS 类多步法会把逐帧纹理外推成颗粒。
+- 二采 / 放大前 latent 宽高必须为偶数（像素被 32 整除），否则核心 circular padding 在右 / 下边缘出色条（`H3 Latent Upscale By -jingchen573` 或自算）。
+- 手工重噪二采不用 stock `AddNoise`（CONST 流模型会被 `SamplerCustomAdvanced` 二次缩放成花屏），用 rockerBOO `MiniMaxH3AddNoise`，音频分支 sigma 按 shift 3 单独换算。
+- 「8plus2」两段式：草稿 8 步 → 1.8× latent → `BasicScheduler(8)` → `SplitSigmas(6)` 取**输出槽 1** 跑 2 步 + refiner LoRA；≤ 7 s 片**不要瓦片二采**（更慢更糊构图变宽）；删 refiner LoRA 加步数救不回锐度。
+- DMAD rank-39 两采 A/B：S1 864×480 8 步 er_sde/beta → LBH 放大 → S2 2 步 er_sde/`linear_quadratic` denoise 0.4。
+- muse Refine V2：beta / 8 步 / 首段 2 步 / 1.0 MP。
+- VDN 二采：VDN 8 → 2× → VDN 4 或原生 H3 + EMA-B LoRA，VDN 分支不再叠 Turbo。
 
 **漫剧**：RelayHires：AnimeSR 放大 → taeh3 编码 → 1 步 DMAD 0.8 从 σ 0.60，`window 4 / anchor_stride 8`；真人改 `RealESRGAN_x2plus`。
 
@@ -49,41 +58,18 @@
 
 ## 5. Stage 4 · 可选最后一跳
 
-- 想要 2K 重绘质感且接受细节变化：Open-H3-Regenerate 3 步（σ `0.909375, 0.857, 0.667, 0`；首尾帧钉住的草稿改 `start_sigma 0.8` 保脸），需 FL2VA + 12.4 GB 合并 LoRA + 6.5 GB 快速 VAE；4090 预计慢数倍，先只做 1080P。
-- 只要更大尺寸：像素 SR（RelayVSR X4 / RealESRGAN_x2plus / SeedVR2）。
+- 想要 2K 重绘质感且接受细节变化：Open-H3-Regenerate 3 步（σ `0.909375, 0.857, 0.667, 0`；首尾帧钉住的草稿改 `start_sigma 0.8` 保脸），需 FL2VA + 12.4 GB 合并 LoRA + 6.5 GB 快速 VAE；4090 预计慢数倍，先只做 1080P。Regenerate 类默认：denoise 0.30（0.15–0.35 = 起始 σ）、3 步、shift 6、×2。Open-H3-Regenerate-2K 重画时保护人脸：YuNet 脸区图 + `face_strength 0.55`（脸从 σ 0.50 起），只挂 refiner LoRA、不叠 Turbo / Sharp，音频用草稿原音（ArcFace 0.52→0.91）。
+- 只要更大尺寸：像素 SR（RelayVSR X4 / RealESRGAN_x2plus / SeedVR2）。超分逐镜做，不对成片做；像素超分优先级：RelayVSR ×2（25 s）> RealESRGAN ×2（68 s）> SeedVR2（要纹理时）；**真人近景优先 RTX VSR，不用 SeedVR2 / SoL-Refiner（改脸改嘴）**。FlashVSR 2× 用 `--tile_size 256 --tile_overlap 64 --frame_chunk_size 50 --keep_models_on_cpu`（128/24 出网格），完成后 `ffprobe nb_frames` 核帧数并用 `-map 0:v -map 1:a:0` 回灌原音轨。
 
 ## 6. 可控性
 
 - **FunControl**（核心已内置 `MiniMaxH3FunControlNetApply`）：多个 ControlNet 的强度是共享预算，depth 0.3 + pose 0.7，总和 ≤ 1.0；锁人用 pose 不用 depth；`end_percent 0.6`；strength > 1 无效；小人物先放大取景；稀疏注意力的 `morton` 必须 false 并接在 ControlNet 之前。
 - **复刻参考片走位**：`reshot ref.mp4 --target h3 --control pose`（武打 / 舞蹈）或 depth，提示词写明 `<Video 1>` 里发生了什么并声明 `its grey depth look is not transferred`。
 - **Ref-Patch**（FL2VA 仿 Ref2VA，112 键差分）：已有 int8 Ref2VA 时跳过。
-- **局部重绘**：LanPaint（见 `lora-and-style.md`）。
-
-## 6b. 长尾补充
-
-- 二采 / 放大前 latent 宽高必须为偶数（像素被 32 整除），否则核心 circular padding 在右 / 下边缘出色条（`H3 Latent Upscale By -jingchen573` 或自算）。
-- 手工重噪二采不用 stock `AddNoise`（CONST 流模型会被 `SamplerCustomAdvanced` 二次缩放成花屏），用 rockerBOO `MiniMaxH3AddNoise`，音频分支 sigma 按 shift 3 单独换算。
+- **RefMod**：Full Reference ≈ 330 token/图@512，`budget_policy=error` 看真实计数；特写肖像放第一张定画布；头替换用 `head_swap_v1.0_r32` 不是 character swap。
 - Ref2VA 换人保脸：脸部特写单独作 `<Picture 2>` 并在提示词点名（ArcFace +0.12），同图重复第三次无效。
-- Open-H3-Regenerate-2K 重画时保护人脸：YuNet 脸区图 + `face_strength 0.55`（脸从 σ 0.50 起），只挂 refiner LoRA、不叠 Turbo / Sharp，音频用草稿原音（ArcFace 0.52→0.91）。
 - 道具 / 属性 / 材质类参考可用 Qwen-only 语义参考（`#tag`，不占 9/3/3 名额，256–512 px）；身份与具体帧锚才用原生 VAE 参考。
-- 超分逐镜做，不对成片做；像素超分优先级：RelayVSR ×2（25 s）> RealESRGAN ×2（68 s）> SeedVR2（要纹理时）。
-
-## 6c. 补读新增
-
-- Regenerate 类默认：denoise 0.30（0.15–0.35 = 起始 σ）、3 步、shift 6、×2；muse Refine V2：beta / 8 步 / 首段 2 步 / 1.0 MP；LongMedia Refine 音频 exact passthrough（audio noise 0 + mask 0），16 GB 卡 refine 窗 73 帧。
-- VDN 二采：VDN 8 → 2× → VDN 4 或原生 H3 + EMA-B LoRA，VDN 分支不再叠 Turbo。
-- 像素超分：FlashVSR 2× 用 `--tile_size 256 --tile_overlap 64 --frame_chunk_size 50 --keep_models_on_cpu`（128/24 出网格），完成后 `ffprobe nb_frames` 核帧数并用 `-map 0:v -map 1:a:0` 回灌原音轨；**真人近景优先 RTX VSR，不用 SeedVR2 / SoL-Refiner（改脸改嘴）**。
-- 角色设定卡防撞脸：每人 3–5 处骨相 + 发型 / 体型 / 体态 / 主色 / 标志六格，同项目禁复用「鼻梁挺直 / 黑发束髻 / 高挑修长」；写族裔、`height_cm + build`、一个跨场景锚点；给 H3 的参考用多张单人图而非一张多格板。
-
-## 6d. 新仓库实证（`11-fresh-repos.md`）
-
-- **二采 σ 三档按目的选**：保道具 / 文字 `0.6316, 0.3158, 0`；保纹理一致 σ 0.45 起；`0.9035` 起只用于「换尺寸再抽」（会把纸箱标签改色变透明）。
-- 「8plus2」两段式：草稿 8 步 → 1.8× latent → `BasicScheduler(8)` → `SplitSigmas(6)` 取**输出槽 1** 跑 2 步 + refiner LoRA；≤ 7 s 片**不要瓦片二采**（更慢更糊构图变宽）；删 refiner LoRA 加步数救不回锐度。
-- DMAD rank-39 两采 A/B：S1 864×480 8 步 er_sde/beta → LBH 放大 → S2 2 步 er_sde/`linear_quadratic` denoise 0.4。
-- 远景小脸修复只处理 **30–140 px** 的匹配脸，裁 2.6× 方框到 512²，σ 0.8 起重绘（0.6 更锐但保留错脸型），椭圆 0.75 羽化 0.35 贴回并颜色匹配。
-- 人脸身份门禁：YuNet 0.6 + SFace，同人阈值 0.363，锁脸交付 keep 0.55（严格 0.65）；只信 ≥ 40 px 正脸、逐帧独立匹配不链式；分数是警告，真实感优先。
-- 胸像 / 口播拼接前裁底部 12%（H3 在下缘凭空长手指）、裁每段头 0.1 s + 音频 10 ms 淡入（段首爆音 863 → 34）、脸只放不缩 ≤ 1.35×。
-- RefMod：Full Reference ≈ 330 token/图@512，`budget_policy=error` 看真实计数；特写肖像放第一张定画布；头替换用 `head_swap_v1.0_r32` 不是 character swap。
+- **局部重绘**：LanPaint（见 `lora-and-style.md`）。
 
 ## 7. 禁忌
 

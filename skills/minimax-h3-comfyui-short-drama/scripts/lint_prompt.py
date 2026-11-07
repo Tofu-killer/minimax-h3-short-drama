@@ -4,7 +4,7 @@
     python3 lint_prompt.py prompts/ep01/s03.txt --seconds 10 [--images 4 --videos 0 --audios 1] [--mode ref2va|i2va|fl2va|l2va|t2va]
 
 Checks the machine-checkable rules collected from 23 prompt tools and the
-official guides (see references/prompt-format.md §7b/§8):
+official guides (see references/prompt-format.md §0–§5 and §8):
 field names + order, [Shot 1] without timecode, strictly increasing MM:SS.mmm
 below the effective duration (17k+5 frame grid), >=1.2 s per shot, <d> tags
 paired and starting with [Language], (S1..) numbering, labels defined before
