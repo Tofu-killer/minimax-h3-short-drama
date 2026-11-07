@@ -1,0 +1,153 @@
+{
+  "title": "蜂医的复仇 EP01 · 重写示例",
+  "ratio": "16:9",
+  "style": "Live-action, cinematic, photoreal military-game look",
+  "synopsis": "蜂医独自跑刀进大坝设施，撬开一个大保险柜，刚看到红色稀有物品，威龙推门进来，当面拿走。",
+  "characters": [
+    {
+      "id": "fengyi",
+      "name": "蜂医",
+      "identity_phrase": "a man in his early thirties with short blond hair, a trimmed blond beard, blue eyes, a black over-ear headset with a boom mic, an olive-green plate carrier with a white medical cross patch over a grey long-sleeve shirt, dark-green cargo trousers and green-and-black tactical gloves",
+      "voice_phrase": "a man in his early thirties with a bright, slightly nasal voice and a quick, cocky pace",
+      "reference_images": ["assets/lin_lan_face.png", "assets/lin_lan_outfit.png"],
+      "voice_reference": null
+    },
+    {
+      "id": "weilong",
+      "name": "威龙",
+      "identity_phrase": "a tall man in a tan ballistic helmet with a dark tinted visor covering the eyes, a tan plate carrier over a grey-blue combat shirt, tan gloves, nothing worn on his back",
+      "voice_phrase": "a man with a deep, flat, unhurried voice",
+      "reference_images": ["assets/father_face.png"],
+      "voice_reference": null
+    }
+  ],
+  "scenes": [
+    {
+      "id": "dam_walkway",
+      "name": "the dam-top walkway",
+      "description": "a concrete walkway on top of a dam, steel railings on both sides, shipping containers and a small pump house at the far end, red rock canyon and blue reservoir behind, hard midday sun",
+      "reference_images": ["assets/scene_station_cafe.png"]
+    },
+    {
+      "id": "office",
+      "name": "the manager's office",
+      "description": "a wood-panelled office: a large grey steel safe with a round dial in the left corner, a heavy desk with a brass lamp in the centre, a leather chesterfield sofa on the right, venetian-blind light stripes on the walls, the only door on the right wall",
+      "reference_images": ["assets/scene_station_cafe.png"]
+    }
+  ],
+  "props": [
+    {
+      "id": "prop_red_loot",
+      "name": "红色稀有物品",
+      "description": "REPLACE WITH A CATALOG ITEM: the exact red-tier item from the 三角洲 asset library, white-background reference",
+      "reference_images": ["assets/prop_paper_cup.png"],
+      "rarity": "red"
+    }
+  ],
+  "segments": [
+    {
+      "id": "s01", "duration": 8, "mode": "ref2va", "scene_id": "dam_walkway",
+      "character_ids": ["fengyi"], "prop_ids": [], "hook_type": "hook",
+      "style": "Live-action, cinematic, photoreal military-game look",
+      "shots": [
+        {"index": 1, "start": 0, "framing": "a wide shot down the length of the walkway",
+         "camera": "The camera holds a static shot",
+         "action": "{fengyi} walks toward the camera along the centre of the walkway, a combat knife held low in his right hand, his left hand resting on his headset; his expression is a confident half-smile, lips closed; he does not look at the camera",
+         "dialogue": [{"speaker": "fengyi", "language": "Chinese", "text": "跑刀出发，今天必出红。", "delivery": "under his breath, to himself"}],
+         "on_screen_characters": ["fengyi"]},
+        {"index": 2, "start": 4.5, "framing": "a medium shot at the steel door at the end of the walkway",
+         "camera": "The camera holds a static shot",
+         "action": "{fengyi} arrives at the grey steel door, pushes it open with his left shoulder, and steps through into the dark interior; the door swings half shut behind him",
+         "dialogue": [], "on_screen_characters": ["fengyi"]}
+      ],
+      "soundscape": "Wind across the dam top, boots on concrete, a distant spillway roar, the steel door's hinge creaking once as it opens.",
+      "music": "N/A", "continuity": "",
+      "end_state": "{fengyi} through the steel door, the walkway empty, the door half open",
+      "negatives": "Only one person is present; the knife stays in his right hand"
+    },
+    {
+      "id": "s02", "duration": 10, "mode": "ref2va", "scene_id": "office",
+      "character_ids": ["fengyi"], "prop_ids": [], "hook_type": "setup",
+      "style": "Live-action, cinematic, photoreal military-game look",
+      "shots": [
+        {"index": 1, "start": 0, "framing": "a medium tracking shot in a dim corridor",
+         "camera": "The camera tracks left with small amplitude at slow speed",
+         "action": "{fengyi} moves along the left wall in a low crouch, knife low in his right hand, stops at an open office doorway and leans his head in to look",
+         "dialogue": [], "on_screen_characters": ["fengyi"]},
+        {"index": 2, "start": 5.0, "framing": "a medium shot inside the office, from the desk toward the safe",
+         "camera": "The camera pushes in with small amplitude at slow speed toward the safe",
+         "action": "{fengyi} slips through the door, takes two steps, and stops one metre in front of the large grey safe in the left corner, facing it; his eyes widen and his mouth opens slightly",
+         "dialogue": [{"speaker": "fengyi", "language": "Chinese", "text": "大……大保险！", "delivery": "in a hushed, excited whisper"}],
+         "on_screen_characters": ["fengyi"]}
+      ],
+      "soundscape": "Fluorescent hum in the corridor, soft boot steps on carpet, a ventilation duct ticking, the whisper close to the mic.",
+      "music": "N/A",
+      "continuity": "Same clothing, headset and knife as the previous segment; he has just entered the building.",
+      "end_state": "{fengyi} standing one metre in front of the closed safe, at frame left, facing it; the office door open behind him at frame right",
+      "negatives": "The office is empty apart from him; the safe is closed"
+    },
+    {
+      "id": "s03", "duration": 10, "mode": "ref2va", "scene_id": "office",
+      "character_ids": ["fengyi"], "prop_ids": ["prop_red_loot"], "hook_type": "setup",
+      "style": "Live-action, cinematic, photoreal military-game look",
+      "shots": [
+        {"index": 1, "start": 0, "framing": "a close-up on the safe dial and his hands",
+         "camera": "The camera holds a static shot",
+         "action": "{fengyi} crouches at the safe, his knife now sheathed, both gloved hands on the round dial, his right ear pressed against the steel door; the dial turns right, then left, then right",
+         "dialogue": [{"speaker": "fengyi", "language": "Chinese", "text": "快点，快点……", "delivery": "whispered through clenched teeth"}],
+         "on_screen_characters": ["fengyi"]},
+        {"index": 2, "start": 6.0, "framing": "an over-the-shoulder shot from behind his right shoulder into the safe",
+         "camera": "The camera pushes in with small amplitude at slow speed",
+         "action": "the lock clunks, {fengyi} pulls the heavy door open; on the middle shelf, alone, sits {prop_red_loot}; he freezes with his right hand reaching toward it",
+         "dialogue": [], "on_screen_characters": ["fengyi"]}
+      ],
+      "soundscape": "The dial clicking tooth by tooth, his breathing, a heavy mechanical clunk as the bolts withdraw, the thick door groaning open.",
+      "music": "N/A",
+      "continuity": "He is in front of the same safe at frame left; the office door is open at frame right; nobody else has entered.",
+      "end_state": "{fengyi} crouched at the open safe, right hand reaching toward {prop_red_loot} on the middle shelf, his back to the office door",
+      "negatives": "Only {prop_red_loot} is inside the safe; the item stays on the shelf untouched"
+    },
+    {
+      "id": "s04", "duration": 8, "mode": "ref2va", "scene_id": "office",
+      "character_ids": ["fengyi", "weilong"], "prop_ids": ["prop_red_loot"], "hook_type": "turn",
+      "style": "Live-action, cinematic, photoreal military-game look",
+      "shots": [
+        {"index": 1, "start": 0, "framing": "a medium-wide shot from behind {fengyi} at the safe, the office door visible at frame right",
+         "camera": "The camera holds a static shot",
+         "action": "{fengyi} is crouched at the open safe at frame left, right hand still inside; the door at frame right swings open and {weilong} steps in and stops on the threshold, rifle lowered across his chest; {fengyi} freezes mid-reach and does not turn",
+         "dialogue": [], "on_screen_characters": ["fengyi", "weilong"]},
+        {"index": 2, "start": 4.0, "framing": "a medium shot on {weilong} in the doorway",
+         "camera": "The camera holds a static shot",
+         "action": "{weilong} tilts his helmet slightly toward the safe and speaks once; {fengyi} is visible at the edge of frame, mouth closed, slowly turning his head toward the door",
+         "dialogue": [{"speaker": "weilong", "language": "Chinese", "text": "这保险，归我了。", "delivery": "flat and calm, said only once"}],
+         "on_screen_characters": ["weilong", "fengyi"]}
+      ],
+      "soundscape": "The door handle clicking, the door's slow creak, two heavy boot steps stopping on the threshold, then silence except the ventilation tick.",
+      "music": "A single low sustained synth note enters when the door opens and holds.",
+      "continuity": "{fengyi} is exactly where the previous segment left him: crouched at the open safe at frame left, hand toward {prop_red_loot}; {prop_red_loot} is still on the shelf; the office door is at frame right.",
+      "end_state": "{weilong} standing on the threshold at frame right, {fengyi} crouched at the safe at frame left looking back over his shoulder, {prop_red_loot} still on the shelf",
+      "negatives": "Exactly two people are present; {weilong} carries nothing on his back"
+    },
+    {
+      "id": "s05", "duration": 6, "mode": "ref2va", "scene_id": "office",
+      "character_ids": ["fengyi", "weilong"], "prop_ids": ["prop_red_loot"], "hook_type": "cliffhanger",
+      "style": "Live-action, cinematic, photoreal military-game look",
+      "shots": [
+        {"index": 1, "start": 0, "framing": "a medium two-shot at the safe",
+         "camera": "The camera holds a static shot",
+         "action": "{weilong} walks three steps from the door to the safe, reaches past {fengyi}'s shoulder, lifts {prop_red_loot} off the shelf and holds it up at chest height; {fengyi} stays crouched, his hand still hanging in the air where the item was",
+         "dialogue": [], "on_screen_characters": ["weilong", "fengyi"]},
+        {"index": 2, "start": 3.0, "framing": "a close-up on {fengyi}'s face",
+         "camera": "The camera holds a static shot",
+         "action": "his eyes move from the empty shelf up to {weilong}, his jaw drops",
+         "dialogue": [{"speaker": "fengyi", "language": "Chinese", "text": "啊？！", "delivery": "a short, strangled yelp"}],
+         "on_screen_characters": ["fengyi"]}
+      ],
+      "soundscape": "Three boot steps on carpet, a small metallic scrape as the item leaves the shelf, a sharp intake of breath.",
+      "music": "The sustained synth note cuts off on the yelp.",
+      "continuity": "Positions exactly as the previous segment ended: {weilong} at the door frame right, {fengyi} crouched at the safe frame left, {prop_red_loot} on the middle shelf.",
+      "end_state": "a hard hold on {fengyi}'s stunned face",
+      "negatives": "Exactly two people; the item leaves the safe only in {weilong}'s hand"
+    }
+  ]
+}
