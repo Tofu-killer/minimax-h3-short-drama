@@ -65,7 +65,7 @@
      "start": 0,
      "framing": "a wide shot down the length of the corridor",
      "camera": "The camera holds a static shot",
-     "action": "{dr_zhou} walks away from the camera toward the exit sign, head down, hands in his coat pockets, while {lin_lan} steps out from the nurses' station into his path and stops him with her presence; both keep their lips closed",
+     "action": "{dr_zhou} walks away from the camera down the center of the corridor toward the green exit sign, head lowered, both hands buried in the pockets of his white coat, his rubber soles squeaking faintly on the polished floor; at the nurses' station {lin_lan} steps out from behind the counter into his path, stops one meter in front of him with her arms at her sides and her weight on her back foot, and he halts; both keep their lips closed and their eyes on each other",
      "dialogue": [],
      "on_screen_characters": [
       "lin_lan",
@@ -77,7 +77,7 @@
      "start": 4.0,
      "framing": "a medium close-up over Dr Zhou's shoulder on Lin Lan",
      "camera": "The camera pushes in with small amplitude at slow speed",
-     "action": "{lin_lan} looks up at {dr_zhou}, jaw tight, eyes steady, and speaks in a low controlled voice while he listens with his mouth closed",
+     "action": "{lin_lan} tilts her chin up to look at {dr_zhou}, her jaw tight and her dark eyes steady, the warm desk lamp behind her lighting the edge of her short black hair while the cool fluorescent tubes light her face; she speaks in a low controlled voice, each word deliberate, while {dr_zhou} listens with his mouth closed, his shoulders stiffening under the white coat",
      "dialogue": [
       {
        "speaker": "lin_lan",
@@ -92,7 +92,7 @@
      ]
     }
    ],
-   "soundscape": "The hum of fluorescent tubes, Dr Zhou's rubber soles squeaking faintly on the polished floor, a distant ward monitor beeping once, the soft click of the nurses' station lamp switch",
+   "soundscape": "The steady hum of fluorescent tubes overhead, Dr Zhou's rubber soles squeaking twice on the polished floor and then stopping, a ward monitor beeping once far down the corridor, the faint click of the nurses' station lamp switch, Lin Lan's calm voice close to the camera",
    "music": "N/A",
    "end_state": "Lin Lan stands facing the camera at frame left in a medium close-up, Dr Zhou's shoulder at frame right; both still, under cool fluorescent light with the warm lamp behind Lin Lan.",
    "continuity": "Opening segment; establish outfits and corridor lighting.",
@@ -117,7 +117,7 @@
      "start": 0,
      "framing": "a medium close-up on Dr Zhou, reverse angle over Lin Lan's shoulder",
      "camera": "The camera holds a static shot",
-     "action": "{dr_zhou} holds Lin Lan's gaze for a moment, then lowers his eyes and slowly pulls {prop_folder} out from inside his white coat, holding it with both hands against his chest; his lips stay closed",
+     "action": "{dr_zhou} holds Lin Lan's gaze for a long beat, then lowers his eyes to the floor, draws a slow breath, and with his right hand pulls {prop_folder} out from inside his white coat, holding the worn envelope flat against his chest with both hands, the red hospital stamp facing the camera; his lips stay closed and his glasses catch a thin line of fluorescent light",
      "dialogue": [],
      "on_screen_characters": [
       "lin_lan",
@@ -129,7 +129,7 @@
      "start": 3.5,
      "framing": "a close-up on Dr Zhou's face",
      "camera": "The camera pushes in with small amplitude at slow speed",
-     "action": "{dr_zhou} looks up again, the fluorescent light catching his glasses, and speaks in a tired gravelly voice while {lin_lan}, visible at the edge of frame, listens with her mouth closed",
+     "action": "{dr_zhou} raises his eyes again to Lin Lan, the fluorescent light flaring briefly across his gold-rimmed glasses, and speaks in a tired gravelly voice with slow measured pauses, his hands still pressing the envelope to his chest, while {lin_lan}, visible at the right edge of the frame, listens with her mouth closed and does not move",
      "dialogue": [
       {
        "speaker": "dr_zhou",
@@ -148,14 +148,14 @@
      "start": 8.0,
      "framing": "a close-up on Lin Lan's face",
      "camera": "The camera holds a static shot",
-     "action": "{lin_lan} hears the words and her composure cracks: her eyes widen slightly, she presses her lips together and swallows once, her gaze dropping to the envelope, the warm lamp light on one side of her face",
+     "action": "{lin_lan} hears the words and her composure cracks: her eyes widen slightly, she presses her lips together and swallows once, her gaze drops to the envelope in his hands and then lifts back to his face, the warm lamp light on the left side of her face and the cool fluorescent light on the right; she stays rooted where she stands, breathing visibly",
      "dialogue": [],
      "on_screen_characters": [
       "lin_lan"
      ]
     }
    ],
-   "soundscape": "The fluorescent hum continues, the dry rustle of the kraft-paper envelope against fabric, a single distant elevator chime, Lin Lan's sharp intake of breath",
+   "soundscape": "The fluorescent hum continues without change, the dry rustle of the kraft-paper envelope sliding against the cotton of the white coat, a single distant elevator chime, Dr Zhou's low voice with a slight rasp, Lin Lan's sharp intake of breath",
    "music": "N/A",
    "end_state": "Lin Lan in close-up at frame center, lips parted, eyes glistening; Dr Zhou out of frame holding the envelope against his chest; same corridor lighting.",
    "continuity": "Same positions as end of s01: Lin Lan frame left facing camera, Dr Zhou frame right; outfits unchanged; envelope now visible in Dr Zhou's hands.",
