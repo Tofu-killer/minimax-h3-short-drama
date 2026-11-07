@@ -1,0 +1,10 @@
+schema_version: "1.1"
+name: writes-ref2va-prompt-no-negation
+expected_outcome: |
+  Produces a six-part Ref2VA prompt (subject_definitions, summary, retention_analysis,
+  detailed_description, overall_soundscape, non_diegetic_music) in English with the two
+  Chinese lines kept inside <d>[Chinese] …</d>, one speaker per shot with the listener's
+  mouth closed, no negation sentences (the "no other patients / no music" requests are
+  converted into positive locks and non_diegetic_music: N/A), <Picture 1..4> numbered
+  in the order the images are wired into ref_image_1..4, shot timecodes increasing and
+  below 10.00 s, and a dialogue budget check (2 lines ≈ 20 chars ≤ (10−2)×4.5).

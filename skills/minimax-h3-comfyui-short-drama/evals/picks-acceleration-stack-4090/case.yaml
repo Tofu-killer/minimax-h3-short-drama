@@ -1,0 +1,10 @@
+schema_version: "1.1"
+name: picks-acceleration-stack-4090
+expected_outcome: |
+  Diagnoses the 544p 4-step LoRA at 768p with shift 12 as the smear cause, recommends the
+  lightx2v ref2v_turbo_8step_v1.1_768p_comfyui LoRA from HuggingFace with SigmaShift 6/3 and 8
+  steps, replaces kitchen/BlockSparse/LowVRAM with SageAttention via KJNodes patch (bypass, not
+  delete, and never Sage together with LowVRAM), gives a draft tier (lower resolution such as
+  864x480 or 1056x608, 8 steps, 2–4 seeds) and a final tier (1344x768 same seed, no lossy caches,
+  optional latent-upscale refine), with realistic time estimates per tier and the warning about
+  ComfyUI result cache when re-running the same seed.

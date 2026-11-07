@@ -1,0 +1,9 @@
+schema_version: "1.1"
+name: diagnoses-hallucinated-prop
+expected_outcome: |
+  Explains that the prop is invented because no prop reference image was in the request and
+  that negations are rendered by the CFG-distilled weights; tells the user to pick one concrete
+  item image from the library, bind it as a reference with "the exact item shown in <Picture N>"
+  plus "fully_preserved … no other item is substituted", convert "no jetpack / no glowing" into
+  positive locks, overlay the rarity colour frame in post rather than asking the model to glow,
+  and suggests the catalog.py build/check scripts (or equivalent) to enforce binding.
