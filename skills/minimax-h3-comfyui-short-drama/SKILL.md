@@ -22,7 +22,7 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 | 步 | 做什么 | 读 |
 |----|--------|----|
 | 0 | 列出 GPU / ComfyUI 版本 / 已有模型与 LoRA / 自定义节点 / 现有工作流；用 `assets/local-inventory-checklist.md` 的清单 | `references/local-stack-and-acceleration.md` |
-| 1 | 确认风格（电影质感 / 漫剧）、画幅（16:9 默认 1344×768 草稿）、单集时长、每段时长 | `assets/style-*.md` |
+| 1 | 确认风格（电影质感 / 漫剧）、画幅（16:9：训练格点 1344×768 其实是 7:4，真 16:9 用 1536×864 或生成后 lanczos 到 1920×1080）、单集时长、每段时长 | `assets/style-*.md`、`references/model-and-modes.md` 分辨率格点 |
 | 2 | 建角色卡（脸 / 服装 / 全身 3 图）、场景空景、道具白底图、2–15 s 干净音色；写识别短语 + 声音短语 | `references/storyboard-and-assets.md` §3 |
 | 3 | 把剧本切成 4–15 s 段（对白段 8–12 s，动作 / 硬切镜头 5–8 s），每段 2–4 子镜头，用 `{asset_id}` 占位符写；跑 `scripts/validate_episode.py` | `references/storyboard-and-assets.md` §1–2 |
 | 4 | `scripts/build_prompts.py` 生成每段提示词与媒体顺序；`scripts/lint_prompt.py` 机检，FAIL 不提交；本地 Ollama 改写只用于三段式，六段式手写 | `references/prompt-format.md` |

@@ -78,6 +78,7 @@ def main():
     if d_open != d_close: errs.append(f"<d> tags unbalanced ({d_open} open / {d_close} close)")
     for dm in re.finditer(r"<d>(.*?)</d>", text, re.S):
         if not re.match(r"\s*\[[A-Z][a-zA-Z]+\]", dm.group(1)): errs.append(f"<d> without [Language] tag: {dm.group(1)[:30]!r}")
+        if "..." in dm.group(1) or "……" in dm.group(1): warns.append(f"ellipsis inside dialogue invites garbled filler words; use a comma or split the line: {dm.group(1)[:30]!r}")
     for f in ("subject_definitions", "summary", "retention_analysis", "overall_soundscape", "non_diegetic_music"):
         fm = re.search(f + r":(.*?)(?:\n\s*\n|\Z)", text, re.S)
         if fm and "<d>" in fm.group(1): errs.append(f"<d> inside {f}")

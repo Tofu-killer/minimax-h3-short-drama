@@ -75,6 +75,16 @@
 - 像素超分：FlashVSR 2× 用 `--tile_size 256 --tile_overlap 64 --frame_chunk_size 50 --keep_models_on_cpu`（128/24 出网格），完成后 `ffprobe nb_frames` 核帧数并用 `-map 0:v -map 1:a:0` 回灌原音轨；**真人近景优先 RTX VSR，不用 SeedVR2 / SoL-Refiner（改脸改嘴）**。
 - 角色设定卡防撞脸：每人 3–5 处骨相 + 发型 / 体型 / 体态 / 主色 / 标志六格，同项目禁复用「鼻梁挺直 / 黑发束髻 / 高挑修长」；写族裔、`height_cm + build`、一个跨场景锚点；给 H3 的参考用多张单人图而非一张多格板。
 
+## 6d. 新仓库实证（`11-fresh-repos.md`）
+
+- **二采 σ 三档按目的选**：保道具 / 文字 `0.6316, 0.3158, 0`；保纹理一致 σ 0.45 起；`0.9035` 起只用于「换尺寸再抽」（会把纸箱标签改色变透明）。
+- 「8plus2」两段式：草稿 8 步 → 1.8× latent → `BasicScheduler(8)` → `SplitSigmas(6)` 取**输出槽 1** 跑 2 步 + refiner LoRA；≤ 7 s 片**不要瓦片二采**（更慢更糊构图变宽）；删 refiner LoRA 加步数救不回锐度。
+- DMAD rank-39 两采 A/B：S1 864×480 8 步 er_sde/beta → LBH 放大 → S2 2 步 er_sde/`linear_quadratic` denoise 0.4。
+- 远景小脸修复只处理 **30–140 px** 的匹配脸，裁 2.6× 方框到 512²，σ 0.8 起重绘（0.6 更锐但保留错脸型），椭圆 0.75 羽化 0.35 贴回并颜色匹配。
+- 人脸身份门禁：YuNet 0.6 + SFace，同人阈值 0.363，锁脸交付 keep 0.55（严格 0.65）；只信 ≥ 40 px 正脸、逐帧独立匹配不链式；分数是警告，真实感优先。
+- 胸像 / 口播拼接前裁底部 12%（H3 在下缘凭空长手指）、裁每段头 0.1 s + 音频 10 ms 淡入（段首爆音 863 → 34）、脸只放不缩 ≤ 1.35×。
+- RefMod：Full Reference ≈ 330 token/图@512，`budget_policy=error` 看真实计数；特写肖像放第一张定画布；头替换用 `head_swap_v1.0_r32` 不是 character swap。
+
 ## 7. 禁忌
 
 - LoRA 文件必须是带 alpha 的 `*_comfyui_alpha8` 或官方 `*_comfyui_bf16`；缺 PEFT alpha 的会把更新放大 ~16 倍整幅融化。

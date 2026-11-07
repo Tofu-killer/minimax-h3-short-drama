@@ -105,6 +105,13 @@
 - 3090 Ti 实测：FastVideo VSA 0.8 MP 5 s 4 步 topk 0.1 采样 49 s（比 20 步快 10×），Sage/CK 在 topk 0.1 下无增益，峰值 ~22 GB。
 - GB10 int8 对照（chiphoton）：Larry v4 6 步 vs 20 步 res_multistep 端到端 2.2×，I2V 首帧 SSIM 0.8215 vs 0.8245（几乎无差）。
 
+## 5d. 新仓库实证（`11-fresh-repos.md`）
+
+- 8 步 Turbo 上叠风格 / 运镜 LoRA，**额外 LoRA 强度之和 ≤ 1.3**（0.6+0.3+0.4 实心；0.8+0.5+0.6 小物件透明重影）。
+- 显存溢出到系统内存不报错只变慢：看 `nvidia-smi` **功耗**（util 100% 但功耗只有峰值 1/4 = 在搬数据），不信 `/system_stats`。
+- 多段接力先编码所有段的条件再连续采样（E/E/E/S/S/S），避免 TE / VAE / DiT 往返加载，−25~45%。
+- 参考 token 预算：2 张角色图 `match` ≈ 1,550 token、`max` ≈ 12,320；124 帧参考视频 14k–27k token——**重者胜**，否定句与「视频里的人就是 Subject 1」都压不过它。
+
 ## 6. 升级 ComfyUI 前检查
 
 Spark-H3 跳过 0.41（要 0.38.x–0.40.x 或 0.42.x–0.44.x）；Spectrum 需 ≥ `e377e263`；Veda ≥ 0.38；HyperFlow 在 0.37 有「Model Initializing」卡住报告（诊断 `--disable-fast-disk`）；FeiHou 流式块模式不与 kitchen 同用；核心 INT8 已进主线（旧 I8Fast 文件要转换）。
