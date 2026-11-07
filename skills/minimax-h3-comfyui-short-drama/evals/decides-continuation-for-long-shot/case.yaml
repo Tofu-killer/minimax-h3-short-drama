@@ -1,0 +1,13 @@
+schema_version: "1.1"
+name: decides-continuation-for-long-shot
+expected_outcome: |
+  Recognises this as the rare case where continuation is justified (single shot > 15 s), first asks
+  whether the monologue can be split by a reaction/insert shot (hard cut default), then recommends
+  NikoDemon80 Motion-Context 0.7.1 for Ref2VA with context_length 22 / audio_context_length 18,
+  Save/Load Latent + Trim match_tail, 8-step v1.1 768p LoRA, Spectrum bypassed, same resolution/LoRA/
+  shift across the chain, chain ≤ 4 segments; alternatively PrefixStream Native Masked AV 39 for
+  branching; warns that Multishot context_pin is incompatible with ComfyUI 0.37, that audio dulls
+  after >4 joins and that dialogue shots need ≥12 steps or a locked audio track; gives the second
+  segment prompt pattern (opening 0.917 s reproduces the previous tail, no new action for ~2.4 s,
+  WhaleTrans continuity sentence, no repeated camera move), and warns against 'continue the previous
+  video' wording and tail-frame→first-frame exposure drift for a continuous monologue.

@@ -1,0 +1,9 @@
+schema_version: "1.1"
+name: splits-60s-script-into-segments
+expected_outcome: |
+  Splits the script into 5-7 segments of 4-15 s (not one per line of dialogue), each with 2-4
+  sub-shots, one speaker per shot and at most two speakers per segment, dialogue budgets respected
+  (≈4 chars/s), the photo declared as a prop that needs a reference image, end_state/continuity
+  written for hand-off (hard cuts, no latent continuation), a 1 s freeze tail at segment ends,
+  2D-anime style sentence, {asset_id} placeholders or an explicit note that labels are assigned at
+  build time, and ideally an episode JSON that passes scripts/validate_episode.py.
