@@ -63,6 +63,7 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 | `scripts/comfy_submit.py <wf.api.json> --set … --batch N --out takes/…` | 向本地 ComfyUI 提交 API 格式工作流、上传媒体、按 seed 抽卡、下载产物、写 `run.json` |
 | `scripts/qc_probe.py <mp4…> --expect-seconds 10 --expect-size 1344x768` | ffprobe 技术 QC：分辨率/时长/帧率/音轨/削波/冻结/黑场 |
 | `scripts/contact_sheet.sh <mp4…>` | 4×3 联络表，供视觉 QC |
+| `scripts/extract_tail_frame.py <mp4> --out tail.png --trim-freeze 1.0` | 截末帧（duration−0.2 s）作下一段首帧/参考，并剪掉声明的 1 s 定格 |
 | `scripts/fetch_official_guides.sh` | 拉取 MiniMax 官方提示词指南原文作对照 |
 | `scripts/h3lib/catalog.py build <dir> --kind prop` | 把道具图目录化（稀有度从路径解析），供 `--catalog` 检查 |
 
@@ -77,6 +78,7 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 | `references/storyboard-and-assets.md` | 切分镜、建角色卡、一致性 |
 | `references/continuity-long-video.md` | 超过 15 s、段间衔接、接缝伪影 |
 | `references/quality-pipeline.md` | 768P→1080p/2K、人脸修复、角色三视图、ControlNet、换人 |
+| `references/lora-and-style.md` | 要不要训角色 LoRA、风格 LoRA 选型与强度、三视图 LoRA、本地提示词改写 LoRA |
 | `references/qc-and-assembly.md` | 抽卡策略、QC、字幕、配乐、拼接、目录规范 |
 | `references/ecosystem-map.md` | 「这件事 GitHub 上谁做得最好」 |
 | `references/pitfalls.md` | 症状→原因→修法 |
