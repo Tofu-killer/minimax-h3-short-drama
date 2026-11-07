@@ -1,0 +1,218 @@
+{
+ "congw729/InferRSI-MiniMax-H3": [
+  0,
+  "2026-11-01",
+  "2026-11-07",
+  "Private H3 integration and RTX 5070 experiment source backup; ComfyUI experiments and vLLM-Omni adap"
+ ],
+ "pixelaigc/pixelaigc": [
+  0,
+  "2026-11-07",
+  "2026-11-07",
+  "PIXELAIGC — AI filmmaker & open-source builder. Long-form AI film production and MiniMax H3 / ComfyU"
+ ],
+ "pongjoo/ComfyUI-PJ-SegmentSampler": [
+  0,
+  "2026-11-03",
+  "2026-11-07",
+  "ComfyUI custom node for pure latent segment sampling, designed for MiniMax H3 / LTXV high-res 2nd pa"
+ ],
+ "nightclaw555/Comfy-colab": [
+  0,
+  "2026-11-04",
+  "2026-11-07",
+  "ComfyUI MiniMax-H3 Video Studio with Google Colab GPU, Sidecar Agent, and Next.js Web UI"
+ ],
+ "Code2Collapse/ComfyUI-MiniMax-H3-Suite": [
+  0,
+  "2026-08-28",
+  "2026-11-07",
+  "Trying to create a customware of ComfyUI to use it for Minimax"
+ ],
+ "dreevelle/ComfyUI-ResolutionTools": [
+  6,
+  "2026-08-09",
+  "2026-11-07",
+  "Exact resolution maths for ComfyUI: real megapixels (10^6, not 1024^2), patch-grid alignment for Kre"
+ ],
+ "yuyuki/ComfyUI-Minimax_H3_Novel_Pipeline": [
+  4,
+  "2026-08-30",
+  "2026-11-06",
+  "Provide concise instructions for AI coding agents to implement a ComfyUI plugin   that reproduces th"
+ ],
+ "xentome/EDITS-WITH-AI": [
+  1,
+  "2026-10-24",
+  "2026-11-06",
+  "Edits musicales con IA local: MiniMax H3 + LLM local en ComfyUI (provisional)"
+ ],
+ "jdelahayes/runpod-comfy-blackwell": [
+  0,
+  "2026-09-26",
+  "2026-11-06",
+  "ComfyUI sur RunPod, optimisé Blackwell (RTX PRO 6000), pret pour MiniMax H3"
+ ],
+ "wbliang168/manju-studio": [
+  0,
+  "2026-11-06",
+  "2026-11-06",
+  "把剧本变成 AI 漫剧视频的本地工作台（ComfyUI + MiniMax H3）"
+ ],
+ "ArcSeekerX/Xpark-Media-Foundry-Agent": [
+  0,
+  "2026-09-25",
+  "2026-11-06",
+  "Xpark 数字资产生成流水线 (video-agent)：对话式主 Agent + 图片/视频数字资产库；本地 ComfyUI + MiniMax H3 音画联合生成，Qwen-Image 2.1 "
+ ],
+ "OwenLittleWhite/cannlab-h3-ascend": [
+  0,
+  "2026-11-06",
+  "2026-11-06",
+  "ComfyUI and MiniMax H3 deployment adapter for Ascend NPU"
+ ],
+ "nvmax/VideoBuilderH3": [
+  5,
+  "2026-10-25",
+  "2026-11-05",
+  "VRGDG H3 Studio - a Windows desktop app that turns a song into a MiniMax H3 music video with ComfyUI"
+ ],
+ "richiepic/ComfyUI-RICHIEPIC-H3": [
+  0,
+  "2026-11-04",
+  "2026-11-05",
+  "Minimax H3 Headswap with Refmod and ref mod builder"
+ ],
+ "fuzzballb/comfyui-h3-long-video": [
+  0,
+  "2026-10-11",
+  "2026-11-05",
+  "Unlimited-length MiniMax H3 videos in ComfyUI: seamless latent continuation, H3 upscale with crossfa"
+ ],
+ "capruokz/h3-comfy": [
+  0,
+  "2026-08-17",
+  "2026-11-05",
+  "ติดตั้งและใช้งาน MiniMax H3 บน ComfyUI — ตั้งแต่เช่าเครื่อง vast.ai ไปจนถึงเขียน prompt ให้มันวาดตาม"
+ ],
+ "jameswright1562/openjutsu": [
+  0,
+  "2026-11-04",
+  "2026-11-05",
+  "One-click character swap for videos: an open-source, local Higgsfield Genjutsu alternative built on "
+ ],
+ "shawnie117/minimax-h3-studio": [
+  0,
+  "2026-11-07",
+  "2026-11-07",
+  "API-enabled H3 Studio with a quality-focused Runpod A40 Jupyter deployment notebook"
+ ],
+ "knapcio/MiniMax-H3-2x-DGX-Spark-TP2": [
+  14,
+  "2026-10-27",
+  "2026-11-07",
+  "MiniMax H3-Base video+audio on two NVIDIA DGX Sparks: vLLM-Omni text-encoder TP2 + Ulysses SP2 acros"
+ ],
+ "Zowwan/studio-grade-ai-video": [
+  0,
+  "2026-11-07",
+  "2026-11-07",
+  "Professional studio tools for AI video that looks like a real camera shoot: face-identity QA, frame-"
+ ],
+ "martinsommer3-oss/Filmworkbench-Starter": [
+  0,
+  "2026-11-07",
+  "2026-11-07",
+  "MiniMax H3 scene recipes, exact model setup and a tested two-pass starter."
+ ],
+ "Yuuki-git/minimax-h3-8gpu": [
+  0,
+  "2026-11-07",
+  "2026-11-07",
+  ""
+ ],
+ "MindrLabs/text-to-video-minimax-h3": [
+  0,
+  "2026-11-06",
+  "2026-11-07",
+  ""
+ ],
+ "shihoos/MiniMax-H3-AI-Video-Generator": [
+  0,
+  "2026-08-15",
+  "2026-11-07",
+  ""
+ ],
+ "cheems12/ninetooth_adaptive_lala": [
+  0,
+  "2026-11-07",
+  "2026-11-07",
+  "adapted for ninetooth minimax_h3"
+ ],
+ "zhangyanyans-oss/AI-anime-studio": [
+  0,
+  "2026-11-07",
+  "2026-11-07",
+  "AI 动画工作台：从一个点子到分镜图与视频成片的一站式网页工具（DeepSeek 剧本 + 豆包分镜图 + MiniMax-H3 图生视频）"
+ ],
+ "drimeF0/minimax-h3-jax-tpu": [
+  0,
+  "2026-11-01",
+  "2026-11-07",
+  "minimax-h3-jax-tpu"
+ ],
+ "CodeAlexx/mm-AIR": [
+  0,
+  "2026-09-10",
+  "2026-11-07",
+  "MiniMax H3 desktop Studio "
+ ],
+ "gjnave/GGF-Recast": [
+  0,
+  "2026-11-07",
+  "2026-11-07",
+  "Local multi-character video replacement with Viggle Remake and MiniMax H3"
+ ],
+ "keboqi/minimax-h3": [
+  7,
+  "2026-08-08",
+  "2026-11-07",
+  "Standalone Gradio and Modal deployment toolkit for MiniMax H3 video generation"
+ ],
+ "kkone1238899/awesome-seedance-h3-prompts": [
+  0,
+  "2026-10-18",
+  "2026-11-07",
+  "Seedance 2.0 / 2.5 + MiniMax H3 视频提示词实战库：X 实战提炼 + 双模型对照模板 + GitHub 仓库每日自动归集"
+ ],
+ "egguy886/h3-drama-kit": [
+  0,
+  "2026-10-25",
+  "2026-11-07",
+  "End-to-end AI short-drama pipeline for MiniMax H3: script → assets → shot prompts → lint → AutoDL ge"
+ ],
+ "mcoblackmore/digital-human-16gb": [
+  0,
+  "2026-11-04",
+  "2026-11-07",
+  "AI digital human on 16 GB VRAM: Qwen-Image-Edit GGUF face, Qwen3-TTS voice clone, MiniMax H3 audio-s"
+ ],
+ "Koongrizzly/MiniMax_H3_Standalone_app": [
+  4,
+  "2026-08-10",
+  "2026-11-07",
+  "Use Minimax as if it was an app on windows with this easy to use setup in a pyside6 app"
+ ],
+ "commitname/minimax-h3-accuracy-agent": [
+  0,
+  "2026-11-04",
+  "2026-11-07",
+  ""
+ ],
+ "CortexIL/h3-studio": [
+  0,
+  "2026-09-10",
+  "2026-11-07",
+  "Desktop app for running MiniMax H3 video generation on a rented RunPod GPU. Queue prompts, the GPU s"
+ ]
+}
