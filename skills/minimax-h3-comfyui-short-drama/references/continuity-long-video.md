@@ -64,6 +64,14 @@
 - I2V 尾帧接力链用 `anchor_mode=inpaint`（复制 + 遮罩保护）而不是 keyframe（接缝帧间跳变 5.4–6.8× → 1.5–1.7×），上下文 5 帧而不是 22；换人 / 换装续接对上下文做锥形加噪 22/0.45/0.10/3 消色彩残留，加噪结果不回喂。
 - 要跨段保持音色选 FastH3 Omni 或 Pika Flex（全程 Ref2VA，第二段音色匹配 0.89–0.96 vs PDMD 0.72–0.75）；Pika Flex 每 12 段 15 s 有 233 个定格帧需 de-stutter；后段声音发闷改「只续画面、声音重生」；后段变暗变饱和改「只用末帧」。
 
+## 5c. 补读新增（`docs/13-github-survey/10-unread-followup.md`）
+
+- **烧焦有数字**（6 段链第 6 段纹理能量）：REF2VA int8 + lightx2v ref2v 8-step v1.1 = 1.19（几乎不烧）；FastH3 omniref = 2.04；**Larry turbo v4 = +261%（最烂，禁用于续接）**。`Imagineer13/H3-Anti-Burn-LoRA` 只挂第 2 段起，`LoraLoaderModelOnly` 0.5 起步，不合并进 int8；`context_noise` 可把 2.04 压到 1.75。
+- **帧网格精确规则**：全片 5+17k；AV 续接上下文只能 **39+51k**（39/90/141/192；56 不是合法上下文）；静帧钉位 17k（0-based）；中段插入偏移取 51 倍数才音频精确对齐（17 倍数要 8.33 ms 取整）；22 帧 = 7 latent/37 tick，39 帧 = 12/65；音频 feather 默认 8 tick = 0.2 s；请求非法值被静默向下吸附（45 → 39），先自己算好。
+- **截尾帧续接**：段尾写 0.8–1.2 s 收束保持；尾帧占第一张参考图槽位，只在「同场景无转场且动作未完成」时续写；转场段用黑场 / 淡化而非人物尾帧。
+- FL2VA 首尾帧：尾帧与首帧同机位同构图但**必须是不同图**（动作完成后的姿势）；同一张图做首尾 → 100% 静止。没锁尾帧时加 `LOCKED-OFF STATIC CAMERA on a tripod`。
+- 24 GB 实测：VDN-H3-24GB（3090）0.4 MP 5/10/15/20 s = 1:09/2:05/3:21/4:20，0.8 MP 10 s 5:18（需 bat 启动打 block-loop 补丁）。
+
 ## 6. 每段结束的检查
 
 - 钉头是否被渲染成定格：Motion-Context `tests/freeze_detect.py`，或本 skill 的 `scripts/qc_probe.py`（freezedetect）。

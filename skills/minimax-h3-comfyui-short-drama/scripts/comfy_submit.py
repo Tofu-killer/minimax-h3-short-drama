@@ -127,7 +127,8 @@ def main():
     ap.add_argument("--seed", type=int, help="first seed; default keeps the workflow's seed")
     ap.add_argument("--out", required=True)
     ap.add_argument("--tag", default="take")
-    ap.add_argument("--poll", type=float, default=5.0)
+    ap.add_argument("--poll", type=float, default=20.0, help="seconds between /history polls (polling mid-sample stalls the sampler 18-43 s, keep >= 20)")
+    ap.add_argument("--free-every", type=int, default=0, help="POST /free (unload models, free memory) after every N runs; 0 = never")
     a = ap.parse_args()
 
     wf = json.loads(Path(a.workflow).read_text(encoding="utf-8"))
@@ -155,6 +156,12 @@ def main():
                 "overrides": a.set + a.set_title}
         dest.mkdir(parents=True, exist_ok=True)
         (dest / "run.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
+        if a.free_every and (i + 1) % a.free_every == 0:
+            try:
+                http(a.server, "/free", json.dumps({"unload_models": True, "free_memory": True}).encode(), {"Content-Type": "application/json"})
+                print("  /free sent")
+            except Exception as e:  # noqa: BLE001
+                print("  /free failed:", e)
         if status.get("status_str") == "error":
             rc = 1
             msgs = [m for m in status.get("messages", []) if m[0] == "execution_error"]

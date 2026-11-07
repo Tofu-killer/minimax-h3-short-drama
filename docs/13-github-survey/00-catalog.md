@@ -15,6 +15,7 @@
 | [07-lora-training-and-misc.md](07-lora-training-and-misc.md) | LoRA 训练 / 风格与角色 LoRA / 可控性杂项 / 多卡 | 20+ |
 | [08-long-tail-comfyui.md](08-long-tail-comfyui.md) | 长尾扫描：ComfyUI 侧 8–40★（29 个有新信息精读 + 180 个归类） | 219 |
 | [09-long-tail-skills-and-misc.md](09-long-tail-skills-and-misc.md) | 长尾扫描：skill / 案例库 / 部署 / API（15 个精读 + 60 余个归类） | 85 |
+| [10-unread-followup.md](10-unread-followup.md) | 补读 01–09 的「未读完」清单（70 项 + 24 个新仓库），含矛盾裁决 | 24+ |
 
 全部结论提炼成可安装 skill：[`skills/minimax-h3-comfyui-short-drama/`](../../skills/minimax-h3-comfyui-short-drama/SKILL.md)。
 

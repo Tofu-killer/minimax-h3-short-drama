@@ -45,6 +45,7 @@
 
 ## 3. 拼接
 
+-1. **逐 take 响度归一**：H3 takes 在 −26…−10 LUFS 间漂，Turbo take 比 20 步响 1.7–4.3 LU；剪前每 take `loudnorm` 到 −16 LUFS，成片 −14 LUFS / −1.5 dBTP。字幕时间可用 `silencedetect` 按台词句数自动分配再人工校。
 0. 先剪掉每段末 1 s 声明的定格；检测并裁掉 H3 开头 0.02–0.15 s 的「起始音节」（前 0.6 s 内 < 0.3 s 高能段后接 0.2 s 低能）。
 1. 全部段统一转码为相同编码参数（contain-pad 1920×1080、24 fps、AAC 48 kHz 立体声；H3 原生音频是 32 kHz，段间响度可差 9 LU，必须 loudnorm 统一），再 `ffmpeg -f concat -safe 0 -i list.txt -c copy`，避免重编码造成音画不同步。
 2. 字幕来自分镜 JSON 的 `dialogue[]`（已有时间码），生成 SRT 后烧录；不要让模型画字幕。

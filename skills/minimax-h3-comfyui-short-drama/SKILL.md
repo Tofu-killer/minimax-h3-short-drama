@@ -73,7 +73,7 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 |------|------|
 | `scripts/validate_episode.py <ep.json> [--catalog props.json]` | 分镜校验：时长、台词预算、一镜一说话人、未知资产、道具无图、空终态 |
 | `scripts/build_prompts.py <ep.json> --out prompts/ep01` | 生成每段最终提示词 `.txt` + 媒体顺序 `.media.json` + `cues.srt` |
-| `scripts/comfy_submit.py <wf.api.json> --set … --batch N --out takes/…` | 向本地 ComfyUI 提交 API 格式工作流、上传媒体、按 seed 抽卡、下载产物、写 `run.json` |
+| `scripts/comfy_submit.py <wf.api.json> --set … --batch N --poll 20 --free-every 3 --out takes/…` | 向本地 ComfyUI 提交 API 格式工作流、上传媒体、按 seed 抽卡、下载产物、写 `run.json`；轮询 ≥ 20 s，可定期 `/free` 释放显存 |
 | `scripts/qc_probe.py <mp4…> --expect-seconds 10 --expect-size 1344x768` | ffprobe 技术 QC：分辨率/时长/帧率/音轨/削波/冻结/黑场 |
 | `scripts/contact_sheet.sh <mp4…>` | 4×3 联络表，供视觉 QC |
 | `scripts/extract_tail_frame.py <mp4> --out tail.png --trim-freeze 1.0` | 截末帧（duration−0.2 s）作下一段首帧/参考，并剪掉声明的 1 s 定格 |

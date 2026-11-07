@@ -96,6 +96,15 @@
 - Sol / 块稀疏注意力只在 ≥ 768p 成片档开（1.23–1.27×）；480p 档 1.03× 且高频 −13.8%。
 - 明确别碰：HyperStep / TeaCache（无画质护栏）、AutoContext 整包（patch PackedLayout）。
 
+## 5c. 补读新增
+
+- **出图与出视频分实例**：comfy-kitchen ≥ 0.2.36 的 `--use-ck-attention` 会让 Qwen-Image 2.1 在 mask 存活 token > 64 时崩图，但 H3 不受影响且不开 CK 慢 2.7× → 给 Qwen-Image 的 ComfyUI 不带该参数，给 H3 的实例保留。
+- 驱动 ComfyUI：每 N 个任务 `POST /free {"unload_models":true,"free_memory":true}`（`comfy_submit.py --free-every N`）；`/history` 与 `/queue` 连续 3 次都查不到才判丢失；H3 不与其它 GPU 任务并行；计时读 `/history` 执行时间。
+- 权重下载源核实：DMAD 4-step LoRA 在 `Kijai/MiniMax-H3-experimental/loras/minimax_h3_DMAD_4step_full_lora_avg_rank_39_bf16.safetensors`（同目录有 PDD Acc-8Step FL2VA/Ref2VA、flashgen 4-step、open_regenerate_2k_refiner r16）；X2 Detail VAE 有官方 `_int8_convrot` 版；lightx2v Turbo-SLA 实为 `fl2v_turbo_4step_v0.1_768p_sla_comfyui_bf16`；FastVideo/FastH3 私有（401）。
+- 5090 实测规则（mathruffian）：EasyCache 定稿不开；Veda 开着会在第 51/119/187 帧闪帧；DMAD 4 步可做日常定稿（8 类镜头看不出差、快 49–58%）；单镜 ≤ 12 s。
+- 3090 Ti 实测：FastVideo VSA 0.8 MP 5 s 4 步 topk 0.1 采样 49 s（比 20 步快 10×），Sage/CK 在 topk 0.1 下无增益，峰值 ~22 GB。
+- GB10 int8 对照（chiphoton）：Larry v4 6 步 vs 20 步 res_multistep 端到端 2.2×，I2V 首帧 SSIM 0.8215 vs 0.8245（几乎无差）。
+
 ## 6. 升级 ComfyUI 前检查
 
 Spark-H3 跳过 0.41（要 0.38.x–0.40.x 或 0.42.x–0.44.x）；Spectrum 需 ≥ `e377e263`；Veda ≥ 0.38；HyperFlow 在 0.37 有「Model Initializing」卡住报告（诊断 `--disable-fast-disk`）；FeiHou 流式块模式不与 kitchen 同用；核心 INT8 已进主线（旧 I8Fast 文件要转换）。

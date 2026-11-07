@@ -68,6 +68,13 @@
 - 道具 / 属性 / 材质类参考可用 Qwen-only 语义参考（`#tag`，不占 9/3/3 名额，256–512 px）；身份与具体帧锚才用原生 VAE 参考。
 - 超分逐镜做，不对成片做；像素超分优先级：RelayVSR ×2（25 s）> RealESRGAN ×2（68 s）> SeedVR2（要纹理时）。
 
+## 6c. 补读新增
+
+- Regenerate 类默认：denoise 0.30（0.15–0.35 = 起始 σ）、3 步、shift 6、×2；muse Refine V2：beta / 8 步 / 首段 2 步 / 1.0 MP；LongMedia Refine 音频 exact passthrough（audio noise 0 + mask 0），16 GB 卡 refine 窗 73 帧。
+- VDN 二采：VDN 8 → 2× → VDN 4 或原生 H3 + EMA-B LoRA，VDN 分支不再叠 Turbo。
+- 像素超分：FlashVSR 2× 用 `--tile_size 256 --tile_overlap 64 --frame_chunk_size 50 --keep_models_on_cpu`（128/24 出网格），完成后 `ffprobe nb_frames` 核帧数并用 `-map 0:v -map 1:a:0` 回灌原音轨；**真人近景优先 RTX VSR，不用 SeedVR2 / SoL-Refiner（改脸改嘴）**。
+- 角色设定卡防撞脸：每人 3–5 处骨相 + 发型 / 体型 / 体态 / 主色 / 标志六格，同项目禁复用「鼻梁挺直 / 黑发束髻 / 高挑修长」；写族裔、`height_cm + build`、一个跨场景锚点；给 H3 的参考用多张单人图而非一张多格板。
+
 ## 7. 禁忌
 
 - LoRA 文件必须是带 alpha 的 `*_comfyui_alpha8` 或官方 `*_comfyui_bf16`；缺 PEFT alpha 的会把更新放大 ~16 倍整幅融化。
