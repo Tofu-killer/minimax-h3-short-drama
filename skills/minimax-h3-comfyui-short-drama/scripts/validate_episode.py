@@ -22,6 +22,18 @@ def main():
     a = ap.parse_args()
     ep = load_episode(a.episode)
     problems = validate_episode(ep)
+    # reference media must exist on disk — a missing prop/character image is exactly how hallucinated props happen
+    from pathlib import Path as _P
+    for c in ep.characters:
+        for f in c.reference_images:
+            if not _P(f).exists(): problems.append(f"character {c.id}: reference image missing: {f}")
+        if c.voice_reference and not _P(c.voice_reference).exists(): problems.append(f"character {c.id}: voice reference missing: {c.voice_reference}")
+    for sc in ep.scenes:
+        for f in sc.reference_images:
+            if not _P(f).exists(): problems.append(f"scene {sc.id}: reference image missing: {f}")
+    for pr in ep.props:
+        for f in pr.reference_images:
+            if not _P(f).exists(): problems.append(f"prop {pr.id}: reference image missing: {f}")
     if a.catalog:
         from catalog import check_episode  # type: ignore
         problems += check_episode(a.episode, a.catalog)

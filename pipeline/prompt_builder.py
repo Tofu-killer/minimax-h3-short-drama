@@ -99,6 +99,8 @@ def build_ref2va(ep: Episode, seg: Segment) -> BuiltPrompt:
     aud = 0
     defs: list[str] = []
     retention: list[str] = []
+    nsubj = 0                       # <Subject N> counter (audio definitions must not consume numbers)
+    speakers = speaker_ids(seg)     # only characters who speak in THIS segment get a voice reference
 
     # characters first (identity), then scene, then props
     for cid in seg.character_ids:
@@ -113,25 +115,27 @@ def build_ref2va(ep: Episode, seg: Segment) -> BuiltPrompt:
             pic += 1
             content.append(image_item(src, "reference_image"))
             pics.append(f"<Picture {pic}>")
-        subj = f"<Subject {len(defs) + 1}>"
+        nsubj += 1
+        subj = f"<Subject {nsubj}>"
         labels[cid] = subj
-        defs.append(f"{subj} is {c.name}, the person in {' and '.join(pics)}, {c.identity_phrase}.")
+        defs.append(f"{subj} is {c.name}, the person in {' and '.join(pics)}, {c.identity_phrase.rstrip('.')}.")
         shots_in = [f"[Shot {sh.index}]" for sh in seg.shots if cid in sh.on_screen_characters]
         retention.append(f"{subj} (appears in {', '.join(shots_in) or 'all shots'}): fully_preserved - "
                          f"face, hair, build and outfit are retained from {pics[0]}"
                          + (f"; {pics[1]} controls outfit and silhouette only" if len(pics) > 1 else "")
                          + ". Do not reuse the reference's background.")
-        if c.voice_reference and aud < MAX_REF_AUDIO:
+        if c.voice_reference and cid in speakers and aud < MAX_REF_AUDIO:
             aud += 1
             content.append(audio_item(c.voice_reference, "reference_audio"))
-            defs.append(f"<Audio {aud}> is the voice-timbre reference for {subj} ({speaker_ids(seg).get(cid, 'S?')}).")
+            defs.append(f"<Audio {aud}> is the voice-timbre reference for {subj} ({speakers[cid]}).")
             retention.append(f"<Audio {aud}>: reference - timbre only; do not carry its original words into the video.")
 
     sc = ep.scene(seg.scene_id)
     if sc.reference_images and pic < MAX_REF_IMAGES:
         pic += 1
         content.append(image_item(sc.reference_images[0], "reference_image"))
-        subj = f"<Subject {len(defs) + 1}>"
+        nsubj += 1
+        subj = f"<Subject {nsubj}>"
         labels[sc.id] = subj
         defs.append(f"{subj} is {sc.name} in <Picture {pic}>: {sc.description.rstrip('.')}.")
         retention.append(f"{subj}: partially_preserved - layout, lighting and set dressing are retained; "
@@ -144,7 +148,8 @@ def build_ref2va(ep: Episode, seg: Segment) -> BuiltPrompt:
         if p.reference_images and pic < MAX_REF_IMAGES:
             pic += 1
             content.append(image_item(p.reference_images[0], "reference_image"))
-            subj = f"<Subject {len(defs) + 1}>"
+            nsubj += 1
+            subj = f"<Subject {nsubj}>"
             labels[pid] = subj
             defs.append(f"{subj} is {p.name}, the exact item shown in <Picture {pic}>: {p.description.rstrip('.')}.")
             retention.append(f"{subj}: fully_preserved - the item's shape, colour, markings and material are retained exactly; "
@@ -163,12 +168,14 @@ def build_ref2va(ep: Episode, seg: Segment) -> BuiltPrompt:
     shots_txt = " ".join(_shot_sentences(ep, seg, sh, i == 0, subj_label, labels) for i, sh in enumerate(seg.shots))
     scene_lead = f"{seg.style}. {sc.description.rstrip('.')}." if not labels[sc.id].startswith("<") \
         else f"{seg.style}. The setting is {labels[sc.id]}."
-    continuity = fill(seg.continuity, labels)
+    continuity = fill(seg.continuity, labels).strip()
+    if continuity and not continuity.endswith((".", "!", "?")):
+        continuity += "."
     body = f"{scene_lead} {continuity + ' ' if continuity else ''}{shots_txt}"
     if seg.end_state:
-        body += f" The segment ends with {fill(seg.end_state, labels)}."
+        body += f" The segment ends with {fill(seg.end_state, labels).strip().rstrip('.')}."
     if seg.negatives:
-        body += f" {fill(seg.negatives, labels)}."
+        body += f" {fill(seg.negatives, labels).strip().rstrip('.')}."
 
     summary = (f"[reference generation{' + audio reference' if aud else ''}] {seg.hook_type + ': ' if seg.hook_type else ''}"
                f"{len(seg.shots)} shot{'s' if len(seg.shots) > 1 else ''}, {seg.duration} seconds, {ep.ratio}.")
