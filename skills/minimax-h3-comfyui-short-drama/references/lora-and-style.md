@@ -25,7 +25,7 @@
 - 纯音频 / 人声 LoRA 不要训；带声音须混 ≥ 30 段不含触发词的锚片段、rank 16、`lr×steps < 0.22`、weight decay 1e-4。
 - 推理强度：画风优先 1.0–1.2，平衡 0.6–0.8；检查点取中后段（800 步取 500；40 epoch 取 20）。
 - 接线 `LoraLoaderModelOnly`，`BasicGuider` 与 `BasicScheduler` 都接 LoRA 之后的 model；自训 LoRA 可与 Turbo 同载。
-- 训练用 shift 12/3 口径；若推理用 Turbo 4 步，shift 改 6/3 且量化 DiT 需 `lora_dynamic_apply: true`（LightX2V）。
+- 训练用 shift 12/3 口径；若推理用 FL2V 768p Turbo，shift 改 6/3（Ref2V 保持 12/3）且量化 DiT 需 `lora_dynamic_apply: true`（LightX2V）。
 
 ## 3. 现成风格 LoRA（HuggingFace）
 

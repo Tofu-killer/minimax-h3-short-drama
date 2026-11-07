@@ -35,8 +35,16 @@ def main():
         for f in pr.reference_images:
             if not _P(f).exists(): problems.append(f"prop {pr.id}: reference image missing: {f}")
     if a.catalog:
-        from catalog import check_episode  # type: ignore
-        problems += check_episode(a.episode, a.catalog)
+        from catalog import check as check_catalog  # type: ignore
+        problems += check_catalog(Path(a.episode), Path(a.catalog))
+    # reference-slot budget: 9 images per segment (chars up to 3 each + scene + props); the builder would silently drop extras
+    for seg in ep.segments:
+        n = sum(min(3, len(ep.char(c).reference_images)) for c in seg.character_ids)
+        n += 1 if ep.scene(seg.scene_id).reference_images else 0
+        n += sum(1 for p in seg.prop_ids if ep.prop(p).reference_images)
+        n += 1 if (seg.mode == "ref2va" and seg.first_frame) else 0
+        if n > 9: problems.append(f"segment {seg.id}: {n} reference images exceed the 9-slot limit (drop a character detail image or a prop)")
+        elif n > 6: problems.append(f"segment {seg.id}: WARN {n} reference images; >6 is less stable")
     if problems:
         print(f"{len(problems)} problem(s):")
         for p in problems:

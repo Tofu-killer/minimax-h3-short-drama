@@ -2,12 +2,12 @@
 """Asset catalog: turn a folder of item / character / scene images into a JSON catalog,
 and check that every storyboard segment binds the props it talks about.
 
-  python catalog.py build  E:/AI/素材/三角洲素材/三角洲物品 --kind prop --out examples/catalog_props.json
-  python catalog.py check  examples/episode01.json --catalog examples/catalog_props.json
+  python catalog.py build  <folder-of-item-images> --kind prop --out props.json
+  python validate_episode.py episodes/ep01.json --catalog props.json   # runs check() below
 
 Rarity (三角洲行动 loot tiers) is parsed from the folder name or file name:
   红/red, 黄/金/gold, 紫/purple, 蓝/blue, 绿/green, 白/white.
-The rarity is NOT rendered by H3; it is stored so stitch.py / post can overlay the game-style
+The rarity is NOT rendered by H3; it is stored so the editing stage can overlay the game-style
 coloured frame deterministically (same rule as subtitles: exact UI goes in post).
 """
 from __future__ import annotations

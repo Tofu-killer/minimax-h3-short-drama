@@ -105,6 +105,13 @@ def build_ref2va(ep: Episode, seg: Segment) -> BuiltPrompt:
     audio_defs: list[str] = []
     audio_ret: list[str] = []
 
+    # optional hand-off anchor (previous segment's tail frame) takes <Picture 1>
+    if seg.first_frame:
+        pic += 1
+        content.append(image_item(seg.first_frame, "reference_image"))
+        defs.append(f"<Picture {pic}> is the opening-frame anchor: the exact composition, positions and lighting at 00:00.000 of this segment.")
+        retention.append(f"<Picture {pic}>: fully_preserved - composition, character positions and lighting at 00:00.000; the action then develops from it.")
+
     # characters first (identity), then scene, then props
     for cid in seg.character_ids:
         c = ep.char(cid)
@@ -114,6 +121,7 @@ def build_ref2va(ep: Episode, seg: Segment) -> BuiltPrompt:
         pics = []
         for src in imgs:
             if pic >= MAX_REF_IMAGES:
+                import sys; print(f"WARN {seg.id}: reference image dropped (9-slot limit): {src}", file=sys.stderr)
                 break
             pic += 1
             content.append(image_item(src, "reference_image"))

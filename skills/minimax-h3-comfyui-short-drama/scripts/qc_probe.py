@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Technical QC for generated clips (needs ffprobe/ffmpeg on PATH).
 
-    python3 qc_probe.py takes/ep01/s03/*.mp4 --expect-seconds 10 --expect-size 1344x768
+    python3 qc_probe.py takes/ep01/s03/*.mp4 --expect-seconds 10 --expect-size 1344x768 --freeze-tail 1.0
 
 Reports per file: resolution, fps, duration, audio presence, peak level,
 frozen/black frames.  Exit 1 if any hard check fails.
@@ -25,8 +25,12 @@ def peak_db(p: Path):
     return float(m.group(1)) if m else None
 
 
-def freezes(p: Path):
-    r = run(["ffmpeg", "-v", "info", "-i", str(p), "-vf", "freezedetect=n=-60dB:d=1.0,blackdetect=d=0.5", "-f", "null", "-"])
+def freezes(p: Path, analyse_seconds: float | None):
+    """Count frozen (>1 s) and black (>0.25 s) spans; analyse_seconds trims off a declared freeze tail."""
+    cmd = ["ffmpeg", "-v", "info", "-i", str(p)]
+    if analyse_seconds and analyse_seconds > 0:
+        cmd += ["-t", f"{analyse_seconds:.3f}"]
+    r = run(cmd + ["-vf", "freezedetect=n=-60dB:d=1.0,blackdetect=d=0.25:pix_th=0.05", "-f", "null", "-"])
     return len(re.findall(r"freeze_start", r.stderr)), len(re.findall(r"black_start", r.stderr))
 
 
@@ -36,6 +40,7 @@ def main():
     ap.add_argument("--expect-seconds", type=float)
     ap.add_argument("--expect-size", help="WxH")
     ap.add_argument("--tolerance", type=float, default=0.6, help="seconds")
+    ap.add_argument("--freeze-tail", type=float, default=0.0, help="seconds of declared end-freeze to exclude from freeze/black detection (skill default 1.0)")
     a = ap.parse_args()
     bad = 0
     for f in a.files:
@@ -48,13 +53,13 @@ def main():
         num, den = v.get("r_frame_rate", "0/1").split("/"); fps = float(num) / float(den or 1)
         size = f"{v['width']}x{v['height']}"
         peak = peak_db(p) if au else None
-        fr, bl = freezes(p)
+        fr, bl = freezes(p, dur - a.freeze_tail if a.freeze_tail else None)
         problems = []
         if a.expect_seconds and abs(dur - a.expect_seconds) > a.tolerance: problems.append(f"duration {dur:.2f}s != {a.expect_seconds}")
         if a.expect_size and size != a.expect_size: problems.append(f"size {size} != {a.expect_size}")
         if abs(fps - 24) > 0.5: problems.append(f"fps {fps:.2f}")
         if not au: problems.append("no audio track")
-        elif peak is not None and peak > -0.5: problems.append(f"audio clipping peak {peak} dB")
+        elif peak is not None and peak > -1.0: problems.append(f"audio peak {peak} dB above -1 dB (sample peak; spec is -1 dBTP)")
         if fr: problems.append(f"{fr} frozen span(s)")
         if bl: problems.append(f"{bl} black span(s)")
         tag = "FAIL" if problems else "ok  "

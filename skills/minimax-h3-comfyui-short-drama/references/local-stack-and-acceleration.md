@@ -11,7 +11,7 @@
 | 杠杆 | 代表 | 有损？ | 规则 |
 |------|------|--------|------|
 | 少步（蒸馏） | lightx2v Turbo 4/8 步、alibaba-pai PDD 8 步、HyperFlow 8 步、FastH3 整模、Pika Flex 6 步、DMAD、VDN turbo adapter | 4 步明显、8 步轻微 | **只选一个**；VDN / PDD / SVDQuant 量化权重已折叠蒸馏，不再叠 LoRA |
-| 便宜的步 | 注意力核：SageAttention（无损）、核心 `BlockSparseAttention`（已合并 Sol/SLA/VSA，稀疏=有损）、Veda / Spark-H3 / Kablex VSA（有损稀疏）；跳步缓存：Spectrum、FirstBlockCache、T8 BlockCache、EasyCache（有损） | 核无损；稀疏与缓存有损 | 同一模型分支只能有一个「跳步/缓存」、只能有一个 attention 补丁；精修档只留 Sage |
+| 便宜的步 | 注意力核：SageAttention（无损）、Sol-Attn 稠密核（近无损）、核心 `BlockSparseAttention`（已合并 Sol/SLA/VSA，稀疏=有损）、Veda / Spark-H3 / Kablex VSA（有损稀疏）；跳步缓存：Spectrum、FirstBlockCache、T8 BlockCache、EasyCache（有损） | 核无损；稀疏与缓存有损 | 同一模型分支只能有一个「跳步/缓存」、只能有一个 attention 补丁；精修档只留 Sage |
 | 便宜的模型 | pruned（AdaLN 剪枝）int8、nvfp4、GGUF、VDN 架构替换、ClipProj 小文本编码器 | 剪枝略损细节 | 24 GB 用 int8_convrot（pruned 更省显存，不剪枝画质更稳） |
 
 **基线链**（所有加速都在它之上同 seed A/B）：
@@ -31,9 +31,9 @@
 
 ### 精修档（中选段，1344×768）
 - **路线 A（默认）**：Turbo 8 步 v1.1 + Sage，其余加速全关；`low_vram`（合并）与 bypass 各跑一次同 seed 定默认（3090 实测合并反而快 25% 且皮肤更干净，勿照抄「bypass 最锐」）
-- **路线 B（画质优先）**：无 Turbo 20 步 `res_multistep` + `simple` + Sage，再**二选一**叠加 Spectrum（默认参数，SigmaShift 之后 Guider 之前，`history_storage=system_ram`）或 FirstBlockCache `H3 Fast`（5090 实测 −30%；控制台 hit 数为 0 就移除）；8 步链两者都不挂
-- **路线 C（≥ 10 s 长段，ComfyUI 0.38.x 后）**：Spark-H3（Windows SM89 CUDA-13 包，`fidelity`、`topk_ratio 0.2`，Ref2VA 带参考视频时 `sparse_scope joint-video`、`dense_backend sage`）或 Veda，二选一，不与核心 `Block Sparse Attention` 同链；5 s 短片不值得折腾（3090 实测 Spark 与核心 Sol 同速 158 vs 152 s）
-- **二采精修**：第一段 0.2–0.33 MP 4–8 步 → `MiniMaxH3LatentUpscaleWithModel`（LBH 权重）放大 → 第二段 0.98 MP **3 步**，sigmas `0.9035, 0.6316, 0.3158, 0`，稀疏注意力只开在第二段；详见 `quality-pipeline.md`
+- **路线 B（画质优先 / 有运镜的镜头）**：无 Turbo 20 步 `res_multistep` + `simple` + Sage，**不叠任何缓存或稀疏注意力**（精修档铁律）。Spectrum（默认参数，SigmaShift 之后 Guider 之前，`history_storage=system_ram`）或 FirstBlockCache `H3 Fast`（5090 实测 −30%；hit 数为 0 就移除）只允许在「20 步草稿探索」时二选一试用；8 步链两者都不挂
+- **草稿档 ≥ 10 s 长段可选（ComfyUI 0.38.x 后）**：Spark-H3（Windows SM89 CUDA-13 包，`fidelity`、`topk_ratio 0.2`，Ref2VA 带参考视频时 `sparse_scope joint-video`、`dense_backend sage`）或 Veda，二选一，不与核心 `Block Sparse Attention` 同链；稀疏注意力有损，**只用于抽卡，不进精修档**；5 s 短片不值得折腾（3090 实测 Spark 与核心 Sol 同速 158 vs 152 s）
+- **二采精修（保 take）**：一采 latent → LBH 放大 → 1920×1088 从 **σ 0.45** 重采、音频钉死，见 `quality-pipeline.md` §4（权威）。Spark-H3 / FreeVideo 示例的「0.2–0.33 MP 4–8 步 → 放大 → 3 步 sigmas `0.9035, 0.6316, 0.3158, 0`」是**重生成式**二采（高 σ 会改脸），只在接受重绘时用
 - **写实 A/B**：alibaba-pai PDD Ref2VA 8 步替换 Turbo（`MiniMaxH3PDDAccApply nfe=8`，SIGMAS 接 `SamplerCustomAdvanced`，Euler、CFG 1、shift 恰好 12/3，不接任何缓存，不用 er_sde / res_multistep）；漫剧 / 插画风格保持 Turbo（PDD 4 NFE 会压平纹理）
 - 预计：1344×768 × 10 s × 8 步 ≈ 5–8 min（4090，含 VAE）
 
@@ -78,7 +78,7 @@
 1. 分辨率与时长同口径？（多数「2 分钟 10 秒」是 480p–544p）
 2. 还在跑 20 步 + CFG 分支？→ Turbo 8 步，CFG 1
 3. LoRA 版本与分辨率匹配？（544p 版跑 768p 既慢又糊）
-4. Windows：NVIDIA 控制面板关闭「CUDA 系统内存回退」；看「共享 GPU 内存」是否被占用
+4. Windows：NVIDIA 控制面板关闭「CUDA 系统内存回退」（关闭后放不下会直接 OOM 报错而不是变慢，先确认模型 + 激活能放进 24 GB）；看「共享 GPU 内存」是否被占用
 5. int8 DiT 权重是否 **100% 驻留 GPU**：差几百 MB 未全载，步时从 ~19 s/it 跌到 ~283 s/it；OOM 时降分辨率或减参考图，不要加 reserve
 6. Sage 已生效？（控制台 patch 日志）是否与 LowVRAM 同开？是否启动参数和节点重复 patch？
 7. 冷启动：第一条含 JIT 编译（Triton / Sage）与 34 GB 载入，8–14 min 属正常；任何稀疏 / Sol 节点换分辨率或时长都会重新 JIT
@@ -88,7 +88,7 @@
 ## 5b. 长尾实测补充（`docs/13-github-survey/08-long-tail-comfyui.md`）
 
 - **4090 单段帧数上限 328 帧**（19×17+5）：345 帧有 6/7 概率个别 step 停滞 2.5–4.8×、整段慢 3–17×；1280 宽改 **1216** 让 VAE 解码 tile 28→24、总时长 −15%；VAE tile 保持 256（512+ 不更快且 PSNR 40→21 dB 出格子）。
-- 采样期间不要轮询 ComfyUI HTTP（每次停 18–43 s，`comfy_submit.py --poll` 设 ≥ 20 s）；同配置耗时涨到 1.8× 立即重启 ComfyUI（CUDA 崩溃前兆）；渲染时关杀毒实时扫描。
+- 采样期间不要轮询 ComfyUI HTTP（每次停 18–43 s，`comfy_submit.py --poll` 设 ≥ 20 s）；同配置耗时涨到 1.8× 立即重启 ComfyUI（CUDA 崩溃前兆）；杀毒软件只对 ComfyUI 与模型目录加排除项，不要整体关闭。
 - **int8_convrot 底模上挂 LoRA 用运行时分支 / bypass，不反量化合并**：合并往返注入 ~1.5% 权重噪声而 H3 LoRA delta 只有 0.01–0.08%；多 LoRA 用 PowerLoraStack `quantized_layers=auto`，视频风格 LoRA 的 audio 模态缩到 0–0.25。装 LoRA 后日志必须出现 `208 patches attached`。
 - 同一提示词多 seed 抽卡时把条件编码落盘复用（pepikir `H3SaveConditioning/LoadConditioning` 或 CLIPCached），采样图里不放 CLIPLoader；32 GB 内存机器单图 `--cache-none`；TE 与 DiT 放 NVMe（编码 90→25 s）。
 - 若用核心 EasyCache：`end_percent` 封顶 0.70（默认 0.95 后期跳步造成织纹与色块）。

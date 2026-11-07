@@ -1,6 +1,6 @@
 # 生态地图：这件事 GitHub 上谁做得最好（2026-11）
 
-> 1750+ 个 H3 相关仓库里精读了 ~150 个，目录在 `docs/13-github-survey/00-catalog.md`，逐仓库评级在 `01–07`。本表只列「采用 / 试用」与明确「跳过」。星数为抓取时快照。
+> 1750+ 个 H3 相关仓库里精读了 ~300 个，目录在仓库 `docs/13-github-survey/00-catalog.md`，逐仓库评级在 `01–11`（路径相对仓库根；单独安装 skill 时看 https://github.com/Tofu-killer/minimax-h3-short-drama/tree/main/docs/13-github-survey ）。本表只列「采用 / 试用」与明确「跳过」。星数为抓取时快照。
 
 | 需求 | 采用 | 试用 / 观望 | 跳过（原因） |
 |------|------|------------|------|
