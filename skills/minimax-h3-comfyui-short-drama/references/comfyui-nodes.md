@@ -16,7 +16,7 @@
 | `MiniMaxH3SigmaShift`（显示名 ModelSamplingMiniMaxH3） | model, shift_video 12, shift_audio 3 | FL2V 768p Turbo LoRA 改 6 / 3；Ref2V 与 544p 版保持 12 / 3 |
 | `MiniMaxH3FunControlNetApply` | model, controlnet 权重, strength 1.0, start/end_percent, `control_video?`, `mask?`, `source_video?` | alibaba-pai Fun-Controlnet-Union（Canny/Depth/HED/MLSD/Pose + 修补），单文件 ~6.8 GiB，CFG 保持 1 |
 | `MiniMaxH3LatentUpscaleWithModel` | latent upscale model（LBH 系列权重）, samples, width 2560, height 1440 | 只放大视频 latent，音频原样透传；做「草稿→精修二采」的第一步 |
-| `PH3ImageConditioning` | prompt, width/height(0=自动), image_1..9 | p-h3-image 单帧出图分支（角色卡 / 剧照） |
+| `PH3ImageConditioning` | prompt, width/height(0=自动), image_1..9 | p-h3-image 单帧出图分支（角色卡 / 剧照）。**只在 ComfyUI master，0.37.2 没有**（源码比对）；0.37.2 用 Fizgig Still / Contact Sheet，见 `image-stage.md` |
 | 采样 | `KSamplerSelect(res_multistep)` → `BasicScheduler(simple, steps, denoise)` → `SamplerCustomAdvanced` | 官方模板的采样器组合；`cfg` 固定 1.0 |
 | 输出 | `CreateVideo(24 fps)` → `SaveVideo` | 24 fps 不要改 |
 
