@@ -24,7 +24,7 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 | 0 | 列出 GPU / ComfyUI 版本 / 已有模型与 LoRA / 自定义节点 / 现有工作流；用 `assets/local-inventory-checklist.md` 的清单 | `references/local-stack-and-acceleration.md` |
 | 1 | 确认风格（电影质感 / 漫剧）、画幅（16:9：训练格点 1344×768 其实是 7:4，真 16:9 用 1536×864 或生成后 lanczos 到 1920×1080）、单集时长、每段时长 | `assets/style-*.md`、`references/model-and-modes.md` 分辨率格点 |
 | 2 | 建角色卡（脸 / 服装 / 全身 3 图）、场景空景、道具白底图、2–15 s 干净音色；写识别短语 + 声音短语 | `references/storyboard-and-assets.md` §3 |
-| 3 | 把剧本切成 4–15 s 段（对白段 8–12 s，动作 / 硬切镜头 5–8 s），每段 2–4 子镜头，用 `{asset_id}` 占位符写；跑 `scripts/validate_episode.py` | `references/storyboard-and-assets.md` §1–2 |
+| 3 | 用 `assets/agent-prompts/01-outline.md` → `02-storyboard.md` 让 LLM 把剧本切成 4–15 s 段（对白段 8–12 s，动作 / 硬切镜头 5–8 s），每段 2–4 子镜头，每镜写景别 / 焦段 / 运镜 / 动作 / 表演 / 光线 / 台词 / 声音；跑 `scripts/validate_episode.py`，再用 `scripts/render_storyboard.py` 出分镜表给用户审，`03-rhythm-audit.md` 做节奏审计 | `references/storyboard-and-assets.md` §1–2 |
 | 4 | `scripts/build_prompts.py` 生成每段提示词与媒体顺序；`scripts/lint_prompt.py` 机检，FAIL 不提交；本地 Ollama 改写只用于三段式，六段式手写 | `references/prompt-format.md` |
 | 5 | 草稿档（Turbo 8 步 + Sage + 768P）每段 2–4 个 seed；`scripts/comfy_submit.py --batch` | `references/local-stack-and-acceleration.md`、`references/comfyui-nodes.md` |
 | 6 | 中选段**同 seed** 精修：LBH latent 放大 + σ 0.45 二采（音频钉死）→ 1920×1088；小脸先修再放大；只有单镜 > 15 s 才续接 | `references/quality-pipeline.md`、`references/continuity-long-video.md` |
@@ -72,6 +72,7 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 | 脚本 | 作用 |
 |------|------|
 | `scripts/validate_episode.py <ep.json> [--catalog props.json]` | 分镜校验：时长、台词预算、一镜一说话人、未知资产、道具无图、空终态 |
+| `scripts/render_storyboard.py <ep.json> --out ep01_storyboard.md` | 把分镜 JSON 渲染成人能审的分镜表（每镜时间、景别 / 焦段、运镜、动作、表演、光线、台词与语速、声音） |
 | `scripts/build_prompts.py <ep.json> --out prompts/ep01` | 生成每段最终提示词 `.txt` + 媒体顺序 `.media.json` + `cues.srt` |
 | `scripts/comfy_submit.py <wf.api.json> --set … --batch N --poll 20 --free-every 3 --out takes/…` | 向本地 ComfyUI 提交 API 格式工作流、上传媒体、按 seed 抽卡、下载产物、写 `run.json`；轮询 ≥ 20 s，可定期 `/free` 释放显存 |
 | `scripts/qc_probe.py <mp4…> --expect-seconds 10 --expect-size 1344x768 --freeze-tail 1.0` | ffprobe 技术 QC：分辨率/时长/帧率/音轨/峰值 > −1 dB/冻结 > 1 s/黑场 > 0.25 s（排除声明的 1 s 定格尾） |

@@ -64,13 +64,16 @@
      "index": 1,
      "start": 0,
      "framing": "a wide shot down the full length of the corridor from a low tripod height, the exit sign small at the far end",
-     "camera": "The camera holds a static shot",
+     "camera": "The camera pushes in with small amplitude at slow speed down the corridor toward the two of them",
      "action": "{dr_zhou} walks away from the camera down the center of the corridor toward the green exit sign, head lowered, both hands buried in the pockets of his white coat, his rubber soles squeaking faintly on the polished floor; at the nurses' station {lin_lan} steps out from behind the counter into his path, stops one meter in front of him with her arms at her sides and her weight on her back foot, and he halts; both keep their lips closed and their eyes on each other; the corridor behind them stays empty, every ward door closed, the only movement the faint flicker of one fluorescent tube",
      "dialogue": [],
      "on_screen_characters": [
       "lin_lan",
       "dr_zhou"
-     ]
+     ],
+     "lens": "24mm, deep focus",
+     "lighting": "cool fluorescent overhead light, the warm desk lamp at the nurses' station the only warm source",
+     "sound_cue": "his rubber soles squeak twice on the polished floor and stop"
     },
     {
      "index": 2,
@@ -89,7 +92,10 @@
      "on_screen_characters": [
       "lin_lan",
       "dr_zhou"
-     ]
+     ],
+     "lens": "50mm, shallow depth of field",
+     "performance": "trigger: he halts in front of her; reception: her jaw tightens and her breathing slows; response: she lifts her chin and holds his gaze; settled: she waits with her hands at her sides",
+     "end_hold": true
     }
    ],
    "soundscape": "The steady hum of fluorescent tubes overhead, Dr Zhou's rubber soles squeaking twice on the polished floor and then stopping, a ward monitor beeping once far down the corridor, the faint click of the nurses' station lamp switch, Lin Lan's calm voice close to the camera",
@@ -122,7 +128,10 @@
      "on_screen_characters": [
       "lin_lan",
       "dr_zhou"
-     ]
+     ],
+     "lens": "50mm, shallow depth of field",
+     "performance": "trigger: her question; reception: his eyes drop to the floor; response: a slow breath before he reaches into his coat; settled: the envelope pressed flat to his chest",
+     "sound_cue": "the kraft-paper envelope rustles against the cotton of his coat"
     },
     {
      "index": 2,
@@ -141,7 +150,9 @@
      "on_screen_characters": [
       "lin_lan",
       "dr_zhou"
-     ]
+     ],
+     "lens": "85mm, very shallow depth of field",
+     "lighting": "the fluorescent tube above flares briefly across his glasses"
     },
     {
      "index": 3,
@@ -152,7 +163,9 @@
      "dialogue": [],
      "on_screen_characters": [
       "lin_lan"
-     ]
+     ],
+     "lens": "85mm, very shallow depth of field",
+     "end_hold": true
     }
    ],
    "soundscape": "The fluorescent hum continues without change, the dry rustle of the kraft-paper envelope sliding against the cotton of the white coat, a single distant elevator chime, Dr Zhou's low voice with a slight rasp, Lin Lan's sharp intake of breath",

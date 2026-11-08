@@ -76,9 +76,16 @@ def _shot_sentences(ep: Episode, seg: Segment, sh: Shot, is_first: bool, subj_la
     framing = fill(sh.framing, labels or {})
     if action and action[-1] not in ".!?。！？":
         action += "."
-    parts.append(f"{head} {framing}: {action}")
+    lens = getattr(sh, "lens", "")
+    parts.append(f"{head} {framing}{', ' + lens.rstrip('.') if lens else ''}: {action}")
+    if getattr(sh, "lighting", ""):
+        parts.append(fill(sh.lighting.strip().rstrip(".") + ".", labels or {}))
+    if getattr(sh, "performance", ""):
+        parts.append(fill(sh.performance.strip().rstrip(".") + ".", labels or {}))
     if sh.camera:
         parts.append(sh.camera.rstrip(".") + ".")
+    if getattr(sh, "sound_cue", ""):
+        parts.append(fill(sh.sound_cue.strip().rstrip(".") + ".", labels or {}))
     sids = speaker_ids(seg)
     for d in sh.dialogue:
         if d.speaker == "narrator":
@@ -87,6 +94,8 @@ def _shot_sentences(ep: Episode, seg: Segment, sh: Shot, is_first: bool, subj_la
             c = ep.char(d.speaker)
             who = f"{subj_label(d.speaker)}, {c.voice_phrase}" if c.voice_phrase else subj_label(d.speaker)
         parts.append(render_dialogue(d, who, sids[d.speaker]))
+    if getattr(sh, "end_hold", False):
+        parts.append("In the final second every character settles and holds the pose, breathing, while the framing stays put.")
     return " ".join(parts)
 
 

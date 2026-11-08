@@ -1,62 +1,340 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "MiniMax H3 short-drama episode storyboard",
-  "description": "Input for scripts/validate_episode.py and scripts/build_prompts.py. Asset references in text use {asset_id} placeholders; <Subject N>/<Picture N> labels are assigned at build time in wiring order (characters, scene, props, then audio).",
-  "type": "object",
-  "required": ["title", "ratio", "style", "characters", "scenes", "segments"],
-  "properties": {
-    "title": {"type": "string"},
-    "ratio": {"type": "string", "enum": ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"]},
-    "style": {"type": "string", "description": "Opening style sentence reused by every segment unless overridden"},
-    "synopsis": {"type": "string"},
-    "characters": {"type": "array", "items": {"type": "object", "required": ["id", "name", "identity_phrase"], "properties": {
-      "id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
-      "name": {"type": "string"},
-      "identity_phrase": {"type": "string", "description": "Invariants only (age, bone structure, hair, outfit colours); reused verbatim in every segment"},
-      "voice_phrase": {"type": "string"},
-      "reference_images": {"type": "array", "maxItems": 3, "items": {"type": "string"}, "description": "face, outfit/full body, optional detail; paths relative to this JSON"},
-      "voice_reference": {"type": ["string", "null"], "description": "2–15 s clean speech; attached only in segments where the character speaks"}
-    }}},
-    "scenes": {"type": "array", "items": {"type": "object", "required": ["id", "name", "description"], "properties": {
-      "id": {"type": "string"}, "name": {"type": "string"},
-      "description": {"type": "string", "description": "Written once, pasted unchanged; no people"},
-      "reference_images": {"type": "array", "maxItems": 2, "items": {"type": "string"}}
-    }}},
-    "props": {"type": "array", "items": {"type": "object", "required": ["id", "name", "description"], "properties": {
-      "id": {"type": "string"}, "name": {"type": "string"}, "description": {"type": "string"},
-      "reference_images": {"type": "array", "minItems": 1, "items": {"type": "string"}, "description": "A prop without an image WILL be invented by the model"},
-      "rarity": {"type": ["string", "null"], "description": "UI tier overlaid in post, never rendered"}
-    }}},
-    "segments": {"type": "array", "minItems": 1, "items": {"type": "object",
-      "required": ["id", "duration", "scene_id", "character_ids", "shots", "soundscape"],
-      "properties": {
-        "id": {"type": "string"},
-        "duration": {"type": "integer", "minimum": 4, "maximum": 15, "description": "Seconds; snapped to the 17k+5 frame grid at build time"},
-        "mode": {"type": "string", "enum": ["ref2va", "i2va", "fl2va", "t2va"], "default": "ref2va"},
-        "scene_id": {"type": "string"},
-        "character_ids": {"type": "array", "items": {"type": "string"}},
-        "prop_ids": {"type": "array", "items": {"type": "string"}},
-        "style": {"type": "string"},
-        "hook_type": {"type": "string", "enum": ["", "hook", "setup", "turn", "cliffhanger"]},
-        "first_frame": {"type": ["string", "null"]}, "last_frame": {"type": ["string", "null"]},
-        "soundscape": {"type": "string", "description": "1–4 concrete sentences; no mood adjectives"},
-        "music": {"type": "string", "default": "N/A"},
-        "continuity": {"type": "string", "description": "State inherited from the previous segment (positions, props held, light); must not be empty after segment 1"},
-        "end_state": {"type": "string", "description": "Named end state for the next segment; no trailing period needed"},
-        "negatives": {"type": "string", "description": "Appended verbatim to the description. Write it as a positive lock sentence (e.g. the corridor stays empty), never as a bare 'no X'"},
-        "shots": {"type": "array", "minItems": 1, "maxItems": 5, "items": {"type": "object",
-          "required": ["index", "start", "framing", "camera", "action"],
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "title": "MiniMax H3 short-drama episode storyboard",
+ "description": "Input for scripts/validate_episode.py and scripts/build_prompts.py. Asset references in text use {asset_id} placeholders; <Subject N>/<Picture N> labels are assigned at build time in wiring order (characters, scene, props, then audio).",
+ "type": "object",
+ "required": [
+  "title",
+  "ratio",
+  "style",
+  "characters",
+  "scenes",
+  "segments"
+ ],
+ "properties": {
+  "title": {
+   "type": "string"
+  },
+  "ratio": {
+   "type": "string",
+   "enum": [
+    "16:9",
+    "9:16",
+    "1:1",
+    "4:3",
+    "3:4",
+    "21:9"
+   ]
+  },
+  "style": {
+   "type": "string",
+   "description": "Opening style sentence reused by every segment unless overridden"
+  },
+  "synopsis": {
+   "type": "string"
+  },
+  "characters": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "required": [
+     "id",
+     "name",
+     "identity_phrase"
+    ],
+    "properties": {
+     "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+$"
+     },
+     "name": {
+      "type": "string"
+     },
+     "identity_phrase": {
+      "type": "string",
+      "description": "Invariants only (age, bone structure, hair, outfit colours); reused verbatim in every segment"
+     },
+     "voice_phrase": {
+      "type": "string"
+     },
+     "reference_images": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+       "type": "string"
+      },
+      "description": "face, outfit/full body, optional detail; paths relative to this JSON"
+     },
+     "voice_reference": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "2–15 s clean speech; attached only in segments where the character speaks"
+     }
+    }
+   }
+  },
+  "scenes": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "required": [
+     "id",
+     "name",
+     "description"
+    ],
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     },
+     "description": {
+      "type": "string",
+      "description": "Written once, pasted unchanged; no people"
+     },
+     "reference_images": {
+      "type": "array",
+      "maxItems": 2,
+      "items": {
+       "type": "string"
+      }
+     }
+    }
+   }
+  },
+  "props": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "required": [
+     "id",
+     "name",
+     "description"
+    ],
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     },
+     "description": {
+      "type": "string"
+     },
+     "reference_images": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+       "type": "string"
+      },
+      "description": "A prop without an image WILL be invented by the model"
+     },
+     "rarity": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "UI tier overlaid in post, never rendered"
+     }
+    }
+   }
+  },
+  "segments": {
+   "type": "array",
+   "minItems": 1,
+   "items": {
+    "type": "object",
+    "required": [
+     "id",
+     "duration",
+     "scene_id",
+     "character_ids",
+     "shots",
+     "soundscape"
+    ],
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "duration": {
+      "type": "integer",
+      "minimum": 4,
+      "maximum": 15,
+      "description": "Seconds; snapped to the 17k+5 frame grid at build time"
+     },
+     "mode": {
+      "type": "string",
+      "enum": [
+       "ref2va",
+       "i2va",
+       "fl2va",
+       "t2va"
+      ],
+      "default": "ref2va"
+     },
+     "scene_id": {
+      "type": "string"
+     },
+     "character_ids": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "prop_ids": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "style": {
+      "type": "string"
+     },
+     "hook_type": {
+      "type": "string",
+      "enum": [
+       "",
+       "hook",
+       "setup",
+       "turn",
+       "cliffhanger"
+      ]
+     },
+     "first_frame": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "last_frame": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "soundscape": {
+      "type": "string",
+      "description": "1–4 concrete sentences; no mood adjectives"
+     },
+     "music": {
+      "type": "string",
+      "default": "N/A"
+     },
+     "continuity": {
+      "type": "string",
+      "description": "State inherited from the previous segment (positions, props held, light); must not be empty after segment 1"
+     },
+     "end_state": {
+      "type": "string",
+      "description": "Named end state for the next segment; no trailing period needed"
+     },
+     "negatives": {
+      "type": "string",
+      "description": "Appended verbatim to the description. Write it as a positive lock sentence (e.g. the corridor stays empty), never as a bare 'no X'"
+     },
+     "shots": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 5,
+      "items": {
+       "type": "object",
+       "required": [
+        "index",
+        "start",
+        "framing",
+        "camera",
+        "action"
+       ],
+       "properties": {
+        "index": {
+         "type": "integer",
+         "minimum": 1
+        },
+        "start": {
+         "type": "number",
+         "minimum": 0,
+         "description": "Seconds within the segment; shot 1 must be 0; each shot ≥ 1.2 s"
+        },
+        "framing": {
+         "type": "string"
+        },
+        "camera": {
+         "type": "string",
+         "description": "One dominant move in official vocabulary, as a sentence"
+        },
+        "action": {
+         "type": "string",
+         "description": "≥ 8 words, starting state → movement → ending state, ends with a period"
+        },
+        "on_screen_characters": {
+         "type": "array",
+         "items": {
+          "type": "string"
+         }
+        },
+        "dialogue": {
+         "type": "array",
+         "maxItems": 2,
+         "items": {
+          "type": "object",
+          "required": [
+           "speaker",
+           "language",
+           "text"
+          ],
           "properties": {
-            "index": {"type": "integer", "minimum": 1},
-            "start": {"type": "number", "minimum": 0, "description": "Seconds within the segment; shot 1 must be 0; each shot ≥ 1.2 s"},
-            "framing": {"type": "string"},
-            "camera": {"type": "string", "description": "One dominant move in official vocabulary, as a sentence"},
-            "action": {"type": "string", "description": "≥ 8 words, starting state → movement → ending state, ends with a period"},
-            "on_screen_characters": {"type": "array", "items": {"type": "string"}},
-            "dialogue": {"type": "array", "maxItems": 2, "items": {"type": "object", "required": ["speaker", "language", "text"],
-              "properties": {"speaker": {"type": "string"}, "language": {"type": "string"}, "text": {"type": "string"},
-                             "delivery": {"type": "string"}, "offscreen": {"type": "boolean", "default": false}}}}
-          }}}
-      }}}
+           "speaker": {
+            "type": "string"
+           },
+           "language": {
+            "type": "string"
+           },
+           "text": {
+            "type": "string"
+           },
+           "delivery": {
+            "type": "string"
+           },
+           "offscreen": {
+            "type": "boolean",
+            "default": false
+           }
+          }
+         }
+        },
+        "lens": {
+         "type": "string",
+         "description": "Optional focal length / depth of field, e.g. '35mm, shallow depth of field'"
+        },
+        "lighting": {
+         "type": "string",
+         "description": "Optional per-shot key light direction, colour temperature, practicals; inherits the scene when empty"
+        },
+        "performance": {
+         "type": "string",
+         "description": "Optional trigger -> reception -> one primary response -> settled; ≤3 observable cues per beat"
+        },
+        "sound_cue": {
+         "type": "string",
+         "description": "Optional single diegetic sound tied to an action in this shot"
+        },
+        "end_hold": {
+         "type": "boolean",
+         "default": false,
+         "description": "Last shot of the segment: settle 0.5 s then hold 1 s (trimmed at assembly)"
+        }
+       }
+      }
+     },
+     "first_frame_prompt": {
+      "type": "string",
+      "description": "i2va/fl2va only: English still-image prompt for the shot's literal first frame (see assets/image-prompts.md)"
+     }
+    }
+   }
   }
+ }
 }

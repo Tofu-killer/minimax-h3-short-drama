@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, fields
 from pathlib import Path
 from typing import Optional
 
@@ -62,6 +62,11 @@ class Shot:
     action: str                     # starting state -> movement -> ending state
     dialogue: list[Dialogue] = field(default_factory=list)
     on_screen_characters: list[str] = field(default_factory=list)
+    lens: str = ""                  # optional: "35mm, shallow depth of field" / "wide 24mm, deep focus"
+    lighting: str = ""              # optional: key/fill direction, practicals, colour temperature for THIS shot
+    performance: str = ""           # optional: trigger -> reception -> one response -> settled state (observable cues)
+    sound_cue: str = ""             # optional: one diegetic sound tied to an action in this shot
+    end_hold: bool = False          # optional: last shot settles 0.5 s then holds 1 s (trimmed at assembly)
 
 
 @dataclass
@@ -112,7 +117,8 @@ class Episode:
 # ---------------------------------------------------------------- (de)serialisation
 
 def _from_dict(cls, d):
-    return cls(**d)
+    names = {f.name for f in fields(cls)}
+    return cls(**{k: v for k, v in d.items() if k in names})
 
 
 def _resolve(base: Path, src: Optional[str]) -> Optional[str]:
@@ -126,9 +132,9 @@ def load_episode(path: str | Path) -> Episode:
     path = Path(path)
     base = path.parent
     raw = json.loads(path.read_text(encoding="utf-8"))
-    characters = [Character(**c) for c in raw["characters"]]
-    scenes = [Scene(**s) for s in raw["scenes"]]
-    props = [Prop(**p) for p in raw.get("props", [])]
+    characters = [_from_dict(Character, c) for c in raw["characters"]]
+    scenes = [_from_dict(Scene, s) for s in raw["scenes"]]
+    props = [_from_dict(Prop, p) for p in raw.get("props", [])]
     for obj in (*characters, *scenes, *props):
         obj.reference_images = [_resolve(base, i) for i in obj.reference_images]
     for c in characters:
@@ -140,9 +146,9 @@ def load_episode(path: str | Path) -> Episode:
         s.setdefault("style", raw.get("style", "Live-action, cinematic"))   # episode style is the default for every segment
         shots = []
         for sh in s["shots"]:
-            dl = [Dialogue(**d) for d in sh.get("dialogue", [])]
-            shots.append(Shot(**{**sh, "dialogue": dl}))
-        segments.append(Segment(**{**s, "shots": shots}))
+            dl = [_from_dict(Dialogue, d) for d in sh.get("dialogue", [])]
+            shots.append(_from_dict(Shot, {**sh, "dialogue": dl}))
+        segments.append(_from_dict(Segment, {**s, "shots": shots}))
     return Episode(title=raw["title"], ratio=raw["ratio"], style=raw.get("style", "Live-action, cinematic"),
                    characters=characters, scenes=scenes, props=props, segments=segments,
                    synopsis=raw.get("synopsis", ""))
