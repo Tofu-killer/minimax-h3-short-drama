@@ -1,6 +1,6 @@
 ---
 name: minimax-h3-comfyui-short-drama
-description: 用本地 ComfyUI 上的 MiniMax H3（海螺 3.0 / Hailuo 03，FL2VA / Ref2VA 开源权重）从剧本、生图（角色卡 / 场景 / 道具 / 逐镜首帧）做到成片的短剧 / 漫剧 / 电影质感短片生产流程。只要用户提到 MiniMax H3、海螺、Hailuo、H3 工作流、ref2va / fl2va、Turbo LoRA、导演台、短剧分镜、角色一致性、抽卡、二采 / 超分、长视频续接、SageAttention / 稀疏注意力 / 缓存加速、ComfyUI 跑 H3 慢或爆显存，或者想让 agent 接管本地 H3 工作流批量出片——即使没说「短剧」两个字——都要先读本 skill。覆盖：环境盘点与模型文件选择、24 GB 单卡的草稿档 / 精修档加速组合、官方三段式 / 六段式提示词格式与短剧对白规则、分镜分段与角色卡 / 道具绑定、段间续接方案、768P→1080p/2K 画质流水线、QC 与拼接、GitHub 生态里每类工具该用哪个与禁忌清单。
+description: 用本地 ComfyUI 上的 MiniMax H3（海螺 3.0 / Hailuo 03，FL2VA / Ref2VA 开源权重）从剧本、生图（角色卡 / 场景 / 道具 / 逐镜首帧）做到成片的短剧 / 漫剧 / 电影质感短片生产流程，内置 13 个类型包（都市情感、悬疑、古装仙侠、动作打斗、恐怖、喜剧、科幻赛博、3D 国漫、2D 动画、MV、产品广告、口播数字人、手作定格科普）。只要用户提到 MiniMax H3、海螺、Hailuo、H3 工作流、ref2va / fl2va、Turbo LoRA、导演台、短剧分镜、角色一致性、抽卡、二采 / 超分、长视频续接、SageAttention / 稀疏注意力 / 缓存加速、ComfyUI 跑 H3 慢或爆显存，或者想让 agent 接管本地 H3 工作流批量出片——即使没说「短剧」两个字——都要先读本 skill。覆盖：环境盘点与模型文件选择、24 GB 单卡的草稿档 / 精修档加速组合、官方三段式 / 六段式提示词格式与短剧对白规则、分镜分段与角色卡 / 道具绑定、段间续接方案、768P→1080p/2K 画质流水线、QC 与拼接、GitHub 生态里每类工具该用哪个与禁忌清单。
 compatibility: 本地 ComfyUI ≥ 0.37（原生 MiniMaxH3 节点），单卡 ≥ 16 GB（推荐 24 GB），系统内存 ≥ 32 GB（推荐 64 GB）。脚本仅依赖 Python 3.10+ 标准库与 ffmpeg / ffprobe。模型与 LoRA 从 HuggingFace 下载。
 ---
 
@@ -22,7 +22,7 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 | 步 | 做什么 | 读 |
 |----|--------|----|
 | 0 | 列出 GPU / ComfyUI 版本 / 已有模型与 LoRA / 自定义节点 / 现有工作流；用 `assets/local-inventory-checklist.md` 的清单 | `references/local-stack-and-acceleration.md` |
-| 1 | 确认风格（电影质感 / 漫剧）、画幅（16:9：训练格点 1344×768 其实是 7:4，真 16:9 用 1536×864 或生成后 lanczos 到 1920×1080）、单集时长、每段时长 | `assets/style-*.md`、`references/model-and-modes.md` 分辨率格点 |
+| 1 | 确认类型（`assets/genres/README.md` 选一个类型包，看 H3 适配度与绕法）与风格（电影质感 / 漫剧）、画幅（16:9：训练格点 1344×768 其实是 7:4，真 16:9 用 1536×864 或生成后 lanczos 到 1920×1080）、单集时长、每段时长 | `assets/genres/`、`assets/style-*.md`、`references/model-and-modes.md` 分辨率格点 |
 | 2 | 生图：定妆照 → 16:9 角色板（裁 face.png）→ 场景无人母版 + 九宫格 → 道具白底图；再备 2–15 s 干净音色；写识别短语 + 声音短语 | `references/image-stage.md`、`assets/image-prompts.md`、`references/storyboard-and-assets.md` §3 |
 | 3 | 用 `assets/agent-prompts/01-outline.md` → `02-storyboard.md` 让 LLM 把剧本切成 4–15 s 段（对白段 8–12 s，动作 / 硬切镜头 5–8 s），每段 2–4 子镜头，每镜写景别 / 焦段 / 运镜 / 动作 / 表演 / 光线 / 台词 / 声音；跑 `scripts/validate_episode.py`，再用 `scripts/render_storyboard.py` 出分镜表给用户审，`03-rhythm-audit.md` 做节奏审计 | `references/storyboard-and-assets.md` §1–2 |
 | 4 | 需要首帧的段（中文真人对白、关键道具特写）用编辑模型 + face.png + 场景裁切出字面首帧（`image-stage.md` §⑤）；`scripts/build_prompts.py` 生成每段提示词与媒体顺序；`scripts/lint_prompt.py` 机检，FAIL 不提交；本地 Ollama 改写只用于三段式，六段式手写 | `references/prompt-format.md` |
@@ -97,5 +97,6 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 | `references/camera-and-performance.md` | 写运镜句、表演、空间锚点卡、台词排播、参考媒体预处理（有实跑数据） |
 | `references/lora-and-style.md` | 要不要训角色 LoRA、风格 LoRA 选型与强度、三视图 LoRA、本地提示词改写 LoRA |
 | `references/qc-and-assembly.md` | 抽卡策略、QC、字幕、配乐、拼接、目录规范 |
+| `assets/genres/README.md` | 按类型选参数、风格句、镜头 / 表演 / 声音要点与示例提示词；H3 弱的类型（打斗、slapstick、大特效、真人口播）怎么绕 |
 | `references/ecosystem-map.md` | 「这件事 GitHub 上谁做得最好」 |
 | `references/pitfalls.md` | 症状→原因→修法 |

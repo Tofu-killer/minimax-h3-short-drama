@@ -4,7 +4,7 @@
 
 | Skill | 用途 |
 |-------|------|
-| [`minimax-h3-comfyui-short-drama`](minimax-h3-comfyui-short-drama/SKILL.md) | 在本地 ComfyUI（单卡 24 GB 为基准）上用 MiniMax H3 从剧本做到成片：盘点环境 → 选加速组合 → 资产与角色卡 → 分镜分段 → 官方格式提示词 → 抽卡/精修/续接 → QC → 拼接。附 GitHub 生态地图与禁忌清单。 |
+| [`minimax-h3-comfyui-short-drama`](minimax-h3-comfyui-short-drama/SKILL.md) | 在本地 ComfyUI（单卡 24 GB 为基准）上用 MiniMax H3 从剧本做到成片：盘点环境 → 选类型包与加速组合 → 生图（定妆照 / 角色板 / 场景 / 道具 / 逐镜首帧）→ 分镜分段与分镜表 → 官方格式提示词与机检 → 抽卡/精修/续接 → QC → 拼接。13 个类型包，附 GitHub 生态地图与禁忌清单。 |
 
 ## 安装
 
