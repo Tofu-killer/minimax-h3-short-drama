@@ -93,7 +93,8 @@ def check(episode_path: Path, catalog_path: Path) -> list[str]:
                 continue
             if not p.reference_images:
                 problems.append(f"segment {seg.id}: prop {pid!r} has no reference image; H3 will invent the item")
-        generic = re.findall(r"(红色|黄色|紫色|蓝色|绿色|白色)(?:的)?(物品|东西|装备|道具|item|object)", text)
+        generic = re.findall(r"(红色|黄色|紫色|蓝色|绿色|白色|金色)(?:的)?(?:贵重|稀有|珍贵)?(?:的)?(物品|东西|装备|道具|宝物)", text)
+        generic += re.findall(r"\b(red|gold|golden|yellow|purple|blue|green|white)\s+(?:(?:precious|valuable|rare|legendary|loot)\s+)?(item|object|loot|thing|gear|treasure)s?\b", text, re.I)
         if generic and not seg.prop_ids:
             problems.append(f"segment {seg.id}: generic item wording {generic[0]} without a bound prop -> model will hallucinate")
     return problems

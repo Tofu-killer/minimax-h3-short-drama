@@ -18,8 +18,8 @@ from pathlib import Path
 SIX = ["subject_definitions", "summary", "retention_analysis", "detailed_description", "overall_soundscape", "non_diegetic_music"]
 THREE = ["integrated_multimodal_description", "overall_soundscape", "non_diegetic_music"]
 RETENTION = {"fully_preserved", "partially_preserved", "attribute_transfer", "weak_reference", "fully_copy"}
-NEG = re.compile(r"\b(no|not|never|without|don't|doesn't|avoid|nothing)\b", re.I)
-NEG_OK = re.compile(r"with no camera movement whatsoever|no other (item|garment|person|people)|is not transferred|not reuse", re.I)
+NEG = re.compile(r"\b(no|not|never|without|don't|doesn't|do not|does not|avoid|nothing)\b", re.I)
+NEG_OK = re.compile(r"with no camera movement whatsoever|no other (item|garment|person|people)|is not transferred|never transfer facial traits", re.I)
 STILL = re.compile(r"completely still|doing nothing|does not move at all|remains? (perfectly )?motionless", re.I)
 CUT = re.compile(r"\[Shot (\d+)\]\s*(?:At (\d{2}):(\d{2})\.(\d{3}),)?")
 LABEL = re.compile(r"<(Picture|Video|Audio|Subject) (\d+)>")
@@ -121,8 +121,12 @@ def main():
                 v = float(sm.group(1))
                 if v > 0 and abs(v - eff) > 0.02: errs.append(f"alignment says {v}s but effective duration is {eff:.2f}s")
 
-    for nm in NEG.finditer(body):
-        ctx = body[max(0, nm.start() - 40): nm.end() + 40]
+    neg_scope = body
+    for f in ("subject_definitions", "retention_analysis"):
+        fm = re.search(f + r":(.*?)(?:\n\s*\n|\Z)", text, re.S)
+        if fm: neg_scope += " " + fm.group(1)
+    for nm in NEG.finditer(neg_scope):
+        ctx = neg_scope[max(0, nm.start() - 40): nm.end() + 40]
         if not NEG_OK.search(ctx): warns.append(f"negation: …{ctx.strip()}…")
     if STILL.search(body): errs.append("'completely still'-type phrase freezes the whole shot")
     turns = len(re.findall(r"\b(turns?|spins?|turning|spinning)\b", body, re.I))

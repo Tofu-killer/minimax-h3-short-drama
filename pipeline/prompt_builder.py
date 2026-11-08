@@ -134,12 +134,12 @@ def build_ref2va(ep: Episode, seg: Segment) -> BuiltPrompt:
         retention.append(f"{subj} (appears in {', '.join(shots_in) or 'all shots'}): fully_preserved - "
                          f"face, hair, build and outfit are retained from {pics[0]}"
                          + (f"; {pics[1]} controls outfit and silhouette only" if len(pics) > 1 else "")
-                         + ". Do not reuse the reference's background.")
+                         + "; the background of each character reference is ignored and the scene comes only from the scene reference.")
         if c.voice_reference and cid in speakers and aud < MAX_REF_AUDIO:
             aud += 1
             audio_content.append(audio_item(c.voice_reference, "reference_audio"))
             audio_defs.append(f"<Audio {aud}> is the voice-timbre reference for {subj} ({speakers[cid]}).")
-            audio_ret.append(f"<Audio {aud}>: attribute_transfer - voice timbre only; its original words are not carried into the video.")
+            audio_ret.append(f"<Audio {aud}>: attribute_transfer - voice timbre only; every spoken word comes solely from the quoted dialogue lines.")
 
     sc = ep.scene(seg.scene_id)
     if sc.reference_images and pic < MAX_REF_IMAGES:
