@@ -12,7 +12,7 @@
 
 | 项 | 建议 |
 |----|------|
-| 路线 A（H3 自己说） | Ref2VA：`<Picture 1>` 定稿胸像（含背景）+ `<Audio 1>` 2–8 s 干净音色（`attribute_transfer`）；台词写 `<d>` |
+| 路线 A（H3 自己说） | Ref2VA：`<Picture 1>` 定稿胸像（含背景）+ `<Audio 1>` 2–8 s 干净音色（`reference`）；台词写 `<d>` |
 | 路线 B（现成配音） | Ref2VA + `PixaromaH3AudioSync` 锁音频（说的是克隆音色，波形与原录音不同）；要原录音逐字一致只能换 Wan + InfiniteTalk 路线（mcoblackmore 3B） |
 | 段长 / 镜数 | 16 GB：≤ 8 s/段；24 GB 可 10 s；1–2 镜，第二镜只做「跳切到更紧景别」 |
 | 台词 | ≤ (段长−2)×4.5 字；每 3–4 s 一句；句末留 ≥ 0.2 s（3ALLBUY14 `lipsync-guide`） |
@@ -48,7 +48,7 @@ subject_definitions: <Subject 1> is Lao Zhou, a presenter in his late thirties w
 
 summary: [reference generation + audio reference] A talking-head clip: Lao Zhou faces the camera in his home studio and delivers two short lines about a money-saving habit, with one jump cut to a tighter framing; two shots, 10 seconds, 16:9.
 
-retention_analysis: <Picture 1>: fully_preserved - facial identity, hairstyle, glasses, sweater and shirt, bookshelf, plant and lamp placement; no other garment is substituted. <Audio 1>: attribute_transfer - voice timbre only; every spoken word comes solely from the quoted dialogue lines.
+retention_analysis: <Picture 1>: fully_preserved - facial identity, hairstyle, glasses, sweater and shirt, bookshelf, plant and lamp placement; no other garment is substituted. <Audio 1>: reference - voice timbre only; every spoken word comes solely from the quoted dialogue lines.
 
 detailed_description: Live-action talking-head video, photoreal, natural creator-studio look, shot on a 35mm lens at chest height, shallow depth of field with the bookshelf softly blurred, a large soft key light from frame right, the warm desk lamp glowing on the left as a practical, matte and evenly lit skin with natural texture, a palette of navy, light wood and warm white, relaxed and friendly delivery. The setting is the home studio shown in <Picture 1>. Exactly one person is present, framed from the mid-chest up, centered, both hands resting below the bottom edge of the frame, face toward the lens the whole time. The camera is static, on a tripod, with no camera movement whatsoever. [Shot 1] A medium close-up of <Subject 1>, the presenter with short neat black hair, thin black-framed glasses and the navy crew-neck sweater over a light grey collar, seated upright and facing the lens, shoulders relaxed and square to the camera, the desk lamp glowing softly over his left shoulder and the green plant blurred behind his right; he blinks once, draws a light breath, gives a small open smile, then, speaking to the camera with a warm, clear, mid-pitched voice and an easy, even pace, with clear, pronounced lip movements that open and close fully on every syllable, (S1) says: <d>[Chinese] 大家好，今天聊一个省钱的小习惯。</d> [Shot 2] At 00:05.200, the shot cuts to a tighter close-up of <Subject 1> from the same angle, his face filling the center third of the frame, the glasses catching a soft highlight from the key light, the navy collar at the bottom of the frame; his eyebrows lift slightly with interest, he leans in a few centimetres toward the lens, keeping his head level and his eyes locked on the lens, and, speaking to the camera with the same warm, clear, mid-pitched voice and a slightly more emphatic pace, with clear, pronounced lip movements, (S1) says: <d>[Chinese] 每天记账五分钟，月底多存三百。</d> In the final second he holds the pose, breathing, while the framing stays put. The segment ends with <Subject 1> in close-up at frame center, eyes on the lens. Speak only the quoted dialogue lines. After that nobody says anything else.
 
