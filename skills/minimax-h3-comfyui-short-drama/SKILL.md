@@ -1,7 +1,7 @@
 ---
 name: minimax-h3-comfyui-short-drama
 description: 用本地 ComfyUI 上的 MiniMax H3（海螺 3.0 / Hailuo 03，FL2VA / Ref2VA 开源权重）从剧本、生图（角色卡 / 场景 / 道具 / 逐镜首帧）做到成片的短剧 / 漫剧 / 电影质感短片生产流程，内置 13 个类型包（都市情感、悬疑、古装仙侠、动作打斗、恐怖、喜剧、科幻赛博、3D 国漫、2D 动画、MV、产品广告、口播数字人、手作定格科普）。只要用户提到 MiniMax H3、海螺、Hailuo、H3 工作流、ref2va / fl2va、Turbo LoRA、导演台、短剧分镜、角色一致性、抽卡、二采 / 超分、长视频续接、SageAttention / 稀疏注意力 / 缓存加速、ComfyUI 跑 H3 慢或爆显存，或者想让 agent 接管本地 H3 工作流批量出片——即使没说「短剧」两个字——都要先读本 skill。覆盖：环境盘点与模型文件选择、24 GB 单卡的草稿档 / 精修档加速组合、官方三段式 / 六段式提示词格式与短剧对白规则、分镜分段与角色卡 / 道具绑定、段间续接方案、768P→1080p/2K 画质流水线、QC 与拼接、GitHub 生态里每类工具该用哪个与禁忌清单。
-compatibility: 本地 ComfyUI ≥ 0.37（原生 MiniMaxH3 节点；官方滑窗、原生 latent 放大、H3 出图节点与 RelayVSR 需要 ≥ 0.44 / 0.45，当前最新 0.46.2），单卡 ≥ 16 GB（推荐 24 GB），系统内存 ≥ 32 GB（推荐 64 GB）。脚本全部是 Python（Windows 可直接运行，通配符写在引号里由脚本自己展开），需要 Python 3.10+ 与 ffmpeg / ffprobe，核心脚本只用标准库；可选依赖按用到的装：台词质检与字幕对时 `faster-whisper`（建议加 `pypinyin`）、身份门禁 `opencv-python`、导出剪映草稿 `pyJianYingDraft`、导出 OTIO `opentimelineio`。模型与 LoRA 从 HuggingFace 下载。
+compatibility: 本地 ComfyUI ≥ 0.37（原生 MiniMaxH3 节点；官方滑窗、原生 latent 放大、H3 出图节点与 RelayVSR 需要 ≥ 0.44 / 0.45，当前最新 0.46.2），单卡 ≥ 16 GB（推荐 24 GB），系统内存 ≥ 32 GB（推荐 64 GB）。脚本全部是 Python（Windows 可直接运行，通配符写在引号里由脚本自己展开），需要 Python 3.10+ 与 ffmpeg / ffprobe，核心脚本只用标准库；可选依赖按用到的装：台词质检与字幕对时 `faster-whisper`（建议加 `pypinyin`）、身份门禁 `opencv-python`（动漫轨再加 `onnxruntime`）、导出剪映草稿 `pyJianYingDraft`、导出 OTIO `opentimelineio`。模型与 LoRA 从 HuggingFace 下载。
 ---
 
 # MiniMax H3 × ComfyUI 短剧生产
@@ -28,7 +28,7 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 | 4 | 需要首帧的段（中文真人对白、关键道具特写）用编辑模型 + face.png + 场景裁切出字面首帧（`image-stage.md` §⑤）；`scripts/build_prompts.py` 生成每段提示词与媒体顺序；`scripts/lint_prompt.py` 机检，FAIL 不提交；本地 Ollama 改写只用于三段式，六段式手写 | `references/prompt-format.md` |
 | 5 | 草稿档（Turbo 8 步 + Sage + 768P）每段 2–4 个 seed；先 `scripts/comfy_submit.py … --dry-run` 出批次预览给用户确认，再带 `--confirm <批次号>` 提交；中断了原样重跑即可续取。同场景动作接续的段按顺序做：上一段采纳 → `scripts/observe_take.py` 把实拍末态写回分镜 → `build_prompts.py --only <下一段>` | `references/local-stack-and-acceleration.md`、`references/comfyui-nodes.md` |
 | 6 | 中选段**同 seed** 精修：LBH latent 放大 + σ 0.45 二采（音频钉死）→ 1920×1088；小脸先修再放大；只有单镜 > 15 s 才续接 | `references/quality-pipeline.md`、`references/continuity-long-video.md` |
-| 7 | QC：`qc_probe.py`（含镜头数对账）→ `qc_dialogue.py` → `identity_gate.py` → `contact_sheet.py` + 人眼；后期：`make_edl.py` → `retime_subtitles.py` → `mix_episode.py`（帧精确拼接、逐段电平、配乐压低、成片响度、验收；段间音色不齐先用 `voice_check.py` 量出是哪几句）→ 需要人工精修时 `export_capcut_draft.py` / `export_otio.py` | `references/qc-and-assembly.md`、`references/audio-and-post.md` |
+| 7 | QC：`qc_probe.py`（含镜头数对账）→ `qc_dialogue.py` → `identity_gate.py`（真人）/ `identity_gate_anime.py`（漫剧）→ `contact_sheet.py` + 人眼；后期：`make_edl.py` → `retime_subtitles.py` → `mix_episode.py`（帧精确拼接、逐段电平、配乐压低、成片响度、验收；段间音色不齐先用 `voice_check.py` 量出是哪几句）→ 需要人工精修时 `export_capcut_draft.py` / `export_otio.py` | `references/qc-and-assembly.md`、`references/audio-and-post.md` |
 
 生态里每类任务该选哪个仓库、为什么，见 `references/ecosystem-map.md`；所有已知禁忌集中在 `references/pitfalls.md`。
 
@@ -81,7 +81,8 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 | `scripts/qc_probe.py "takes/ep01/**/*.mp4" --episode ep.json --freeze-tail 1.0 --out qc/probe` | 技术 QC：分辨率 / 时长 / 帧率 / 音轨 / 峰值 > −1 dB / 冻结 > 1 s / 黑场 > 0.25 s（排除声明的定格尾）；**镜头数与分镜对账**（少切、多切、切点偏移）、首尾跳帧、动作量。没有分镜时用 `--expect-seconds / --expect-size / --shots 0,3.5` |
 | `scripts/qc_dialogue.py --episode ep.json --targets "takes/ep01/**/*.mp4" --out qc/dialogue` | 台词质检：每句是否说了、说全、只说一次、何时说；无台词段是否擅自说话；输出首 / 末字时间与语速（需 `faster-whisper`） |
 | `scripts/contact_sheet.py "takes/ep01/s03/*.mp4" --freeze-tail 1.0` | 联络表：首末帧、每个切点前后各一帧、每镜中段，帧下印秒数；Windows 直接可用 |
-| `scripts/identity_gate.py --episode ep.json --targets "takes/**/*.mp4" --out qc/identity` | 真人脸身份门禁（YuNet + SFace，CPU 可跑，首次自动从 HuggingFace 下模型）：逐帧把脸指派给本段应出现的角色，报换人 / 克隆脸 / 多出的人，并先自检角色之间是否撞脸；默认只警告，`--strict` 才拦截。动漫脸检测不到，改用 `assets/judge-take-prompt.md` |
+| `scripts/identity_gate.py --episode ep.json --targets "takes/**/*.mp4" --out qc/identity` | 真人脸身份门禁（YuNet + SFace，CPU 可跑，首次自动从 HuggingFace 下模型）：逐帧把脸指派给本段应出现的角色，报换人 / 克隆脸 / 多出的人，并先自检角色之间是否撞脸；默认只警告，`--strict` 才拦截。动漫脸检测不到，改用下一行的动漫轨 |
+| `scripts/identity_gate_anime.py --episode ep.json --targets "first/*.png" "takes/**/*.mp4" --out qc/identity_anime` | 动漫 / 手绘 / 3D 国漫的身份门禁（CCIP 动漫角色相似度模型，CPU 可跑，首次从 HuggingFace 下 150 MB）：整张图与角色参考比，差异 ≤ 0.178 同一角色、0.178–0.30 去看、> 0.30 换人；先自检角色库（两个角色差异 ≤ 0.178 = 撞脸）。**只判单角色画面**（派生视图、单人首帧、单人段），多人画面列出数值但不判，交给 `assets/judge-take-prompt.md` |
 | `scripts/extract_tail_frame.py <mp4> --out tail.png --trim-freeze 1.0 [--after-cut N]` | 截末帧（duration−0.2 s）作下一段首帧 / 参考，并剪掉声明的 1 s 定格；`--after-cut N` 取第 N 个硬切后的第一帧（给反打 / 特写出同一空间的首帧） |
 | `scripts/make_edl.py ep.json --selects selects/ep01 --out edit/ep01.edl.json` | 从分镜 + 中选片段生成剪辑单：每段入出帧（裁起始音节与定格尾）、锁定台词、L-cut；之后所有后期脚本都读它 |
 | `scripts/retime_subtitles.py edit/ep01.edl.json --out subs/ep01 [--bilingual]` | 字幕：文字 = 锁定台词，时间 = 音频；出 `.srt` / `.ass`，并把每句起止时间写回剪辑单（需 `faster-whisper`） |

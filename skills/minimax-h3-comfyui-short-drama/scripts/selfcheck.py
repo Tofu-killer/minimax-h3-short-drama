@@ -66,7 +66,8 @@ def main():
                    ("loudnorm", "loudness measurement"), ("alimiter", "limiter"), ("sidechaincompress", "music ducking fallback")):
         record(f"ffmpeg filter {f}", "PASS" if f" {f} " in filters else "FAIL", "" if f" {f} " in filters else f"needed for {why}: use a full ffmpeg build")
     for mod, why in (("faster_whisper", "qc_dialogue.py, retime_subtitles.py"), ("pypinyin", "homophone-proof line matching"),
-                     ("cv2", "identity_gate.py"), ("numpy", "identity_gate.py, faster-whisper"),
+                     ("cv2", "identity_gate.py, identity_gate_anime.py"), ("numpy", "identity gates, voice_check.py, faster-whisper"),
+                     ("onnxruntime", "identity_gate_anime.py"),
                      ("pyJianYingDraft", "export_capcut_draft.py"), ("opentimelineio", "export_otio.py")):
         have = importlib.util.find_spec(mod) is not None
         record(f"optional package {mod}", "PASS" if have else "SKIP", "" if have else f"not installed (only needed for {why})")

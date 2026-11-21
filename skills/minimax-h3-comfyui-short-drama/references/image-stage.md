@@ -12,7 +12,7 @@
   → ③ 场景：无人母版（2K）→ 九宫格 → 按镜裁切
   → ④ 道具：1:1 白底单品
   → ⑤ 逐镜首帧：编辑模型 + ①/face.png + ③ 裁切 → 1344×768 字面首帧（同场其它机位从同一张底图转）
-  → ⑥ 身份门禁（真人 SFace；动漫 DINOv2·CCIP 规划中）+ 联络表人审 → 写进 episode JSON → H3
+  → ⑥ 身份门禁（真人 `identity_gate.py`；动漫 `identity_gate_anime.py`，只判单角色画面）+ 联络表人审 → 写进 episode JSON → H3
 ```
 
 ## 1. 选模型（24 GB、0.37.2、HF 文件名）
@@ -119,7 +119,7 @@ ComfyUI 0.37.2 已内置 Qwen-Image 2.1（`TextEncodeQwenImage21`、`QwenImage21
    - **同场多机位**：同一场的不同机位从**同一张底图**编辑，首尾帧也从同一张图改（mathruffian docs/03：换机位背景会跑）；转机位用 Multiple-Angles LoRA 的 96 机位语法（§3【多机位】），正反打两张都从同一张双人底图转（官方模板 `templates-1_click_multiple_character_angles-v1.0`、`template_rob_split_stack_qwen_multi_wan22` 都是一张输入图出多个机位）。转完人审 + 过门禁。
    - **姿势**：靠文字写不稳时，接一张 3D 假人渲染或深度图当姿势参考并在提示词里点名（占一个槽；编辑模型吃假人 / 深度图比吃 OpenPose 骨架稳，AnyPose 作者、PoseAtlas 的经验，未在 4090 验证）；写实单人可用【姿势迁移】，漫剧不用。
    - **不过怎么办**：每镜最多 2 个 seed，仍不对就改提示词或换参考裁切（本 skill 铁律 10 的同一逻辑）；第三条出路——构图 / 光线 / 姿势都对、只有脸不像 → 用【换头】修复，不重抽，修完重新过门禁。换头的量化只有一组单机实测，且测的是 Qwen 2.1 + BFS：InsightFace 余弦原图 0.129、ReActor 0.216、换头 0.735、先放大到 1536×2048 再换 0.783，同人上限约 0.94（moss-qwen-faceswap）；2511 + v5 无量化。多人镜只有一个人不对：SAM3 把他涂成 `#FF00FF`，用 `bfs_body_swap_selective_magenta_v1.0_qwen_2.1` 只换这一个人（BFS 工作流；Qwen 2.1，非商用）。
-5. **身份门禁**（分轨，阈值见本节「门禁分轨与阈值」）：**真人轨默认** YuNet 检测置信 0.6 + SFace 余弦（OpenCV Zoo，Apache-2.0，真人轨里唯一许可干净的一套），对比 bust（这一轨对应 SKILL.md 脚本表里的 `scripts/identity_gate.py`，基准取 episode JSON 的 `reference_images` 或 `--ref`）：≥ 0.363 = 同人（SFace 官方阈值），交付 keep ≥ 0.55、严格 0.65；只信 ≥ 40 px 正脸、逐张独立比（Zowwan `facematch.py`；fuzzballb 实测本人 0.35–0.59、旁人 −0.01–0.13）。**漫剧 / 手绘 / 兽设走动漫轨**：头部检测 + DINOv2-base，或 CCIP（规划中、脚本尚未实现，现阶段用 `assets/judge-take-prompt.md` 的 VLM 评审 + 人审）；3D 国漫先试 SFace，检不出脸再切动漫轨。多人镜做匈牙利匹配查串脸。分数是警告不是门禁，与真实感冲突时真实感优先（Zowwan）。
+5. **身份门禁**（分轨，阈值见本节「门禁分轨与阈值」）：**真人轨默认** YuNet 检测置信 0.6 + SFace 余弦（OpenCV Zoo，Apache-2.0，真人轨里唯一许可干净的一套），对比 bust（这一轨对应 SKILL.md 脚本表里的 `scripts/identity_gate.py`，基准取 episode JSON 的 `reference_images` 或 `--ref`）：≥ 0.363 = 同人（SFace 官方阈值），交付 keep ≥ 0.55、严格 0.65；只信 ≥ 40 px 正脸、逐张独立比（Zowwan `facematch.py`；fuzzballb 实测本人 0.35–0.59、旁人 −0.01–0.13）。**漫剧 / 手绘 / 兽设走动漫轨**：`scripts/identity_gate_anime.py`（CCIP，整张图比对，已实现；只判单角色画面，多人画面仍用 `assets/judge-take-prompt.md` 的 VLM 评审 + 人审；头部检测 + DINOv2 的逐人轨仍在规划中）；3D 国漫先试 SFace，检不出脸再切动漫轨。多人镜做匈牙利匹配查串脸。分数是警告不是门禁，与真实感冲突时真实感优先（Zowwan）。
 6. **人审联络表**（每格 ≥ 720 px）：脸、服装、手指数、背景有没有字、窗户 / 光向对不对；背对镜头查左右手（mathruffian review-checklist / checklists）。审过才写 `frames_ok`、才进 H3（mathruffian docs/02）。
 
 **冻结与过期记录 `bible/assets.json`**（shuohao character-refs、wind-comic 的做法；布局是本 skill 的约定，**现有脚本都不读写它**，先手工或自写脚本维护；`scripts/identity_gate.py` 读取它属于 `docs/14-ai-video-workflows/05` §7 规格里的规划中部分）：
@@ -134,14 +134,14 @@ ComfyUI 0.37.2 已内置 Qwen-Image 2.1（`TextEncodeQwenImage21`、`QwenImage21
 - 每个文件一条：`sha256`、`derived_from`（直接上游）、`model` 与 `params`（模型文件名、seed、步数、CFG、提示词；云端出的图记模型名、日期、提示词）、`frozen`、`stale`。只冻结三样：锚点文件（bust、正面全身）的 sha256、外观文字（LOOK）、画风句（shuohao）。
 - 锚点文件、LOOK 或画风句任何一样变了 → 沿 `derived_from` 把所有下游标 `stale: true`，**只标不删**、旧版本不覆盖；非锚点的图重出后（如 face.png），从它出的首帧同样标过期。门禁把 `stale` 当不通过（shuohao 的门禁含「是否过期」一项）。
 
-**门禁分轨与阈值**（SKILL.md 脚本表里的 `scripts/identity_gate.py` 目前只覆盖第一行的真人默认轨：输出每张脸的指派角色、分数与 pass / warn / fail，默认只警告、`--strict` 才拦截。其余三行、每角色围栏、`auto` 选轨与读取 `bible/assets.json` 是 `docs/14-ai-video-workflows/05` §7 的规格，**规划中、尚未实现**；规格的输入是 `bible/assets.json`，或按约定找 `bible/chars/<id>_bust.png`、`_face.png`、`_full.png` 与人工认可的额外参考，每角色 3–5 张基准。绝对阈值都是小样本标定，只作起点）：
+**门禁分轨与阈值**（SKILL.md 脚本表里的 `scripts/identity_gate.py` 目前只覆盖第一行的真人默认轨：输出每张脸的指派角色、分数与 pass / warn / fail，默认只警告、`--strict` 才拦截。最后一行的 CCIP 动漫轨由 `scripts/identity_gate_anime.py` 实现（整图比对、只判单角色画面）；中间两行（AdaFace、头部检测 + DINOv2）、每角色围栏、`auto` 选轨与读取 `bible/assets.json` 是 `docs/14-ai-video-workflows/05` §7 的规格，**规划中、尚未实现**；规格的输入是 `bible/assets.json`，或按约定找 `bible/chars/<id>_bust.png`、`_face.png`、`_full.png` 与人工认可的额外参考，每角色 3–5 张基准。绝对阈值都是小样本标定，只作起点）：
 
 | 轨 | 检测 | 嵌入 | match | borderline | floor | 出处与限制 |
 |----|------|------|-------|-----------|-------|-----------|
 | 真人（默认） | YuNet，置信 ≥ 0.6 | SFace 余弦 | 0.55（严格 0.65） | 0.363 | 0.363 | OpenCV Zoo（Apache-2.0）官方阈值；Zowwan |
 | 真人（可选） | 同上 | AdaFace ViT-Base（`minchul/cvlface_adaface_vit_base_webface4m`） | 0.42 | 0.36 | 0.30 | Fizgig 2026-11-12 标定（6 人数据集，在 InsightFace 五点对齐上标的）；权重训练集 WebFace4M 的商用条款自查 |
 | 动漫 / 手绘 / 兽设 | deepghs anime head YOLO（MIT），置信 ≥ 0.35 | DINOv2-base（头部裁剪；Apache-2.0） | 0.62 | 0.48 | 0.40 | Fizgig 小样本标定（暂定值）：同角色中位 0.69–0.75、异角色 p95 0.57–0.60 |
-| 动漫（另一套） | 同上 | CCIP 差异值（越小越像） | ≤ 0.178 | — | — | deepghs `imgutils` 默认，F1 0.917；仅限单人图 |
+| 动漫（**已实现**：`identity_gate_anime.py`） | 不检测，整张图 | CCIP 差异值（越小越像） | ≤ 0.178 | ≤ 0.30（暂定） | > 0.30 不通过 | deepghs `ccip-caformer-24-randaug-pruned`，默认阈值 F1 0.917；脚本复现了官方示例数值（误差 < 0.001）；仅限单角色画面；OpenRAIL |
 
 - **围栏优先于绝对阈值**（围栏属规划中部分）：每个角色的基准图两两互比，取「中位数 − 1.5 × IQR」且不低于 floor 作该角色的下限（Fizgig Look Filter）；判定 pass ≥ match、warn 在 borderline 与 match 之间、fail < borderline 或 < 围栏。基准里同人最低分 ≤ 异人最高分 = 撞脸（`bible_ambiguous`），回去改角色设计，不要调阈值。
 - **多人镜与选轨**：多人镜把「检到的脸 × 期望角色」相似度矩阵做匈牙利匹配，报多出来的人、缺席的角色、串脸（A 位置的脸更像 B 且反之）。真人检测器在动漫 / 手绘图上基本检不出脸（InsightFace 在 Fizgig 测试集 0 / 19；YuNet 未测）→ 漫剧直接走动漫轨；规划中的 `auto` 选轨 = 抽 ≤ 24 张，≥ 50% 检到真人脸且纯动漫脸 < 25% 走真人轨，否则动漫轨（Fizgig 的判定规则）。一次运行只用一种嵌入，分数只在同一嵌入内可比；deepghs 检测模型的具体文件名未核实。
