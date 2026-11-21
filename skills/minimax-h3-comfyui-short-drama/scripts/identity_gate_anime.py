@@ -47,6 +47,19 @@ import tempfile
 import urllib.request
 from pathlib import Path
 
+
+def _utf8_console() -> None:
+    """Agents read this output through a pipe; on Windows a pipe defaults to the system code page, where
+    Chinese text raises UnicodeEncodeError. Always write UTF-8."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
+
+_utf8_console()
+
 REPO = "https://huggingface.co/deepghs/ccip_onnx/resolve/main/ccip-caformer-24-randaug-pruned"
 FILES = ("model_feat.onnx", "model_metrics.onnx")
 IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
@@ -102,7 +115,7 @@ def imread(path: Path):
 
 def duration(path: Path) -> float:
     r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
     try:
         return float(r.stdout.strip())
     except ValueError:

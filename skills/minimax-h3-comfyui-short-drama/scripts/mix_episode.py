@@ -52,6 +52,19 @@ sys.dont_write_bytecode = True      # keep the skill folder free of __pycache__
 sys.path.insert(0, str(Path(__file__).parent / "h3lib"))
 import edl as edl_lib  # noqa: E402
 
+
+def _utf8_console() -> None:
+    """Agents read this output through a pipe; on Windows a pipe defaults to the system code page, where
+    Chinese text raises UnicodeEncodeError. Always write UTF-8."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
+
+_utf8_console()
+
 AR = 48000
 STEREO = f"aresample={AR},aformat=sample_fmts=fltp:channel_layouts=stereo"
 
@@ -66,18 +79,18 @@ def run(cmd: list[str], what: str, cwd: Path | None = None) -> subprocess.Comple
 
 def has_audio(path: Path) -> bool:
     r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=codec_name",
-                        "-of", "csv=p=0", str(path)], capture_output=True, text=True)
+                        "-of", "csv=p=0", str(path)], capture_output=True, text=True, encoding="utf-8", errors="replace")
     return bool(r.stdout.strip())
 
 
 def stream_duration(path: Path, kind: str) -> float:
     r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", f"{kind}:0", "-show_entries", "stream=duration",
-                        "-of", "csv=p=0", str(path)], capture_output=True, text=True)
+                        "-of", "csv=p=0", str(path)], capture_output=True, text=True, encoding="utf-8", errors="replace")
     try:
         return float(r.stdout.strip().splitlines()[0])
     except (ValueError, IndexError):
         r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, encoding="utf-8", errors="replace")
         try:
             return float(r.stdout.strip())
         except ValueError:
@@ -132,7 +145,7 @@ def limiter(limit_db: float) -> str:
     """Brick-wall limiter without the 5 ms look-ahead delay (it would otherwise shift the sound against the picture)."""
     global _LATENCY_OPT
     if _LATENCY_OPT is None:
-        r = subprocess.run(["ffmpeg", "-hide_banner", "-h", "filter=alimiter"], capture_output=True, text=True)
+        r = subprocess.run(["ffmpeg", "-hide_banner", "-h", "filter=alimiter"], capture_output=True, text=True, encoding="utf-8", errors="replace")
         _LATENCY_OPT = "latency" in r.stdout
     lim = 10 ** (limit_db / 20.0)
     if _LATENCY_OPT:

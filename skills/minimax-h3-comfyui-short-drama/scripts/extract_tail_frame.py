@@ -25,9 +25,22 @@ sys.path.insert(0, str(Path(__file__).parent / "h3lib"))
 import signals  # noqa: E402
 
 
+def _utf8_console() -> None:
+    """Agents read this output through a pipe; on Windows a pipe defaults to the system code page, where
+    Chinese text raises UnicodeEncodeError. Always write UTF-8."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
+
+_utf8_console()
+
+
 def duration(p):
     out = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json", str(p)],
-                         capture_output=True, text=True).stdout
+                         capture_output=True, text=True, encoding="utf-8", errors="replace").stdout
     return float(json.loads(out)["format"]["duration"])
 
 

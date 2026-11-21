@@ -28,7 +28,7 @@ def probe(path: Path) -> dict:
     """{duration, fps, width, height, frames (estimate), has_audio}"""
     r = subprocess.run(["ffprobe", "-v", "error", "-show_entries",
                         "format=duration:stream=codec_type,width,height,r_frame_rate,nb_frames", "-of", "json", str(path)],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
     import json
     d = json.loads(r.stdout or "{}")
     v = next((s for s in d.get("streams", []) if s.get("codec_type") == "video"), None)
@@ -279,7 +279,7 @@ def match_cuts(expected: list[float], detected: list[float], tolerance: float = 
 def grab_frame(path: Path, t: float, dest: Path, width: int | None = None) -> bool:
     vf = ["-vf", f"scale={width}:-2"] if width else []
     r = subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{max(0.0, t):.3f}", "-i", str(path), "-frames:v", "1",
-                        *vf, str(dest)], capture_output=True, text=True)
+                        *vf, str(dest)], capture_output=True, text=True, encoding="utf-8", errors="replace")
     return r.returncode == 0 and Path(dest).exists()
 
 
@@ -318,12 +318,12 @@ def stamped_sheet(path: Path, samples: list[tuple[float, str]], sheet: Path, wid
                 vf += (f",drawtext=fontfile={font.name}:text='{t:.2f}s {tag}':x=8:y=h-th-10:fontsize={max(14, width // 22)}"
                        f":fontcolor=white:box=1:boxcolor=black@0.65:boxborderw=6")
             r = subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{max(0.0, t):.3f}", "-i", str(path), "-frames:v", "1",
-                                "-vf", vf, str(tmp / f"f_{i:03d}.png")], capture_output=True, text=True,
+                                "-vf", vf, str(tmp / f"f_{i:03d}.png")], capture_output=True, text=True, encoding="utf-8", errors="replace",
                                cwd=str(font.parent) if font else None)
             if r.returncode != 0 or not (tmp / f"f_{i:03d}.png").exists():
                 # asked for a time at or past the last frame: take the last frame the file has
                 r = subprocess.run(["ffmpeg", "-v", "error", "-y", "-sseof", "-1", "-i", str(path), "-vf", vf, "-update", "1",
-                                    str(tmp / f"f_{i:03d}.png")], capture_output=True, text=True,
+                                    str(tmp / f"f_{i:03d}.png")], capture_output=True, text=True, encoding="utf-8", errors="replace",
                                    cwd=str(font.parent) if font else None)
             if r.returncode != 0 or not (tmp / f"f_{i:03d}.png").exists():
                 raise RuntimeError(f"ffmpeg could not extract a frame at {t:.2f}s from {path}: {r.stderr.strip()[-300:]}")
@@ -331,6 +331,6 @@ def stamped_sheet(path: Path, samples: list[tuple[float, str]], sheet: Path, wid
         rows = -(-len(samples) // cols)
         r = subprocess.run(["ffmpeg", "-v", "error", "-y", "-framerate", "1", "-i", str(tmp / "f_%03d.png"),
                             "-vf", f"tile={cols}x{rows}:padding=4:color=black", "-frames:v", "1", "-update", "1", str(sheet)],
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, encoding="utf-8", errors="replace")
         if r.returncode != 0:
             raise RuntimeError(f"ffmpeg could not build the sheet: {r.stderr.strip()[-300:]}")

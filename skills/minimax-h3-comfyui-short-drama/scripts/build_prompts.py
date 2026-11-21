@@ -22,6 +22,19 @@ import prompt_builder  # noqa: E402
 from prompt_builder import build, dialogue_cues  # noqa: E402
 
 
+def _utf8_console() -> None:
+    """Agents read this output through a pipe; on Windows a pipe defaults to the system code page, where
+    Chinese text raises UnicodeEncodeError. Always write UTF-8."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
+
+_utf8_console()
+
+
 def srt_time(t: float) -> str:
     h, m = divmod(int(t), 3600); m, s = divmod(m, 60)
     return f"{h:02d}:{m:02d}:{s:02d},{int((t - int(t)) * 1000):03d}"

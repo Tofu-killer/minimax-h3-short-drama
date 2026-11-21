@@ -42,6 +42,19 @@ sys.path.insert(0, str(Path(__file__).parent / "h3lib"))
 import edl as edl_lib  # noqa: E402
 import speech  # noqa: E402
 
+
+def _utf8_console() -> None:
+    """Agents read this output through a pipe; on Windows a pipe defaults to the system code page, where
+    Chinese text raises UnicodeEncodeError. Always write UTF-8."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
+
+_utf8_console()
+
 LEAD, TAIL, MIN_DUR, MAX_CPS = 0.08, 0.25, 0.8, 9.0
 
 

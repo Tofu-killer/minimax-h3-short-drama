@@ -30,7 +30,7 @@ def norm(s: str) -> str:
 def extract_wav(src: Path, dest: Path, start: float | None = None, end: float | None = None, sr: int = 16000) -> bool:
     """Decode [start, end) of src's first audio stream to mono PCM wav. False when src has no audio."""
     probe = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=codec_name",
-                            "-of", "csv=p=0", str(src)], capture_output=True, text=True)
+                            "-of", "csv=p=0", str(src)], capture_output=True, text=True, encoding="utf-8", errors="replace")
     if not probe.stdout.strip():
         return False
     cmd = ["ffmpeg", "-v", "error", "-y"]
@@ -40,7 +40,7 @@ def extract_wav(src: Path, dest: Path, start: float | None = None, end: float | 
     if end is not None:
         cmd += ["-t", f"{end - (start or 0):.4f}"]
     cmd += ["-vn", "-ac", "1", "-ar", str(sr), "-c:a", "pcm_s16le", str(dest)]
-    r = subprocess.run(cmd, capture_output=True, text=True)
+    r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     return r.returncode == 0 and dest.exists() and dest.stat().st_size > 1000
 
 
@@ -89,7 +89,7 @@ def units_faster_whisper(wav: Path, model: str = "small", language: str = "zh", 
 def units_from_cmd(template: str, wav: Path, text_file: Path):
     """Run an external aligner. The template may use {audio} and {text}; stdout must be a JSON list of units."""
     cmd = [part.format(audio=str(wav), text=str(text_file)) for part in shlex.split(template, posix=False)]
-    r = subprocess.run(cmd, capture_output=True, text=True)
+    r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if r.returncode != 0:
         sys.exit(f"aligner command failed ({r.returncode}): {r.stderr.strip()[:300]}")
     out = r.stdout[r.stdout.find("["):]

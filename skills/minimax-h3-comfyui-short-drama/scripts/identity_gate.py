@@ -49,6 +49,19 @@ import tempfile
 import urllib.request
 from pathlib import Path
 
+
+def _utf8_console() -> None:
+    """Agents read this output through a pipe; on Windows a pipe defaults to the system code page, where
+    Chinese text raises UnicodeEncodeError. Always write UTF-8."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
+
+_utf8_console()
+
 MODELS = {
     "yunet": ("face_detection_yunet_2023mar.onnx",
               "https://huggingface.co/opencv/face_detection_yunet/resolve/main/face_detection_yunet_2023mar.onnx"),
@@ -105,7 +118,7 @@ def imwrite(path: Path, img) -> None:
 
 def video_duration(path: Path) -> float:
     r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json", str(path)],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
     try:
         return float(json.loads(r.stdout)["format"]["duration"])
     except Exception as e:  # noqa: BLE001

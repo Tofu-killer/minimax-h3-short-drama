@@ -15,6 +15,19 @@ word budget (350-500 for ref2va detailed_description).  ERRORs exit 1.
 import argparse, re, sys
 from pathlib import Path
 
+
+def _utf8_console() -> None:
+    """Agents read this output through a pipe; on Windows a pipe defaults to the system code page, where
+    Chinese text raises UnicodeEncodeError. Always write UTF-8."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
+
+_utf8_console()
+
 SIX = ["subject_definitions", "summary", "retention_analysis", "detailed_description", "overall_soundscape", "non_diegetic_music"]
 THREE = ["integrated_multimodal_description", "overall_soundscape", "non_diegetic_music"]
 RETENTION = {"fully_preserved", "partially_preserved", "attribute_transfer", "weak_reference", "fully_copy"}

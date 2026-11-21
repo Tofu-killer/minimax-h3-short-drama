@@ -21,6 +21,19 @@ import sys
 from pathlib import Path
 
 
+def _utf8_console() -> None:
+    """Agents read this output through a pipe; on Windows a pipe defaults to the system code page, where
+    Chinese text raises UnicodeEncodeError. Always write UTF-8."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
+
+_utf8_console()
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--face", required=True, help="head-and-shoulders close-up")
@@ -53,7 +66,7 @@ def main():
         cmd += ["-i", str(p)]
     cmd += ["-filter_complex", graph, "-map", "[out]", "-frames:v", "1", "-update", "1", str(a.out)]
     Path(a.out).parent.mkdir(parents=True, exist_ok=True)
-    r = subprocess.run(cmd, capture_output=True, text=True)
+    r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if r.returncode != 0:
         sys.exit("ffmpeg failed: " + r.stderr.strip()[-400:])
     print(f"{a.out}: {w}x{h}, face + {n} view(s) - a review board, not a reference image")

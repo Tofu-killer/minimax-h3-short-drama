@@ -12,6 +12,19 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+
+def _utf8_console() -> None:
+    """Agents read this output through a pipe; on Windows a pipe defaults to the system code page, where
+    Chinese text raises UnicodeEncodeError. Always write UTF-8."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
+
+_utf8_console()
+
 BASE = "https://raw.githubusercontent.com/MiniMax-AI/MiniMax-H3/main/skills/h3-prompt-writing"
 FILES = {"SKILL.md": "h3-prompt-writing.SKILL.md", "references/base-en.txt": "base-en.txt", "references/ref-en.txt": "ref-en.txt"}
 

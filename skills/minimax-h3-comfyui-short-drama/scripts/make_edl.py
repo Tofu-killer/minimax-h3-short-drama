@@ -39,13 +39,26 @@ sys.dont_write_bytecode = True      # keep the skill folder free of __pycache__
 sys.path.insert(0, str(Path(__file__).parent / "h3lib"))
 import edl as edl_lib  # noqa: E402
 
+
+def _utf8_console() -> None:
+    """Agents read this output through a pipe; on Windows a pipe defaults to the system code page, where
+    Chinese text raises UnicodeEncodeError. Always write UTF-8."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
+
+_utf8_console()
+
 VIDEO_EXT = {".mp4", ".mov", ".mkv", ".webm"}
 
 
 def probe(path: Path) -> dict:
     r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-count_frames",
                         "-show_entries", "stream=nb_read_frames,r_frame_rate,width,height",
-                        "-of", "json", str(path)], capture_output=True, text=True)
+                        "-of", "json", str(path)], capture_output=True, text=True, encoding="utf-8", errors="replace")
     try:
         st = json.loads(r.stdout)["streams"][0]
         num, den = st["r_frame_rate"].split("/")
@@ -53,7 +66,7 @@ def probe(path: Path) -> dict:
     except Exception:  # noqa: BLE001
         sys.exit(f"ffprobe could not read {path}: {r.stderr.strip()[:200]}")
     a = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=codec_name",
-                        "-of", "csv=p=0", str(path)], capture_output=True, text=True)
+                        "-of", "csv=p=0", str(path)], capture_output=True, text=True, encoding="utf-8", errors="replace")
     return {"frames": frames, "fps": float(num) / float(den or 1), "width": int(st["width"]),
             "height": int(st["height"]), "has_audio": bool(a.stdout.strip())}
 
