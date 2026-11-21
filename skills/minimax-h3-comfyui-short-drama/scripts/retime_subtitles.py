@@ -15,8 +15,10 @@ so ASR homophone slips do not matter) and writes:
 
 Timing rules: in = first word - 0.08 s, out = last word + 0.25 s, at least 0.8 s, reading speed capped at
 9 characters per second, >= 2 frames between cues, everything snapped to frames.
-Lines whose words were mostly not heard get `needs_review` and a fallback slot instead of being dropped;
-run qc_dialogue.py on the takes first if many lines end up there.
+Lines whose words were mostly not heard get `needs_review` (not_heard / low_coverage) and a fallback slot
+instead of being dropped; a line whose last word touches the out point gets `ends_at_cut` (move out_frame
+later in the EDL, or rely on the L-cut and listen). Run qc_dialogue.py on the takes first if many lines
+end up flagged.
 
 Needs ffmpeg/ffprobe; faster-whisper for the default aligner (pypinyin optional but recommended for Chinese).
 """
@@ -135,6 +137,8 @@ def main():
                         s = max(0.0, m["first_s"] - LEAD)
                         e = max(m["last_s"] + TAIL, s + MIN_DUR, s + chars / MAX_CPS)
                         flag = None if m["coverage"] >= 0.6 else "low_coverage"
+                        if flag is None and m["last_s"] > p["dur_s"] - 0.10:
+                            flag = "ends_at_cut"                  # the last word touches the out point: listen to it
                     else:
                         s = cursor
                         e = s + max(MIN_DUR, chars / 5.0)

@@ -15,7 +15,9 @@ Stages (each writes a file; --keep-temp DIR keeps them, so a failure is easy to 
                retime_subtitles.py) - a take with one short line and a lot of room tone is not turned up just
                because it is quiet on average. Gain is capped so loud non-dialogue peaks are limited by <= 4 dB.
   3. effects   optional non-dialogue stems and one looping ambience bed per scene (band-limited, low level).
-  4. music     optional score, faded, ducked under the dialogue with a sidechain compressor.
+  4. music     optional score, faded, and lowered under every spoken line (default 9 dB) with a gain envelope
+               drawn from the line times - exact, and not fooled by sound effects. Without line times it falls
+               back to a sidechain compressor keyed on the takes' own sound (weaker: about 6 dB on speech).
   5. master    sum -> gain to the programme target (default -14 LUFS); a limiter is added only when the gain
                would push the true peak above the ceiling (default -1.5 dBTP). No dynamic loudnorm, no pumping.
   6. mux + verify  picture and sound must have the same length (+-2 frames), measured loudness within +-1 LU of
@@ -23,7 +25,8 @@ Stages (each writes a file; --keep-temp DIR keeps them, so a failure is easy to 
 
 EDL fields used: fps, width, height, segments[{id, video, src_fps, in_frame, out_frame, audio ("native" | path |
 null), nondialogue, l_cut, j_cut, scene, lines[{start, end}]}], ambience{scene: {file, gain_db}},
-music{file, gain_db, fade_in, fade_out, loop, duck{threshold, ratio, attack, release}},
+music{file, gain_db, fade_in, fade_out, loop, duck{depth_db, pre, post, attack, release, mode ("lines" |
+"sidechain"), threshold, ratio}},
 loudness{dialogue_lufs, program_lufs, true_peak}.
 Build the EDL with make_edl.py, run retime_subtitles.py (fills line times), then mix.
 
@@ -388,41 +391,72 @@ def main():
 
         # ---- 4. music bus (ducked under dialogue) -----------------------------------------------------
         music_bus = tmp / "bus_music.wav"
-        duck_db = None
+        duck_db, duck_how = None, None
         if music:
-            dk = {"threshold": 0.05, "ratio": 4, "attack": 20, "release": 400, **(music.get("duck") or {})}
+            dk = {"depth_db": 9.0, "pre": 0.15, "post": 0.30, "attack": 0.15, "release": 0.40,
+                  "threshold": 0.02, "ratio": 8, **(music.get("duck") or {})}
             fi, fo = float(music.get("fade_in", 0.5)), float(music.get("fade_out", 1.0))
+            spans = []                                               # where lines are known to be spoken (timeline seconds)
+            for p in plan:
+                for ln in p["seg"].get("lines") or []:
+                    if ln.get("start") is not None and ln.get("end") is not None and ln.get("needs_review") != "not_heard":
+                        spans.append([p["start_s"] + float(ln["start"]), p["start_s"] + float(ln["end"])])
+            spans.sort()
+            windows: list[list[float]] = []                          # merged: music does not bob up between close lines
+            for s0, s1 in spans:
+                s0, s1 = max(0.0, s0 - float(dk["pre"])), min(total, s1 + float(dk["post"]))
+                if windows and s0 - windows[-1][1] < 0.8:
+                    windows[-1][1] = max(windows[-1][1], s1)
+                else:
+                    windows.append([s0, s1])
+            mode = dk.get("mode") or ("lines" if windows else "sidechain")
             pre = (f"atrim=end={total:.6f},asetpts=PTS-STARTPTS,{STEREO},volume={float(music.get('gain_db', -6)):.2f}dB,"
                    f"afade=t=in:d={fi:.3f},afade=t=out:st={max(0.0, total - fo):.6f}:d={fo:.3f},{fit(N)}")
             loop = ["-stream_loop", "-1"] if music.get("loop") else []
             plain = tmp / "bus_music_unducked.wav"
             run(["ffmpeg", "-v", "error", "-y", *loop, "-i", str(resolve(music["file"])), "-vn", "-af", pre, *wav_out(plain)],
                 "preparing the music")
-            run(["ffmpeg", "-v", "error", "-y", "-i", str(plain), "-i", str(dlg_bus), "-filter_complex",
-                 f"[0:a][1:a]sidechaincompress=threshold={dk['threshold']}:ratio={dk['ratio']}:attack={dk['attack']}:"
-                 f"release={dk['release']}:knee=4:makeup=1,{fit(N)}[out]", "-map", "[out]", *wav_out(music_bus)],
-                "ducking the music")
+            env = ""
+            if mode == "lines" and windows:
+                # A gain envelope drawn from the line times - what an editor does with keyframes. Unlike a sidechain
+                # keyed on the take's own sound it ignores sound effects and gives exactly the depth asked for.
+                att, rel = max(0.02, float(dk["attack"])), max(0.05, float(dk["release"]))
+                ramps = [f"min(1,max(0,(t-{w0 - att:.3f})/{att:.3f}))*min(1,max(0,({w1 + rel:.3f}-t)/{rel:.3f}))" for w0, w1 in windows]
+                env = ramps[0]
+                for r_ in ramps[1:]:
+                    env = f"max({env},{r_})"
+                if len(env) > 20000:                                 # would not fit on a Windows command line
+                    env = ""
+                    warnings.append(f"{len(windows)} dialogue windows are too many for a gain envelope: using the sidechain instead")
+            if env:
+                run(["ffmpeg", "-v", "error", "-y", "-i", str(plain), "-af",
+                     f"asetnsamples=n=256,volume=volume='pow(10,-{float(dk['depth_db']):.2f}/20*({env}))':eval=frame,{fit(N)}",
+                     *wav_out(music_bus)], "ducking the music under the lines")
+                duck_how = f"line times, {len(windows)} window(s), {float(dk['depth_db']):g} dB"
+            else:
+                run(["ffmpeg", "-v", "error", "-y", "-i", str(plain), "-i", str(dlg_bus), "-filter_complex",
+                     f"[0:a][1:a]sidechaincompress=threshold={dk['threshold']}:ratio={dk['ratio']}:attack=10:release=600:"
+                     f"knee=4:makeup=1,{fit(N)}[out]", "-map", "[out]", *wav_out(music_bus)], "ducking the music (sidechain)")
+                duck_how = f"sidechain threshold {dk['threshold']} ratio {dk['ratio']}"
+                if not windows:
+                    warnings.append("no line times in the EDL: music is ducked by a sidechain keyed on the takes' own sound "
+                                    "(about 6 dB on speech, and sound effects duck it too) - run retime_subtitles.py first")
 
             def mean_db(path: Path, t0: float, t1: float) -> float | None:
                 r = run(["ffmpeg", "-hide_banner", "-nostats", "-i", str(path), "-af",
                          f"atrim=start={t0:.3f}:end={t1:.3f},volumedetect", "-f", "null", "-"], "measuring ducking")
                 m = re.search(r"mean_volume: (-?[\d.]+) dB", r.stderr)
                 return float(m.group(1)) if m else None
-            spans = []
-            for p in plan:                                           # measured where lines are known to be spoken
-                for ln in p["seg"].get("lines") or []:
-                    if ln.get("start") is not None and ln.get("end") is not None and ln["end"] - ln["start"] >= 0.5:
-                        spans.append((p["start_s"] + ln["start"], p["start_s"] + ln["end"]))
             diffs = []
-            for t0, t1 in spans[:6]:
+            for t0, t1 in [sp for sp in spans if sp[1] - sp[0] >= 0.5][:6]:
                 x, y = mean_db(plain, t0, t1), mean_db(music_bus, t0, t1)
                 if x is not None and y is not None and x > -80:
                     diffs.append(x - y)
             if diffs:
                 duck_db = round(sum(diffs) / len(diffs), 1)
-                if not 3.0 <= duck_db <= 16.0:
-                    warnings.append(f"music is ducked by {duck_db} dB under dialogue (useful range is roughly 6-14 dB): "
-                                    f"adjust music.duck.threshold / ratio or music.gain_db")
+                if not 4.0 <= duck_db <= 16.0:
+                    warnings.append(f"music is only {duck_db} dB lower under dialogue (6-12 dB is the useful range): "
+                                    f"adjust music.duck or music.gain_db")
         else:
             silence(music_bus, N)
 
@@ -482,7 +516,8 @@ def main():
                   "loudness": {"dialogue_target_lufs": loud["dialogue_lufs"], "target_lufs": tgt_i, "measured_lufs": integ,
                                "true_peak_dbfs": peak, "pre_master_lufs": pre_meas[0] if pre_meas else None,
                                "normalization": norm},
-                  "music_duck_db": duck_db, "subtitles_burned": bool(a.ass), "checks": checks, "warnings": warnings}
+                  "music_duck_db": duck_db, "music_duck_method": duck_how, "subtitles_burned": bool(a.ass),
+                  "checks": checks, "warnings": warnings}
         out.with_suffix(".mix.report.json").write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
         for e in seg_report:
             if e.get("gain_db") is not None:
@@ -490,7 +525,7 @@ def main():
         for w_ in warnings:
             print("WARN ", w_)
         print(f"picture {vdur:.3f}s / sound {adur:.3f}s / plan {total:.3f}s ; loudness {integ} LUFS (target {tgt_i:g}), "
-              f"peak {peak} dBTP ; {norm}" + (f" ; music ducked {duck_db} dB" if duck_db is not None else ""))
+              f"peak {peak} dBTP ; {norm}" + (f" ; music ducked {duck_db} dB ({duck_how})" if duck_db is not None else ""))
         ok = all(checks.values())
         print(("OK  " if ok else "FAIL ") + f"{out}  " + " ".join(f"{k}={'ok' if v else 'FAIL'}" for k, v in checks.items()))
         sys.exit(0 if ok else 1)
