@@ -133,3 +133,166 @@ Nano Banana 出角色 / 场景 ingredients 与首尾帧
   ─► Flow / Omni Flash 1.2：360p 草稿 → 对话式改背景 / 机位 / 道具 → 延长 → 上采样到 1080p / 4K
 ```
 
+## 三、逐模型 / 逐工具
+
+每节的字段按商业模型改写为：定位 / 机制与规格 / 官方提示词规范 / 价格与接入 / 审核 / 弱项 / 对 4090 短剧的价值 / 评级。
+
+### 3.1 Seedance 2.5 / 2.0（字节；即梦、豆包专业版、Dreamina、火山方舟、BytePlus）
+
+- **定位**：2026‑11 参考能力最强、I2V 榜第一的闭源模型，国内漫剧 / 短剧的默认出片引擎（`UnderleveledBuilder/awesome-short-drama-skills` 收录的 117 个短剧 skill 里 47 个适配它）。
+- **规格**：见 §1.1。入口分「首尾帧」与「全能参考」；2.5 另有 Long Video（30–180 s）、Smart Edit / 标记区域编辑、两段视频间无缝转场、Clay Renderer（粗 / 精白模，粗白模更稳）〔SD‑U〕。
+- **官方提示词规范**〔SD‑G〕：
+  - 基本公式 = 主体 + 动作 / 事件，再按需加场景、风格、运镜或切镜、音频；时长与画幅填界面或 API，不写进提示词。
+  - 素材写作 `@Image 1 / @Video 1 / @Audio 1`（API 清单里是 `<<<image_1_1>>>`）。**每个素材一行职责 + 一行排除**（不要用它的背景 / 人物 / 构图）；映射必须写在提示词里，不靠图内文字标签；多视角图要声明「这几张是同一个物体，成片只出现一个」。
+  - 参考视频已经定义了动作和运镜时，只写「继承哪些属性」，复述动作会和参考打架。
+  - 音频与文字用四种括号：音乐 `()`、音效 `<>`、台词 `{}`、字幕 `【】`；非中文台词按「语言 → 口音 → 演绎方式 → 说话人 → `{台词}`」的顺序写。
+  - 长视频拆阶段，每阶段 = 初始状态 + **一个**主事件 + 可见的结束状态；末尾加一致性段（身份、人数、服装、道具归属、空间方向、声音关系）。
+  - 时间戳是「时间预算」，不是帧级精度；精确时间点只留给一个关键事件。
+  - 情绪 = 情绪词 + 2–4 个可观察线索（眼、眉、嘴、呼吸、视线、手）。
+  - 延长先写边界状态（姿态、道具、背景、机位、光、运动方向）再写新动作；编辑按「目标 → 源视频是唯一母版 → 目标素材职责 → 范围 → 保留项」写。
+  - 宫格分镜 ≤ 15 格、少文字、声明阅读顺序；白模要把每个几何体映射到最终主体，导出前去掉路径线、坐标轴、控制器、相机视锥。
+- **稳定性建议**〔SD‑U〕：音视频驱动的主体 1–5 个最稳，静图主体 1–8 个最稳；**超过 5 个主体时「一视角一张图」优于「一张图多视角」**；编辑源视频 ≤ 20 s。
+- **官方案例的写法**〔SD‑36〕：一段总述（风格、主线、「全片仅使用两种运镜」）→ `0-5秒，…` 首尾相接的时间段，段内直接引用素材 → 引号台词加 `口播：/ 旁白：` → 一句整体质感。FPV 案例直接写速度（3–5 m/s 加速到 14–16 m/s）与 pitch / yaw / roll 角度。
+- **价格与接入**：见 §1.3。即梦有官方面向 agent 的 `dreamina` CLI（`jimeng.jianying.com/cli`；`text2image / image2video / frames2video / multiframe2video / multimodal2video`），但 2026‑11 的 CLI 仍只到 Seedance 2.0（4–15 s、720p）〔OS〕；API 走火山方舟 / BytePlus 异步任务，支持 `return_last_frame`〔LP〕。
+- **审核**：即梦 2026‑02‑09 起停用真人图片 / 视频作主体参考；ModelArk 文档只接受三类人脸来源——预置虚拟人像、同账号 30 天内由 Seedream / Seedance 生成的原图、经本人实名认证授权的肖像（apidog 转述，未读到原文）；Adobe 社区有「AI 生成的脸被判成真人而拦截」的报告；海外版带人脸过滤、C2PA 水印、版权角色检测（TNW 2026‑03‑31）。即梦文本审核的实测敏感词见 §五.2。
+- **弱项**：官方发布文自己承认「复杂运动的物理合理性、多主体交互稳定性仍有提升空间」；单次超过 30 s 身份漂移明显上升〔LP〕；价格是同档最高；多素材合成的结尾音效会乱〔毒眸〕。
+- **对 4090 短剧的价值**：H3 最弱的打戏、大幅运镜、30 s 一镜到底、白模运镜迁移，以及「改一处不重抽」的局部编辑。**评级：采用**（云端回退首选；写实真人角色先做一次人脸审核小样）。
+
+### 3.2 Kling 4.0 / 3.0 / O3（快手可灵）
+
+- **定位**：文戏写实度与静态细节第一梯队，强在关键帧控制、方言对白和主体库（Element）。
+- **规格**〔KL‑G〕：两个入口——Omni Reference（图、视频、Element、音色，也含文生与关键帧生）与 Keyframes（纯图片：首帧 / 首尾帧 / 中间帧），**同一任务不能混用**。提示词上限 8000 token；多镜头默认开启并自动拆分（Smart Storyboard）；只能上传音色，音乐与音效由画面生成。
+- **官方提示词规范**〔KL‑G〕：
+  - 用描述性语言，少抽象词，少否定：原文说否定提示「can increase the likelihood of errors」，只有 `no subtitles` 和 `no background music` 两条被认为必要；「打电话时不要露脸」应改写成「侧脸」。
+  - 四段模板：`[Asset Roles]`（每个素材定义什么、保留什么）→ `[Overall Settings]`（场景与质感、风格、镜头基调）→ `[Sequence of Events]`（`0–X s / X–Y s / Y s–end`，每段写画面、动作、运镜、落幅）→ `[Audio]`（对白或旁白、环境声、音乐、音效）。
+  - 素材按上传顺序自动编号 `@Image1 / @Video1 / @Element1`；不写职责，结果不可预测。
+  - 关键帧句式：`Use @Image1 as the first frame and @Image2 as the last frame.`；中间帧可放任意时间点。
+  - 编辑必须写 `Edit @Video1` + 改什么 + `Keep everything else unchanged`；写成 `Reference @Video1` 会被当成参考生成。
+  - 台词放引号并声明语言；指定声线时写年龄、音色、语速、情绪。字幕也可以用提示词指定字号、位置、出现时间。
+  - 分镜板可以当「镜头顺序参考」上传：要求模型重现分镜描述的成片画面，而不是分镜板本身。
+- **Kling 3.0 / O3 的遗留经验**（fal 官方指南，经 `smixs/visual-skills` 整理；3.0 单次最多 6 镜 15 s）：五层 `Scene → Characters → Action → Camera → Audio`；`[Character A: …]` 标签开头定义一次；台词先绑一个独特动作再开口；声线写进标签 `[Character A, raspy deep voice]:`；连续两句之间加 `Immediately,`；相邻两镜景别和机位都相同会被合并成一镜；写 `no music` 不可靠，要干净音轨就关音频。
+- **价格与接入**：720p $0.157、1080p $0.235、Flash 720p $0.094；参考视频另计，编辑约为参考价的 2 倍〔CF〕〔RW〕；官方站 10 积分 / s〔AIReel，未验证〕。官方提供远程 MCP（国内 `https://klingai.com/mcp`，海外 kling.ai）、CLI 和 Claude 插件 `klingai-tech/claude-plugin(-cn)`（三个 skill，提交前必须让用户确认参数，每个意图只提交一次）；Runway API、ComfyUI Partner Nodes、WaveSpeed、Atlas Cloud 都已上架 4.0。
+- **弱项**〔毒眸〕：指令遵循、多素材图层融合、复杂物理落后 Seedance 2.5（一拳打空仍有击打音效、扫腿的执行者混淆、龙舟桨板方向错、复杂场景出现油蜡感）；光影偏平；音色参考自由度低；HDR 与 2 分钟延长仍未上线。
+- **对 4090 短剧的价值**：需要 10 张关键帧锁节奏的长镜头、方言对白、跨集复用的主体库、动作库（Motion Control）。**评级：试用**。
+
+### 3.3 Wan 3.0 托管版（阿里通义万相）
+
+- **定位**：〔AA〕T2V 第一、每秒最便宜的 30 s 模型；**闭源，只有 API**（开源线停在 Wan 2.2，见本目录 01）。写实真人、广告、口播口碑好（什么值得买 2026‑09‑01）。
+- **规格**〔WAN‑G〕：模型 `wan3.0-video` / `wan3.0-video-prime`；任务类型由 `input.media` 的类型和提示词自动路由；默认输出 1080P、30 fps、带声音；有视频输入时「输入 + 输出 ≤ 30 s」；`reference_*` 与首尾帧互斥；`file` 支持 docx / xlsx / pptx / pdf / txt / md，`link` 仅限无需登录的公开网页。
+- **官方提示词公式**〔WAN‑G〕：`[总体描述] + [参考素材引用：图N / 视频N / 音频N] + [分镜N（起‑止秒）：主体 + 场景 + 运动 + 美学控制] + [台词：xx 说："……"] + [音效 / BGM] + [风格 / 情绪] + [负向清单]`，写不到的板块跳过。
+  - 素材按上传顺序**分类型**编号（图 1 和视频 1 可以同时存在）；用途分开引用：「图1的儿童站在图2的现代公寓玄关内」「音色参考音频1」「仅参考图2的色调与光影，不参考人物」。
+  - 多镜头：`第1个镜头[0-3秒]` 或 `分镜1（00:00-00:03）`，格式全篇统一，首尾相接不重叠，每段 2–5 s，段末可写「硬切转场 / 叠化转场」。
+  - 台词 = 角色 + 说话动词 + 冒号 + 引号；多人逐句标说话人；要口型就追加「口型同步」；不要台词写「无台词」；BGM 三档：不写 / 明确指定 / 「无 bgm」。
+  - 负向清单只写不希望出现的，不重复正向内容；故事板开头声明「仅作分镜指导」；编辑与白模场景列出「绝对保持不变」的项。
+  - 官方还发了一个提示词优化 skill `wan3-pe`（`/wan3-pe` 调用）。
+- **价格与接入**：$0.05 / 0.10 / 0.20 每秒；百炼 DashScope 异步任务（请求头 `X-DashScope-Async: enable`，轮询 `GET /api/v1/tasks/{task_id}`），视频 URL 24 小时失效，模型与 Key 必须同地域；fal、OpenRouter、Runway、ComfyUI 均有。
+- **弱项**：阿里云自己的 GA 博客说音频质感和画面内文字「still maturing」；I2V 榜只排第 12；B 站评论「第一眼好看、动起来有问题」（什么值得买转述）；文档转视频时产品外观跨镜头会漂；**30 fps，与 H3 的 24 fps 混剪要重采**。
+- **对 4090 短剧的价值**：最便宜的云端草稿、空镜、30 s 长简报〔Atlas〕。**评级：试用**。
+
+### 3.4 MiniMax H3 托管版与 H3 衍生家族
+
+- **定位**：与我们本地同一个底模。官方托管版多出 2K、Context‑IR 改写、Regenerate‑2K（规格与价格见 `docs/01-model-overview.md`）；衍生家族提供本地没有的任务端点。
+- **fal H3 Max 家族**（fal 文档与〔CF〕节点名）：
+  - `text-to-video / image-to-video / first-last-frame / reference`：480P $0.05、768P $0.08；另有 Max Turbo。
+  - **Camera Controls**：单张图 + 2–12 个机位关键帧（环绕角、仰俯、距离）；提示词留空 = 场景冻结只动机位。
+  - **Lip Sync**：图 + 给定音频 → 对口型视频，可带转写文本辅助，480P–2K。
+  - **Recast**：把源视频里的主要人物换成参考照片里的人，保留原动作、机位、剪辑与音频（768P / 1080P）。
+  - **Extend / Insert / Reframe**：文字引导续写、在两个时间点之间插入新段、改画幅。
+- **其它衍生**：Pika H3 Flex（6 步，〔CF〕768p ≈ $0.02 / s，权重开放，本仓库已评测）；Creatify Boreal‑H3（广告向，I2V 榜第 3）；HeyGen Video 1（$0.02–0.04 / s 促销价，底模未验证）。
+- **提示词**：与 H3 官方三段式 / 六段式通用（H3 Max 另有 `prompt_expansion_mode`）；〔LP〕把 243 条 Seedance 提示词原样搬到 H3 Max 768p，73% 判为复现。
+- **弱项**：15 s 上限；横评里动作戏只动手、机位静止〔AIReel〕，会自己加没要求的元素（产品标签）；知乎实测称人脸偏油腻。
+- **对 4090 短剧的价值**：Lip Sync、Camera Controls、Recast 正好补本地 H3 的三个短板，而且角色资产与提示词不用改。**评级：试用优先**（三个端点我们都还没实跑）。
+
+### 3.5 Gemini Omni Flash 1.2 / Veo 3.1 / Flow（Google）
+
+- **定位**：Omni 是 2026‑05‑19 I/O 发布的「任意输入 → 视频 + 对话式编辑」模型，1.2（11‑05）把单段从 10 s 提到 15 s、价格降 30%；Veo 3.1 是上一代的 8 s 模型，仍在 API 上。
+- **Omni 的官方约束**〔OMNI〕：默认会自己切镜，要一镜到底必须写 `In a single continuous shot` / `No scene cuts`；没有独立的负面字段，直接在提示词里写 `Do not do X`；API 最多 6 张参考图，不收音频输入，不支持多段视频推理；延长只看输入的最后 10 s，更早出现的元素要重新描述或作为参考图再传一次；带人声的上传视频不能再加台词；所有输出带 SynthID。
+- **Omni 的提示词维度**（DeepMind prompt guide）：景别与运动、风格、光、地点、动作五维；修改用一句话（`Change the camera angle to be over the violinist's shoulder.`）；故事板输入用 `Follow the story exactly in order starting top left. Entire story in 10 seconds.`。官方原话：Omni 不需要过度解释，「with Veo, by contrast, precise instructions are needed」。
+- **Veo 3.1 的官方公式**〔VEO‑G〕：`[Cinematography] + [Subject] + [Action] + [Context] + [Style & Ambiance]`；台词 `A woman says, "We have to leave now."`；音效 `SFX: thunder cracks in the distance`；环境 `Ambient noise: …`；否定改写成正向（`a desolate landscape with no buildings or roads`）；时间戳 `[00:00-00:02] …`，一次 8 s 排 4 个镜头。
+- **价格与接入**：Omni 1.2 $0.07 / s（720p），Gemini API、Vertex、Flow、OpenRouter、ComfyUI（`GeminiVideoOmniV2`）；Veo 3.1 $0.40 / s。
+- **弱项**：Omni 官方只承诺英语，中文对白不可依赖；Google 自己说快速体育动作、快速文字变化、复杂物理仍在改进；Veo 8 s 上限且贵。
+- **对 4090 短剧的价值**：对已有成片做便宜的对话式局部修改（换背景、改机位、去道具），以及画面内文字。**评级：Omni 试用（只用于编辑与英文内容）；Veo 3.1 观望**。
+
+### 3.6 OpenAI Sora 2
+
+2026‑03‑24 宣布关停 App、sora.com 与 API（Axios、Neowin），API 于 2026‑09‑24 下线，Azure Foundry 最后一个部署 2026‑10‑15 退役（`cclank/lanshu-awesome-ai-video-kit`），ComfyUI 的 Sora 节点已移除〔CF〕。它留下的写法（`Style: / Cinematography: / Actions:` 逐拍列表 `/ Dialogue:`）仍被各种提示词转换 skill 当作中间格式。**评级：跳过**。
+
+### 3.7 Runway（Gen‑4.5 / Aleph 2.0 / Act‑Two）
+
+- **定位**：自研生成模型已不在榜单前列，但 **视频编辑（Aleph 2.0）和表演迁移（Act‑Two）仍是专长**，API 同时代理了 Kling、Seedance、Wan、H3、Omni（Model Router）并提供 Product Ad / UGC / Multi‑Shot 这类成品 Recipe。
+- **官方提示词规范**（`academy.runwayml.com/prompt-guide`）：文生 `[Camera] shot of [subject] [action] in [environment]. [Supporting]`；图生几乎只写运动 `The camera [motion] as the subject [action].`；只用正向表述；避免多段落的过度描述；时间戳 `[00:01] X occurs. [00:03] Y occurs.`；防乱切写 `continuous, seamless shot`；要机位不动写 `The locked-off camera remains perfectly still.`；首帧图里的运动模糊会和「静止」指令打架；长序列用末帧接下一段。
+- **Aleph 2.0 的写法**：只命名变化，其余声明保持（`Replace the gray sky with a blue sky with clouds`；品牌替换时用参考首帧定义精确外观）。
+- **价格**〔RW〕：Gen‑4.5 12 credits / s（2026‑06 从 25 降下来）、Aleph 2.0 28 / s（最低 56）、Act‑Two 5 / s、gen4_turbo 5 / s，$0.01 / credit；Gen‑4.5 为 2–10 s、720p。
+- **对 4090 短剧的价值**：成片改一处（换天、换道具、换服装）与把真人表演迁到角色上。**评级：Aleph 2.0 / Act‑Two 试用，Gen‑4.5 观望**。
+
+### 3.8 Luma Ray3.2
+
+2026‑06‑09 发布：最长 20 s、1080p，最多 16 个关键帧，Modify Video（保留原片动作节奏只换服装与场景）、Reframe，原生 HDR 与 16‑bit EXR（ACES2065‑1）。官方 shot‑direction 写法 = 机位 + 主体 + 单一动作 + 场景 + 光影 + 风格 + 一致性约束。没有查到音频能力；Luma Agents（2026‑03）会在 Ray3.14、Veo 3.1、Kling 3.0 之间路由。HDR / EXR 是它独有的专业交付能力，对短剧无用。**评级：观望**。
+
+### 3.9 Vidu Q4 Preview（生数科技）
+
+2026‑10 初发布的预览版：参考生视频最多 15 张图 + 3 段音色（MP3，各 3–12 s，只取音色不复制词句），3–16 s，540p–4K，对白与音效同出。提示词用 `image 1 / audio 1` 按顺序引用，官方示例 `image 1 says "Welcome back!" in the voice from audio 1`；上限 5000 字符；seed 不能锁结果〔Comfy 教程页〕。〔CF〕1080p ≈ $0.084 / s，国内首发促销 0.09 元 / s 起；〔AA〕I2V 1032。多参考 + 音色参考的定位与 H3 Ref2VA 高度重叠，时长多 1 s、分辨率到 4K。**评级：观望**（等正式版；漫剧多角色镜头可以小额对比）。
+
+### 3.10 其它生成模型（只列事实）
+
+| 模型 | 状态与规格 | 价格（每秒） | 对我们 |
+|---|---|---|---|
+| PixVerse V6 / V6 Max / C1 | V6 与 C1 2026‑03 / 04 发布，≤ 15 s，同出音频；C1 面向分镜与动作 | V6 1080p 带音频 ≈ $0.115〔AA〕；Atlas 转售 $0.025–0.03 | 跳过 |
+| Grok Imagine Video 1.5（xAI，2026‑05） | 480p–1080p，参考 / 编辑 / 延长 | 720p $0.14、1080p $0.25〔CF〕 | 跳过；〔LP〕用它做复跑，复现率 74% |
+| FLUX 3 / FLUX 3 Max 视频（BFL，2026‑07 / 10） | 720p–2160p，另有 Video Continuation / Edit / Upscale | FLUX 3 ≈ $0.24、Max ≈ $0.145〔AA〕 | 观望 |
+| HappyHorse 1.0 / 1.1（阿里 ATH，2026‑04 / 06） | 5–15 s 紧凑短片，原生环境音，提示词要短（30–55 词） | 720p ¥0.9、1080p ¥1.6 | 跳过 |
+| LTX‑2.5 托管（Lightricks，2026‑08） | 权重开放；API 分 Fast / Pro，原生多镜头 | Fast 720p $0.09 起 | 本地路线见本目录 01 |
+| Midjourney Video | 仍是 2025‑06 的 Video V1：图生视频，一次 4 条 5 s，可延长到约 21 s；图像模型已到 V8.2（2026‑07‑24） | 订阅制；约为出图的 8 倍 GPU 时间 | 只把 Midjourney 当定妆 / 首帧来源 |
+| Utopai X、SkyReels V4、Hyperflow H3、MAGI‑2 | 〔AA〕前 20 常客；Utopai X 无 API | — | 未研究 |
+
+### 3.11 数字人与口型
+
+| 工具 | 输入 → 输出 | 价格（每秒，〔CF〕折算，口径见下注） | 备注 |
+|---|---|---|---|
+| H3 Max Lip Sync（fal） | 图 + 音频 → 视频，480P–2K | $0.05 / 0.08 / 0.16 / 0.32（480P / 768P / 1080P / 2K） | 与本地 H3 同族；超过 15 s ×1.2 |
+| Kling Lip Sync / Kling Avatar 2.0 | 视频 + 音频；图 + 音频 | ≈ $0.07 每次；≈ $0.06–0.11 | 可灵站内对口型是国内对白戏的常用补救 |
+| Seedance 2.5（音频参考 / Talking Avatar） | 参考图 + 音频 → 口型跟随上传音频 | 按 token，同 §1.1 | 〔LP〕建议只让一个角色对口型，间奏写闭嘴 |
+| HeyGen Avatar IV / V、Video Translate | 照片或数字分身 + 文本 / 音频 | ≈ $0.04–0.08 / $0.12 / $0.025 | 口播数字人主力；API 2026 年改为按量付费 |
+| VEED Lipsync 2.0、sync.so | 现成视频 + 新音频 → 重对口型 | 21.12、≈ 40.13 积分（折算口径不明） | Curious Refuge 2026‑07：VEED 2.0 在多镜头素材上「pretty good so far」 |
+
+注：〔CF〕的积分有两种口径并存。2026‑05 之后上架的节点（Wan 3.0、Kling 4.0、H3 / H3 Max、Omni、Grok 1.5、HeyGen）按「301.73 积分 = 官方标价 $1」折算能和〔AA〕〔RW〕对上；更早的节点（Veo 3.1、Kling 3.0、PixVerse V6、HappyHorse 1.0）按 211 积分 = $1 才对得上。Comfy 支持文档写的是「$1 = 211 credits」，照此算新节点经 Comfy 购买会比官方标价贵约 43%——**这是推算，未验证**，以节点徽标和账单为准。
+
+Hedra 这次没有查到 2026 年的可靠资料（见「未覆盖」）。本地等价物（InfiniteTalk、LTX A2V）在本目录 01 / 04。
+
+### 3.12 增强与终处理
+
+- **Topaz**：Starlight Precise 2.5（2026‑03，专门针对 AI 生成视频，云端）、Astra 2（2026‑04，可写提示词的超分，带 Creativity / Sharpness 滑杆）、Starlight Fast；〔CF〕按源帧计价，1080p 每帧 0.43（Fast）/ 0.70（Precise 2.5）/ 1.72（Astra 2）积分，10 s 24 fps 的片段用 Precise 2.5 约 168 积分（约 $0.6–0.8）。桌面版 Topaz Video 约 $299 / 年。
+- **Magnific 视频超分**：Runway API 里 `magnific_video_upscaler_creative` 每帧 $0.007（1K）/ $0.009（2K）/ $0.012（4K），10 s @30 fps = $2.1 / 2.7 / 3.6〔RW〕。
+- **其它**：字节 vCube Video Enhance（720p–8K）、Runway `enhance_frame_rate`（每 2 s 输入 1 credit）与 `ruby`（SDR → HDR）、LTX Upscale。
+- **对我们**：本地已有 LBH latent 放大 + 二采与 RelayVSR，云端超分只在交付 4K 或救低清云端片段时才值。创作者经验：AI 视频色彩比特率低，后期调色空间小，色调要在场景图阶段定（Mx‑Shell）。**评级：观望**。
+
+### 3.13 聚合平台与工作台
+
+| 平台 | 是什么 | 值得知道的点 |
+|---|---|---|
+| 即梦短剧工作室（字节，随 Seedance 2.5 推出） | 剧本 → 资产 → 分镜 → 3D 导演台 → 生成 → 后期的一体化项目空间 | 国内同类产品里最完整；截帧注释式局部修改；≈ 0.19 元 / s |
+| ComfyUI Partner Nodes | 在本地工作流里直接调云端模型的付费节点 | Kling 4.0、Seedance 2.5、Wan 3.0、H3 / H3 Max 全家、Vidu Q4、Omni、Runway、Luma、Pika Flex、HeyGen、Topaz 都有；`--disable-api-nodes` 可整体关闭 |
+| Runway API / Model Router | 自研模型 + 第三方模型同一套 credits | 价目页是目前最全的「各家每秒价」对照 |
+| Higgsfield | 多模型订阅 + Soul ID（从参考照片训练持久身份）+ Cinema Studio 4.0（机位 / 镜头参数） | Seedance 2.5 720p 订阅折算 ≈ $0.047 / s（Dreamina 页引用，未验证）；最多的 Claude 提示词 skill 生态 |
+| Google Flow | Veo / Omni 的官方创作台 | 360p 草稿省积分、首尾帧、视频参考、延长时分析最后 10 s（2026‑08‑27 更新） |
+| LTX Studio | 分镜工作台 + Elements（一致性资产） | 商用需 Standard（$35 / 月）以上 |
+| fal、WaveSpeed、Atlas Cloud、Evolink、OpenRouter、Vercel AI Gateway | 按秒计费的 API 代理 | 2026 年 OpenRouter 与 Vercel 也开始列视频模型；同模型价格差可达 2 倍 |
+| LibTV、小云雀、Seko、纳米漫剧流水线（360） | 国内「自动分镜 + 多模型」平台 | 只在教程标题与行业报道里见到，未研究 |
+
+### 3.14 GitHub 上的提示词库与 skill（星数取自 2026‑11‑21 搜索 API）
+
+| 仓库 | 星 · 更新 | 内容 | 对我们 |
+|---|---|---|---|
+| `LearnPrompt/awesome-seedance` | 2610 · 11‑21 | 1070 例（2.5 占 765）逐条回溯原帖；27 个模板写明「语料里多少例这样写」；494 次跨模型复跑（H3 Max 243 次 73%、Grok 240 次 74%、H3 768p 10 次 80%）；`seedance-production-workflow` skill 带 `validate_plan.py` 与 7 维 QA 表 | **采用其模板规则与 QA 表**（MIT 代码 / CC BY 4.0 内容） |
+| `Evolink-AI/awesome-seedance-2.5-guides` | 419 · 11‑19 | 官方 36 个发布案例的完整提示词 + 保留的 Seedance 2.0 官方手册 | 采用（当官方写法的原文库） |
+| `Evolink-AI/Awesome-Blender-Seedance-Workflow-Usecases` | 355 · 07‑20 | 39 个 Blender / Blender MCP 预演 → Seedance 的 X 案例，含限制测试 | 采用其结论（§四 案例 8） |
+| `A-cat-with-carrots/OnlyShot` | 414 · 11‑10 | 即梦 CLI 短剧流水线、17 种失败模式、`compliance-2026.md` | **采用其失败模式表与合规清单**（MIT） |
+| `10291124jcjc-dotcom/ai-anime-series` | 392 · 11 月 | 宫格故事板 → Seedance 2.5 一次出 30 s 的完整例子与脚本 | 试用（宫格法搬到 H3） |
+| `liyue-aigc/seedance-2-5-video-director` | — | 把官方 User Guide 固化成能力快照 + 提示词蓝图 + 冲突诊断 | 借快照 |
+| `cclank/lanshu-awesome-ai-video-kit` | 465 · 10‑07 | 604 条提示词、110 条「10 场景 × 11 模型」对照矩阵、`prompt-translator` / `model-selector` skill、每周巡检 32 个官方端点 | 借「按目标模型标签重写」的转换表；模型矩阵部分已过时 |
+| `smixs/visual-skills` | 726 · 11‑06 | `dramaturgy.md` + 14 条通用规则（U1–U14）+ Seedance / Kling / Veo 语法 | 借通用规则（CC BY 4.0） |
+| `klingai-tech/claude-plugin(-cn)` | 官方 | 可灵 MCP + 3 个 skill | 接入可灵时直接用 |
+| `jnMetaCode/ai-shortfilm-prompts` | 557 · 11‑16 | Mx‑Shell《丧尸清道夫》等的原始提示词、5 段式方法论、制作 FAQ | 借案例数据（§四 案例 7） |
+| `dexhunter/seedance2-skill`、`songguoxs/seedance-prompt-skill` | 4556、3023 | Seedance 2.0 时代的提示词 skill | 已被 2.5 的官方指南覆盖，跳过 |
+| `UnderleveledBuilder/awesome-short-drama-skills` | 2672 · 11‑19 | 117 个短剧 skill 的索引（Seedance 47、H3 22、可灵 14、Wan 5、Veo 5）+ 三轮编剧 skill 盲评 | 当索引用；编剧 skill 的实测结论见本目录 02 |
+

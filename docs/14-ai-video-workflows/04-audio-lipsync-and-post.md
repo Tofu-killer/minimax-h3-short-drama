@@ -1,7 +1,7 @@
 # 04 · 声音、口型与后期自动化工作流（audio-post 簇）
 
 > 调研日期 2026-11-21。方法：GitHub 搜索 API（约 100 次查询）+ `raw.githubusercontent.com` 读 README / 源码 + HuggingFace API 读模型卡与文件清单 + 浅克隆 2 个 H3 音频仓库读节点源码与工作流 JSON + 官方 `Comfy-Org/workflow_templates`（2026-10-31 版）拆节点 + 本机 ffmpeg 6.1.1 实跑滤镜链。
-> 口径：星数 / 最后推送为 2026-11-21 快照；速度与显存**全部是作者自报**并标注硬件，本簇没有在 4090 上跑任何模型（标「未验证」）；ffmpeg 命令、剪映草稿 / OTIO 导出、字幕重定时、F0 / 偏移检测原型为本次**实跑通过**（合成素材，见 §7）。
+> 口径：星数 / 最后推送为 2026-11-21 快照；速度与显存**全部是作者自报**并标注硬件，本簇没有在 4090 上跑任何模型（标「未验证」）；ffmpeg 命令、剪映草稿 / OTIO 导出、字幕重定时、F0 / 偏移检测原型为本次**实跑通过**（合成素材，见文末「来源与核验记录」）。
 > 用户约束：Windows 11 + RTX 4090 24 GB + 本地 ComfyUI；只能用 HuggingFace / GitHub（ModelScope-only 的权重视为不可用）。
 
 ## 0. 本簇结论
@@ -26,7 +26,7 @@ H3 take ────┤                                                      ├
  32 kHz)                                                                                    ▼
  环境声底（每场景一条 room tone，−32…−48 dB，只填缺口）──────────────────────────────► 混音总线 ─► 两遍 loudnorm
  拟音补洞（V2A：HunyuanVideo-Foley / PrismAudio；T2A：Stable Audio 3 sfx）────────────►   │        −14 LUFS / −1.5 dBTP / LRA 11
- 配乐（ACE-Step 1.5，时长 = 成片，BPM 写进 tags）──► sidechaincompress（对白处 −8…−12 dB）─┘        48 kHz AAC 320k
+ 配乐（ACE-Step 1.5，duration = 成片，bpm 为节点入参）─► sidechaincompress（对白处 −8…−12 dB）─┘        48 kHz AAC 320k
  字幕：锁定原文 + 强制对齐时间 → ASS（中 58 px / 英 36 px @1080p）→ 烧录 或 剪映草稿文本轨
  工程：edl.json → 剪映草稿 / .otio / FCP7 XML / CMX3600 EDL
 ```
@@ -39,7 +39,7 @@ H3 take ────┤                                                      ├
 |----|------------|-------------------|
 | A0 | `selects/ep01/segNN.mp4`、`episodes/ep01.json`、`bible/voices/<角色>.wav`（用户认可的 H3 原声 ≥ 6 s） | 现有 `qc_probe.py` 通过后才进本链路 |
 | A1 | mp4 → `segNN.wav`（48 kHz 24-bit） | `ffmpeg -i segNN.mp4 -vn -af aresample=48000 -c:a pcm_s24le segNN.wav`（H3 原生 32 kHz，统一升到 48 k 再做任何处理） |
-| A2 | `segNN.wav` → `(Vocals)` + `(Instrumental)` | `audio-separator segNN.wav --model_filename model_bs_roformer_ep_317_sdr_12.9755.ckpt --output_dir stems/`；ComfyUI 内：`MelBandRoFormerModelLoader(MelBandRoformer_fp16.safetensors)` → `MelBandRoFormerSampler`，或核心 `AudioStemSeparate(htdemucs)` |
+| A2 | `segNN.wav` → `(Vocals)` + `(Instrumental)` | `audio-separator segNN.wav --model_filename model_bs_roformer_ep_317_sdr_12.9755.ckpt --output_dir stems/ --output_format WAV`（默认输出 FLAC）；ComfyUI 内：`MelBandRoFormerModelLoader(MelBandRoformer_fp16.safetensors)` → `MelBandRoFormerSampler`，或核心 `AudioStemSeparate(htdemucs)` |
 | A3 | Vocals + 锁定台词 → 每句时间 | `Qwen3ForcedAligner.from_pretrained("Qwen/Qwen3-ForcedAligner-0.6B").align(audio, text, language="Chinese")`；按 `[首字 −0.08 s, 末字 +0.18 s]` 切句，说话人取自分镜 JSON（一镜一人开口） |
 | A4 | 每句 → 漂移表 | 中位 F0（自相关，70–400 Hz）与锚点比：`12·log2(f/f_ref)`；\|Δ\| ≤ 0.5 半音且听感一致 → 跳过 A5 |
 | A5 | 漂移句 → 统一音色句 | `python inference.py --source line.wav --target bible/voices/xia.wav --output vc/ --diffusion-steps 30 --length-adjust 1.0 --inference-cfg-rate 0.7 --f0-condition True --auto-f0-adjust True --semi-tone-shift 0 --fp16 True`（seed-vc 44.1 kHz F0 条件模型：语调跟原表演走、音域平移到锚点；首选项，未在 H3 素材实测，需与默认 22.05 kHz 模型 A/B） |
@@ -83,12 +83,12 @@ B6 的四个选项：
 | 步 | 输入 → 输出 | 工具 / 命令 / 参数 |
 |----|------------|-------------------|
 | C1 | 剧本台词 → 全部对白 wav | B1 的声线 + 任一 TTS（此时不必定长，取最自然的 take）；逐句 ASR 回读 + 审听门 |
-| C2 | 对白 wav 时长 → 分段表 | `audio_lock_plan.py`（§4.8）：每句 `start_frame ≥ 18`（0.75 s 预卷，skill 既有规则）、句尾留 ≥ 0.2 s + 1 s 定格；段长吸附 `17k+5`（124 / 141 / 158 … ≤ 328 帧） |
-| C3 | 配乐与节拍 | ACE-Step 1.5 先出整集配乐（tags 写 BPM）；`beat_grid.py` 给出拍点；硬切点落在 1/4 或 1/8 拍 ±2 帧 |
+| C2 | 对白 wav 时长 → 分段表 | `audio_lock_plan.py`（§4.7）：每句 `start_frame ≥ 18`（0.75 s 预卷，skill 既有规则）、句尾留 ≥ 0.2 s + 1 s 定格；段长吸附 `17k+5`（124 / 141 / 158 … ≤ 328 帧） |
+| C3 | 配乐与节拍 | ACE-Step 1.5 先出整集配乐（`bpm` 入参填实数）；`beat_grid.py` 给出拍点；硬切点落在 1/4 或 1/8 拍 ±2 帧 |
 | C4 | 对白段生成（要环境声） | `MiniMaxH3TimedAudio(start_frame, gain_db 0)` → `MiniMaxH3DialogueAudioLock(mix_policy=prevent_clipping, overflow_policy=error, protect_before_ms=200, protect_after_ms=250, feather_ms=100)`；同一 `start_frame` 接 `MiniMaxH3AddGuide.frame_idx` 并喂同一段 audio；提示词里照常写同一句 `<d>…</d>` 和说话人归属；采样后 `VAEDecodeAudio + dialogue_reference_audio + dialogue_lock_manifest → MiniMaxH3DialogueAudioFinalize → final_audio` |
 | C5 | 歌曲 / MV / 纯口播段（整条锁） | `MiniMaxH3ExactAudioLock(mix_policy=sum, overflow_policy=error)`；成片音轨接 `exact_audio`（不是 `VAEDecodeAudio`）；长口播用 `caitongbo/ComfyUI-MiniMaxH3-LongVideo-DigitalHuman`（960×544×362 帧 ≈ 15.08 s / 段，39 帧画面前缀，≤ 20 段） |
 | C6 | 不装节点的退路 | 六段式里 `<Audio 1>: fully_copy`（语音有约 0.45 s 系统位移，须在排期里预补）；只要音色用 `<Audio 1>: attribute_transfer (voice timbre only)` |
-| C7 | H3 做不好时 | 口播 / 唱歌：LongCat-Video-Avatar 1.6（MIT，int8 15.97 GB，ComfyUI 原生）；多人对话：InfiniteTalk / MultiTalk；音频反应式：LTX-2 `A2VidPipelineTwoStage`、HuMo |
+| C7 | H3 做不好时 | 口播 / 唱歌：LongCat-Video-Avatar 1.6（MIT，Comfy-Org 重打包 int8 15.97 GB）；多人对话：InfiniteTalk / MultiTalk；音频反应式：LTX-2 `A2VidPipelineTwoStage`、HuMo |
 | C8 | 拼接混音 | 对白已是干净 TTS：跳过 A2–A7，直接 A8–A13；`Finalize` 之外的 H3 环境声作为非人声 stem |
 
 ### 1.4 三条链路比较
@@ -144,6 +144,7 @@ B6 的四个选项：
 - **关键参数**：`IndexTTS2(cfg_path, model_dir, use_bf16=True[, use_qwen_emo=True])`；`infer(spk_audio_prompt, text, lang="ZH", output_path, emo_audio_prompt=None, emo_alpha=1.0, emo_vector=[喜,怒,哀,惧,厌,郁,惊,静], use_emo_text=False, emo_text=None, duration_factor=1.0, use_random=False)`；纠音 `银<行|HANG2>`。
 - **硬件 / 速度**：权重 5.49 GB；4090 `kv_cache` RTF 0.2065（7 字短句 0.287）；2.0 fp16 为 0.3257（作者自报）。
 - **许可**：bilibili Model Use License——普通工作室可商用；不得拿输出去改进其他商用模型。
+- **中文质量**：CV3-Eval zh WER 4.36 / SS 77.10，RL 版 3.93 / 77.92（作者自测，同表里相似度仅次于 CosyVoice3）；跨语种克隆不带口音是 2.5 的主打点。
 - **价值**：`emo_audio_prompt` 可以直接喂 H3 原句（借表演）、`spk_audio_prompt` 喂角色锚点（定音色）；`duration_factor` 做 ±15% 的贴窗。注意 2.0 README 里的「精确时长控制」至今写着 not yet enabled，2.5 只有倍率。`use_random=True` 会降相似度，别开。
 - **评级**：**采用**（链路 B / C 的默认中文 TTS）。
 
@@ -152,6 +153,8 @@ B6 的四个选项：
 - **机制**：文本 LLM 出 25 Hz 监督语义 token → flow matching → HiFT；RL 版 `llm.rl.pt` 降错字率。
 - **关键参数**：`AutoModel(model_dir='pretrained_models/Fun-CosyVoice3-0.5B')`；`inference_zero_shot(text, 'You are a helpful assistant.<|endofprompt|>参考音频的文本', prompt_wav)`；`inference_instruct2(text, 'You are a helpful assistant. 请用广东话表达。<|endofprompt|>', prompt_wav)`；`[breath]`、`[laughter]`；拼音热修 `[j][ǐ]`；日语须先转片假名。
 - **硬件 / 速度**：0.5B；仓库 9.75 GB（含 ONNX 双份）；官方只给流式延迟 150 ms，4090 RTF 未见。最后推送 2026-05-25，3.0 之后无新模型。
+- **许可**：代码与权重 Apache-2.0，无收入门槛；`CosyVoice-ttsfrd` 文本前端可不装（默认 wetext）。
+- **中文质量**：自报 Seed-TTS test-zh CER 1.21 / SIM 78.0（RL 版 0.81 / 77.4）、test-hard 5.44——绕口令、数字、多音字这类难句是它的强项。
 - **价值**：方言角色（四川 / 东北 / 粤语）首选；`CosyVoice-300M` 的 `inference_vc(source, prompt)` 可当备用 VC。
 - **评级**：**采用**（方言与许可敏感项目）。
 
@@ -160,27 +163,39 @@ B6 的四个选项：
 - **机制**：LocEnc → TSLM → RALM → LocDiT，在 AudioVAE V2 连续 latent 上自回归；参考只要 16 kHz。
 - **关键参数**：`VoxCPM.from_pretrained("openbmb/VoxCPM2", load_denoiser=False)`；`generate(text, reference_wav_path=None, prompt_wav_path=None, prompt_text=None, cfg_value=2.0, inference_timesteps=10, seed=42)`；声音设计 / 风格写在文本开头的括号里 `(A young woman, gentle and sweet voice)…`；CLI `voxcpm clone --text … --reference-audio … --output …`，`--timestamps --timestamp-level char --timestamp-language zh`（内部调 stable-ts）。
 - **硬件 / 速度**：2B，权重 4.96 GB，~8 GB 显存，RTF ~0.30（4090）/ ~0.13（Nano-vLLM）。支持 LoRA 微调。
+- **许可**：代码与权重 Apache-2.0。
+- **中文质量**：自报 Seed-TTS test-zh CER 0.97 / SIM 79.5，CV3-eval zh 3.65、hard-zh 8.55；方言列表在 README 里，触发方式（指令还是方言参考音频）未验证。
 - **价值**：音质上限最高、不用再做超分；没有显式时长控制，适合链路 C（先音后画）。
 - **评级**：**采用**（链路 C 的高保真选项）。
 
 #### Qwen3-TTS（QwenLM/Qwen3-TTS）
 - **定位**：三件套——`VoiceDesign`（一句描述造音色）、`CustomVoice`（9 个预置音色 + 情感指令）、`Base`（3 秒克隆）。
+- **机制**：离散多码本 LM 端到端建模（不走 LM + DiT 两段式），`Qwen3-TTS-Tokenizer-12Hz` 负责编解码；同一模型支持流式与非流式。
 - **关键参数**：`Qwen3TTSModel.from_pretrained(id, device_map="cuda:0", dtype=torch.bfloat16, attn_implementation="flash_attention_2")`；`generate_voice_design(text, language="Chinese", instruct="…")`；`generate_voice_clone(text, language, ref_audio, ref_text)`；`create_voice_clone_prompt(ref_audio, ref_text, x_vector_only_mode=False)` 复用。
-- **价值**：官方文档化的 **「Voice Design then Clone」**：先用 VoiceDesign 生成一段目标音色，再作 Base 的克隆提示批量出句——没有真人样本也能给每个角色定一把固定嗓子，且全程 Apache-2.0。ExactAudioLock 仓库的三份 Qwen3-TTS 示例工作流就是这个用法（`FB_Qwen3TTSVoiceDesign` 两个 seed → 审听门 → 锁）。
 - **硬件**：1.7B 每个模型 ~4.5 GB；仓库最后推送 2026-03-17。
+- **许可**：代码与权重 Apache-2.0。
+- **中文质量**：IndexTTS 的 CV3-Eval 对比表里 zh WER 3.27（表内最低）/ SS 73.02——可懂度强、相似度中等，所以更适合「造一把新嗓子」而不是「贴某个真人」。
+- **价值**：官方文档化的 **「Voice Design then Clone」**：先用 VoiceDesign 生成一段目标音色，再作 Base 的克隆提示批量出句——没有真人样本也能给每个角色定一把固定嗓子，且全程 Apache-2.0。ExactAudioLock 仓库的三份 Qwen3-TTS 示例工作流就是这个用法（`FB_Qwen3TTSVoiceDesign` 两个 seed → 审听门 → 锁）。
 - **评级**：**采用**（系列圣经「音色」一栏的生成器）。
 
 #### OmniVoice（k2-fsa/OmniVoice）
 - **定位**：k2 团队的 600+ 语零样本 TTS，离散扩散语言模型式的**非自回归**结构。
+- **机制**：以 Qwen3-0.6B 初始化的掩码离散扩散，单阶段文本 → 声学 token，训练数据 58.1 万小时（awesome-ai-voice 条目）；非自回归所以总时长是显式入参。
 - **关键参数**：`model.generate(text, ref_audio, ref_text, instruct="female, low pitch, 四川话", num_step=32, speed=1.0, duration=10.0)`——`duration`（秒）直接固定输出长度并覆盖 `speed`；非语言标签 `[laughter] [sigh] [surprise-ah]…`；中文可用带调号拼音纠音。
 - **硬件 / 速度**：权重 3.27 GB；README 自报 RTF 低至 0.025（批量、H100、fp16 口径）。
+- **许可**：GitHub Apache-2.0（HF 模型卡未填 license 字段，以仓库 LICENSE 为准）。
+- **中文质量**：CV3-Eval zh WER 3.41 / SS 72.99（IndexTTS 表）；`instruct` 支持四川话、陕西话等方言属性。
 - **价值**：链路 B 的「把这句话塞进 2.4 秒」只需一个参数；非自回归模型给太短的时长会吞字，建议 `D_i ≥ 字数 / 6.5 s`，超出就改词而不是硬压（未验证阈值）。
 - **评级**：**采用**（定长配音首选），与 IndexTTS-2.5 做同句 A/B。
 
 #### GPT-SoVITS V5（RVC-Boss/GPT-SoVITS）
 - **定位**：5 秒零样本 / **1 分钟少样本微调**；中文社区保有量最大（★64157，MIT）。
+- **机制**：两段式——GPT（自回归，文本 → 语义 token）+ SoVITS（声学模型 / 声码器）；少样本时两段各微调几分钟。
 - **要点**：v2Pro 系对一般音质训练集鲁棒，v3 / v4 更贴参考音频；V5「不微调 SoVITS 也显著提升相似度」并换了声码器，分支 `cuda_graph_accel_v5`，权重 `lj1995/GPT-SoVITS/gsv-v5-pretrained`。自报 RTF 0.014（4090）/ 0.028（4060Ti）。自带 UVR 分离、切分、ASR 打标的数据准备 WebUI。
+- **关键参数**：参考音频 3–10 s + 参考文本；Windows 整合包双击 `go-webui.bat`，推理页 `1-GPT-SoVITS-TTS/1C-inference` 或 `python GPT_SoVITS/inference_webui.py`；支持语速控制。
+- **许可**：仓库 MIT；训练出的角色模型由使用者自行负责声音授权。
 - **价值**：每个主角用 1 分钟认可素材微调，得到**全季固定声线**，比零样本克隆逐句漂移小；训练素材可以就是链路 A 里筛出的好句。
+- **局限**：没有情感标签，情绪跟参考音频走——每个角色备「平静 / 激动 / 低声」三条参考最实用（经验做法，未验证）。
 - **评级**：**采用**（≥ 10 集的连载）。
 
 #### AuK / AuK-Flash（Tencent-Hunyuan/AuK）
@@ -189,13 +204,18 @@ B6 的四个选项：
 - **关键参数**：`auk-infer --audio X --instruction "…" --output Y [--gen_seconds S] [--cpu_offload] [--ckpt ckpts/AuK-Flash/auk_flash.safetensors]`。模板：零样本 TTS `Say the following with the same voice: "…"`；改词 `把‘原文’改成‘新文’`；`将音调升高 2 个半音`；`将语速调整为 1.25 倍`；`将情感转变为愤怒`；`请保留所有说话人，去除噪声和混响，输出等长的纯净语音`；`只保留第 2 个开始说话的人`。
 - **硬件**：不开 offload 峰值 24.8–25.0 GiB，`--cpu_offload` 16.75–16.98 GiB（A800，bf16）；ComfyUI 节点 `AuK Model Loader` / `AuK Generate / Edit`，**源 + 目标合计 ≤ 30 s**，输入被平均成单声道。
 - **许可**：AuK 权重 MIT，但运行必须加载的 Qwen2.5-Omni-3B 在 HF 上标 `qwen-research`——商用前先核实。
+- **中文**：全部指令模板中英双语；Prompt Enhancer 需要一个 OpenAI 兼容 LLM，可以关掉（关时必须手填 `gen_seconds`）。
 - **价值**：三个别处没有的能力——① H3 原声**改一个词**不重抽（`gen_seconds` 设成原句长度以保口型大体不动）；② 半音级变调直接修「每段漂 1.7 半音」；③ 一条指令去混响 / 修削波。
 - **评级**：**试用**（先在非商用样片验证改词与变调质量）。
 
 #### Fish Audio Drama 3 / S2-Pro（fishaudio/fish-speech）
 - **定位**：Drama 3 是目前唯一明确以「戏剧表演」为目标的开源 TTS：一段文本 16 个 `<|speaker:N|>`，`[whisper] [angry] [laughing]` 内联标签，`previous_takes` 多轮导演改稿（「再温柔一点、带点难过」），单词级 infill。
+- **机制**：256 专家 / 每 token 激活 8 个的 MoE（专家以 FP8 存储）+ 全注意力与线性注意力混合的 40 层骨干；codebook-MTP 解码器因果地出 10 个码本（约 21.5 Hz），ModifiedDAC 解码到 44.1 kHz；GRPO 后训练。
 - **现实约束**：35B-A3B MoE，原权重 41.5 GB；`fishaudio/drama-3-int4` 22.1 GB（卡片自述为非官方量化，需 SGLang-Omni、sm80+，Linux）；GGUF Q4_K_M 20.56 GB / Q2_K 17 GB。所有速度数字来自 H200。24 GB 卡上无法与任何东西同驻，Windows 路径未验证。
+- **关键参数**：`sgl-omni serve --model-path fishaudio/drama-3 --port 8000` 或 `vllm serve fishaudio/drama-3 --omni`；`POST /v1/tts`，JSON `{text, references: [{audio_path, text}], previous_takes: […]}`；采样 `temperature 1.0 / top_p 0.9 / top_k 30`（模型卡基准口径）。
+- **硬件 / 速度**：H200 单流 RTF 0.131、首包 89 ms；并发 8 时 FP8 版 RTF 0.281、int4 版 0.320（均为模型卡数字）。
 - **许可**：Fish Audio Community License v1.0——年总收入 < 50 万美元可商用、禁做托管服务、分发需标 "Built with Fish Audio"；S2-Pro 权重仍是 Research License。
+- **价值**：多角色整场对白一次出、且能按导演意见逐轮改——这正是短剧配音需要的交互形态；等 24 GB 可用的量化 + Windows 运行时成熟再评。
 - **评级**：Drama 3 **观望**（先用 ComfyUI API 模板 `api_fishaudio_drama3_directed` 试表演上限）；S2-Pro **跳过**。
 
 #### MOSS-TTS 家族 / FireRedTTS3 / Chatterbox / Step-Audio-EditX（合并）
@@ -210,8 +230,11 @@ B6 的四个选项：
 
 #### ComfyUI 集成：diodiogod/TTS-Audio-Suite v5.11.0
 - **定位**：20 个引擎的统一 TTS / VC / ASR / 字幕节点包（★1270，代码 MIT，各引擎各自许可），2026-11-19 仍在更新。
+- **机制**：每个引擎一个适配器，统一暴露 Text / SRT / Voice Changer / ASR 四类节点；段级缓存，只重算改动的句子。
 - **覆盖**：IndexTTS 2 / 2.5、CosyVoice3、Qwen3-TTS、OmniVoice、MOSS-TTS、MOSS-SoundEffect v2、Fish S2 Pro、Higgs v3、VibeVoice、F5、Chatterbox（V1–V3）、Step-Audio-EditX、RVC（含训练）、Qwen3-ASR、Granite ASR。模型自动下到 `ComfyUI/models/TTS/…`。
 - **关键节点**：`Unified 📺 TTS SRT`（按 SRT 生成，`stretch_to_fit` / `pad_with_silence` / `smart_natural`，`max_stretch_ratio` 默认 2.0、`min_stretch_ratio` 0.5，输出 `Adjusted_SRT`，段级缓存只重算改动句）；`Unified 🔄 Voice Changer`（RVC / ChatterBox VC / CosyVoice VC，迭代 1–30 遍，建议 1–5）；`✏️ ASR Transcribe` + `Text to SRT Builder`；`Silent Speech Analyzer`；角色切换语法 `[Alice] 台词`。
+- **硬件**：取决于引擎（模型体积 IndexTTS-2.5 ~5.5 GB、CosyVoice3 ~5.4 GB、OmniVoice ~3.7 GB；DramaBox 快速模式约 24 GB 显存）；与 H3 同图时务必在 TTS 节点后清显存。
+- **对 H3 的价值**：链路 C 可以整条留在 ComfyUI 里——`TTS Text` → `H3ExactAudioLockAudioReviewGate` → `MiniMaxH3TimedAudio` → 锁 → H3 采样，ExactAudioLock 的示例工作流就是这种拼法（它用的是独立的 Qwen3-TTS 节点包）。
 - **注意**：主环境要求 Transformers 5，老引擎走隔离运行时——装进跑 H3 的同一个 ComfyUI 前先在副本环境验证依赖；`stretch_to_fit` 是 CPU 相位声码器，拉伸超过 ±15% 明显劣化。
 - **评级**：**采用**（作为 ComfyUI 内的 TTS / VC 统一入口；批量仍建议走独立 venv 脚本）。
 
@@ -232,13 +255,18 @@ B6 的四个选项：
 - **机制**：内容编码器（Whisper-small / XLSR / ASTRAL 量化）+ U-ViT 扩散 + BigVGAN / HIFT 声码器；V2 额外有 AR 模型转口音与情绪。四个模型：`xlsr-tiny`（25 M，实时）、`whisper-small-wavenet`（98 M，22.05 kHz，离线默认）、`whisper-base-f0-44k`（200 M，44.1 kHz，带 F0 条件）、V2 `hubert-bsqvae-small`（67 M + 90 M AR，最能压住源说话人特征）。
 - **关键参数**：`--diffusion-steps 25`（30–50 最好，4–10 最快）、`--length-adjust 1.0`（**链路 A 必须 1.0**）、`--inference-cfg-rate 0.7`、`--f0-condition True/False`、`--auto-f0-adjust`、`--semi-tone-shift`、`--fp16 True`；V2：`--intelligibility-cfg-rate 0.7 --similarity-cfg-rate 0.7 --convert-style false`（只转音色）。
 - **硬件 / 速度**：权重合计 3.94 GB；作者只给了 3060 笔记本实时模式数字（xlsr-tiny 10 步，每 180 ms 块推理 150 ms），4090 离线速度未验证；Windows 上 `--compile` 需 `triton-windows==3.2.0.post13`。
-- **坑**：默认离线模型输出 22.05 kHz，H3 原生 32 kHz——直接替换会丢 11–16 kHz 的空气感；用 44 k F0 模型或转换后只取 < 10 kHz 与原声高频带混合（未验证）。仓库已 19 个月未更新，GPL-3.0 仅影响再分发代码，不影响输出。
+- **许可**：GPL-3.0（代码与 HF `Plachta/Seed-VC` 权重）；本 skill 只以命令行方式调用，不打包其代码。
 - **对 4090 短剧的价值**：链路 A 的核心；每句对白几秒，时间成本可忽略。
+- **坑**：默认离线模型输出 22.05 kHz，H3 原生 32 kHz——直接替换会丢 11–16 kHz 的空气感；用 44 k F0 模型或转换后只取 < 10 kHz 与原声高频带混合（未验证）。仓库已 19 个月未更新，GPL-3.0 仅影响再分发代码，不影响输出。
 - **评级**：**采用**，但作为「有漂移才用」的修复工具。
 
 #### RVC / Applio
 - **定位**：检索式 VC，需为每个角色训练 `.pth`（+ index）；推理快、稳定、不幻觉内容。
+- **机制**：HuBERT 内容特征 + **top-1 检索**把源特征替换成训练集特征以减少音色泄漏，RMVPE 提取音高，NSF 声码器合成；README 建议 ≥ 10 分钟低噪语音。
+- **关键参数**：检索比例（index rate）、音高算法 `rmvpe`、清辅音保护、变调半音数——对白场景变调保持 0，检索比例从 0.5 起试（常用起点，未在本次核对默认值）。
 - **用法**：用 A 链路里筛出的认可句（合计 5–10 分钟）训练角色模型；之后所有 take 的该角色对白过一遍。TTS-Audio-Suite 的 `Unified 🔄 Voice Changer` 可加载 `.pth` 并做 1–5 遍迭代精炼，也自带训练节点。
+- **硬件 / 速度**：模型 100–300 MB，推理远快于实时；4090 上训练时长未验证。
+- **许可**：RVC 与 Applio 均 MIT，Applio README 明写允许商用（需自行确保声音授权）。
 - **价值**：连载到第 3 集以后，角色素材够了就从 seed-vc 切到 RVC——一致性比逐句零样本好，且采样率 40 / 48 kHz。
 - **评级**：**采用**（≥ 3 集后的默认）。
 
@@ -250,7 +278,7 @@ B6 的四个选项：
 | MuseTalk 1.5（★7002，push 2026-11-19） | V2V 只改嘴，单步 | MIT，模型可商用 | 256×256 | 25 | V100 30 fps+；4 GB 可跑 | 支持中 / 英 / 日 | 旧节点（kijai 2024） | 试用（中远景 / 批量） |
 | ComplexSync（★488，2026-11-02） | V2V 只改嘴，1 步 / 12 步 | Apache-2.0 | 未见 | 25 | 未见 | 未见 | 无 | 观望（权重仅 ModelScope） |
 | InfiniteTalk（★8445）/ MultiTalk（★3038） | I2V / V2V 整段重生成 | Apache-2.0 | 480P / 720P（Wan2.1 14B） | 25 | fp8 19.5 GB；社区中文工作流 Q8 GGUF 需 32 GB | chinese-wav2vec2-base，好 | kijai/ComfyUI-WanVideoWrapper；官方模板 | 试用（口播 / MV） |
-| LongCat-Video-Avatar 1.6（HF 2026-11-13） | I2V 整段生成 | MIT | 768×512 等 | 25 | int8 14.9 GiB；4090 10.1 s 片约 162 s（第三方节点作者） | Whisper large-v3 特征 | Comfy-Org 重打包（原生）；PedroMarinhoDev 节点 | 试用（口播首选替代） |
+| LongCat-Video-Avatar 1.6（HF 2026-11-13） | I2V 整段生成 | MIT | 768×512 等 | 25 | int8 14.9 GiB；4090 10.1 s 片约 162 s（第三方节点作者） | Whisper large-v3 特征 | Comfy-Org 已重打包（2026-11-18，核心节点情况未核对）；PedroMarinhoDev 节点 | 试用（口播首选替代） |
 | LTX-2.3 DubIt / LTX-2.5 A2Vid（★10338） | 联合音画：改台词 + 口型 / 音频出画面 | 代码 Apache-2.0，权重 LTX Community | 模型原生 | 24–25 | 22B，24 GB 需 FP8 + offload（未验证） | 未验证 | 官方模板 `video_ltx_2_audio_to_video` | 观望 |
 | Chanjing-Avatar V2V 5B（2026-08） | V2V 只重生成脸区 | Apache-2.0 | Wan2.2-TI2V-5B | — | 未见；Linux | wav2vec2-base-960h（英文预训练） | 无 | 观望 |
 | HuMo / Wan2.2-S2V / EchoMimic v3 / FantasyTalking / Sonic / OmniAvatar | I2V 数字人 | Apache-2.0（Sonic 非商用） | 480–720P | 25 | 14–17B 级 | 各异 | 官方模板 `video_humo` 等 | 观望 |
@@ -269,8 +297,11 @@ B6 的四个选项：
 
 #### MuseTalk 1.5（TMElyralab/MuseTalk）
 - **定位**：腾讯音乐的实时改嘴，**不是扩散**——在 ft-mse-vae latent 里单步 inpainting。
+- **机制**：借用 SD 1.4 的 U-Net 结构，Whisper-tiny 音频嵌入走 cross-attention，对遮住下半脸的 latent 做一次前向补全；1.5 加入感知 / GAN / sync 损失与时空采样。
 - **关键参数**：`python -m scripts.inference --inference_config configs\inference\test.yaml --result_dir results\test --unet_model_path models\musetalkV15\unet.pth --unet_config models\musetalkV15\musetalk.json --version v15 --ffmpeg_path <ffmpeg\bin>`（README 给了 Windows 命令）；1.0 用 `--bbox_shift`（正值张嘴更大）；`--use_float16` 省显存。
 - **硬件 / 速度**：V100 30 fps+；3050Ti 4 GB fp16 出 8 s 约 5 分钟（作者自报）。
+- **许可**：代码 MIT，模型声明「可用于任何用途含商用」；依赖的 whisper、ft-mse-vae、dwpose、S3FD 各按其许可。
+- **价值**：先用它在几分钟内跑完整集「改嘴预览」，确认 TTS 时间窗没问题，再对入选镜头上 LatentSync。
 - **局限**：脸区 256×256，1080p 特写会软；建议 25 fps 输入。代码 MIT、模型「可用于任何用途含商用」，是许可最干净的改嘴方案。
 - **评级**：**试用**（中远景、批量预览、对许可敏感的商单）。
 
@@ -280,6 +311,8 @@ B6 的四个选项：
 - **关键参数（LongCat 1.6）**：起始图 + 提示词 + 语音；93 帧一段、接上段末 13 帧；8 步 DMD + OPSD LoRA（cfg 1）或 base 50 步；文本编码器与 VAE 与 Wan 2.1 字节相同（可复用）。
 - **硬件**：InfiniteTalk fp8 单文件 19.5 GB + Wan2.1 14B，24 GB 需 block swap；LongCat int8 14.9–16 GiB，第三方节点作者报 4090 上 768×512、253 帧约 162 s。
 - **价值**：H3 类型包里标「弱」的真人口播 / 数字人、唱歌 MV 的替代生成器；不适合「保留原画面只改嘴」。
+- **许可**：InfiniteTalk / MultiTalk Apache-2.0（底模 Wan2.1 Apache-2.0）；LongCat-Video-Avatar 权重 MIT。
+- **中文**：InfiniteTalk 的音频编码器就是 `TencentGameMate/chinese-wav2vec2-base`；LongCat 用 Whisper large-v3 特征（多语）。两者都要求干净人声，驱动前先做人声分离（官方模板里的 `AudioSeparation`）。
 - **评级**：**试用**（口播 / MV 类型的 B 计划），LongCat 许可（MIT）与 4090 适配更好，优先。
 
 #### H3 自身：ExactAudioLock / DialogueAudioLock / NativeAudioLock / 数字人工作流
@@ -287,6 +320,9 @@ B6 的四个选项：
 - **机制（源码级）**：把目标波形重采到音频 VAE 采样率、按 `start_frame`（24 fps → 整数采样点）放到全长静音里、编码成音频 latent 替换目标，并给音频流 `noise_mask=0`（`caitongbo` 的实现是 `audio_mask = torch.zeros(…)`，视频 mask 为 1）；采样时模型只能改视频去「配合」这段音频。
 - **节点与默认值**：`MiniMaxH3TimedAudio[start_frame 24, gain_db 0.0, label]`；`MiniMaxH3ExactAudioLock[mix_policy sum, overflow_policy error]`；`MiniMaxH3DialogueAudioLock[prevent_clipping, error, protect_before_ms 200, protect_after_ms 250, feather_ms 100]` + `MiniMaxH3DialogueAudioFinalize`；示例工作流用 `res_multistep / simple / 20 步`，`CreateVideo(24)`。
 - **规则**：同一 `start_frame` 同时接 `MiniMaxH3AddGuide.frame_idx`；全锁时成片混 `exact_audio`；单声道会被复制成立体声；只有一条目标音轨，多说话人归属靠提示词；不要与 Context Loop 的 `lock_source_audio` 同时拥有音频 latent。
+- **硬件 / 速度**：等于一次普通 H3 采样，多一次音频 VAE 编码；数字人工作流默认 fl2va_pruned_int8 + Turbo 8 步、SigmaShift 12 / 3、euler / simple。
+- **许可**：ExactAudioLock MIT；caitongbo 数字人工作流 GPL-3.0；NativeAudioLock 所在仓库无 license（见 13 号调研）。
+- **对 4090 短剧的价值**：把「台词是否念对」从抽卡问题变成确定性问题——TTS 先过 ASR 门禁，再花 GPU；代价是表演由 TTS 决定。
 - **评级**：**采用**（链路 C 的基础设施；也是链路 B 里「重拍」选项的实现）。
 
 ### 2.4 音效与拟音
@@ -304,17 +340,21 @@ B6 的四个选项：
 
 #### HunyuanVideo-Foley（Tencent-Hunyuan）
 - **定位**：视频 + 文本条件的 48 kHz 拟音模型，画面同步是卖点。
+- **机制**：多模态扩散 + 表征对齐（REPA），自研 48 kHz 音频 VAE；文本与视频共同条件（TV2A）。
 - **关键参数**：`--model_size xxl|xl`、`--enable_offload`；Gradio `MODEL_SIZE=xl ENABLE_OFFLOAD=true python3 gradio_app.py`；ComfyUI 节点支持 cpu offload + FP8。
 - **硬件**：XL + offload 8 GB——可以在 H3 卸载后的同一台 4090 上顺手跑；速度未见官方数字。
 - **许可**：腾讯混元社区许可（商用条款按其 LICENSE，未逐条核对）。
 - **价值**：H3 的无台词动作镜若原生音效不理想，用它重出动作声，再与 H3 原声二选一。
+- **局限**：不生成可懂对白；与 H3 原生动作声二选一时以「同步」为先，别两层叠加。
 - **评级**：**采用**（V2A 首选，等用户侧 A/B）。
 
 #### Stable Audio 3（stabilityai，ComfyUI 原生）
 - **定位**：文本 → 音频家族：`medium`（9.22 GB）、`small-sfx` / `small-music`（各 2.27 GB），文本编码器 `t5gemma_b_b_ul2`（1.19 GB）。
 - **官方模板参数**：`CheckpointLoaderSimple(stable_audio_3_medium.safetensors)` + `CLIPLoader(t5gemma_b_b_ul2.safetensors, type stable_audio)` + `EmptyLatentAudio(60)`，KSampler 8 步 cfg 1 `lcm` / `simple`；模板内置 Music / Instrument / SFX / One-shot 四类提示词改写。
+- **硬件 / 速度**：small 2.27 GB、medium 9.22 GB，模板用 8 步蒸馏采样；速度未见官方数字。
 - **许可**：stable-audio-community（Stability 社区许可；官方模型卡 gated，本次未读到正文）。
 - **价值**：每场景一条 room tone、风声、雨声、转场 whoosh、切黑低频重音——都是「文本就能说清」的声音，不需要看画面。
+- **局限**：T2A 不看画面，脚步、击打这类要对位的声音仍需 V2A 或手工对位；循环使用时首尾各留 0.5 s 交叉。
 - **评级**：**采用**（环境声底与转场音效的默认生成器）。
 
 #### MMAudio / PrismAudio（合并）
@@ -334,15 +374,22 @@ B6 的四个选项：
 
 #### ACE-Step 1.5（ace-step/ACE-Step-1.5）
 - **定位**：LM 规划 + DiT 的音乐基础模型，自评「介于 Suno v4.5 与 v5 之间」；MIT。
+- **机制**：LM（`acestep-5Hz-lm-0.6B / 1.7B / 4B`）以 CoT 把简短需求扩成「歌曲蓝图」（元数据、歌词、caption、音频码），DiT 负责渲染；turbo 为 8 步蒸馏。
 - **ComfyUI 原生接线（官方模板 `audio_ace_step1_5_xl_turbo.json`）**：`UNETLoader(acestep_v1.5_xl_turbo_bf16.safetensors)` → `ModelSamplingAuraFlow(3)`；`DualCLIPLoader(qwen_0.6b_ace15.safetensors, qwen_4b_ace15.safetensors, type ace)`；`VAELoader(ace_1.5_vae.safetensors)`；`TextEncodeAceStepAudio1.5(tags, lyrics, seed, bpm 10–300, duration 0–2000 s, timesignature 2/3/4/6, language, keyscale, generate_audio_codes, cfg_scale 2.0, temperature 0.85, top_p 0.9)`；`EmptyAceStep1.5LatentAudio(seconds)`；KSampler 8 步 cfg 1 euler / simple。
 - **硬件 / 速度**：自报 A100 < 2 s、RTX 3090 < 10 s 一首；24 GB 推荐 XL turbo / sft + `acestep-5Hz-lm-1.7B`；2B turbo 权重 4.79 GB。
 - **与短剧相关的能力**：`bpm` 与 `duration` 是节点入参——先定 BPM 再生成，切点表才能预先对拍；`repaint` 可只重画某一小节（转场处加重音）；「音频理解」可从现成参考曲提 BPM / 调。
+- **许可**：MIT（代码与权重）。
+- **局限**：自评指标不等于听感；纯器乐的稳定性、长于 3 分钟的结构一致性未验证——整集配乐建议按场景分 30–90 s 小段生成并统一 BPM / 调。
 - **评级**：**采用**（全集配乐默认生成器）。
 
 #### YuE2（multimodal-art-projection/YuE）
 - **定位**：歌词 + 风格 → **先写旋律与和弦谱（ABC）再渲染成带人声的歌**；谱可读、可改、可交给 agent 改。
+- **机制**：一个 AR–NAR Mixture-of-Transformers 骨干——自回归预测谱与语义 token，再用 flow matching 生成声学 latent，VAE 解码成 48 kHz 立体声；创作 / 翻唱 / 编辑的区别只在「谱从哪来」。
 - **ComfyUI 原生（官方模板）**：`CheckpointLoaderSimple(yue2_3b_int8_convrot.safetensors)` → `YuE2GenerateABC`（`cot="full"`）→ `YuE2GenerateMusic` → KSampler 32 步 cfg 1 `dpm_2` / `sgm_uniform`，`EmptyYuE2LatentAudio(120)`。
+- **硬件**：官方要求 Linux + Python 3.12 + 24 GB（不量化）；ComfyUI 模板用 int8 权重，Windows 可行性未验证。
+- **许可**：Apache-2.0。
 - **价值**：MV 类型包与片头 / 片尾主题曲；因为谱是显式的，同一主题可以出「完整版 / 纯器乐版 / 悲伤变奏」并保持旋律一致——这是给短剧做**主题动机**的正确工具。
+- **局限**：纯器乐靠官方 `yue2-music` skill 把人声旋律移给乐器，属于绕法。
 - **评级**：**试用**。
 
 ### 2.6 人声分离与对白清理
@@ -361,6 +408,15 @@ B6 的四个选项：
 
 要点：① H3 的一条音轨里对白、动作声、环境声已经混在一起，**任何 VC / TTS 替换之前必须先分离**，否则会把动作声一起转成人声质感；这也是 skill 现有规则「生成时声音行统一写安静房间底噪 + 动作声 + 干净人声」的价值——底噪越干净分离越彻底。② 音乐向的人声模型（BS / MelBand RoFormer）对「对白 vs. 非音乐音效」不是专门训练的，脚步、关门等瞬态可能漏进人声 stem；SAM-Audio（文本提示 `speech`）与 TIGER-DnR 是对口方案，均未在 H3 素材实测。③ 增强模型会改变音色，放在 VC 之前、且只对确实脏的句子用。
 
+#### python-audio-separator（nomadkaraoke）
+- **定位**：把 UVR 的全部模型（MDX、VR、Demucs、BS / MelBand RoFormer）做成 CLI 与 Python 库，是脚本化分离的事实标准。
+- **机制**：按模型类型走 ONNX Runtime 或 PyTorch；RoFormer 系支持 `fp32 / autocast / native_fp16` 与 `torch.compile`。
+- **关键参数**：`audio-separator in.wav --model_filename <模型>`；`--list_models` 列出可用模型与各 stem 的 SDR；模型自动下载到 `--model_file_dir`（默认 `/tmp/audio-separator-models/`，Windows 上请显式指定）。
+- **硬件 / 速度**：CUDA 支持 11.8 / 12.2；模型大小、显存与速度未见官方汇总数字（未验证）。
+- **许可**：代码 MIT；各模型权重许可随作者（多为社区模型，商单前逐个确认）。
+- **对 4090 短剧的价值**：链路 A / B 的第一步；也用于给 InfiniteTalk / LongCat 这类模型准备「干净人声」驱动音频。
+- **坑**：音乐向模型对脚步、关门等非音乐瞬态的归属不稳定，需 `split_stems.py` 的泄漏检查兜底。
+- **评级**：**采用**。
 ### 2.7 ASR、强制对齐与字幕
 
 | 项目（快照） | 用途 | 许可 | 中文 | 关键用法 | 评级 |
@@ -372,6 +428,24 @@ B6 的四个选项：
 | FunASR / SenseVoice / FunClip | 中文 ASR + 情感 / 事件；按文本剪辑 | MIT | 一等 | 默认 hub 是 ModelScope，HF 需显式指定（未在本次核对） | 观望（下载源） |
 | VibeVoice-ASR 7B | 60 分钟长音频、说话人 + 时间戳、热词 | MIT | 50+ 语 | 长节目 | 观望 |
 
+#### Qwen3-ASR 与 Qwen3-ForcedAligner（QwenLM/Qwen3-ASR）
+- **定位**：通义的开源 ASR 家族（1.7B / 0.6B）+ 一个**非自回归强制对齐模型**；VideoLingo 已把它设为默认识别与对齐后端。
+- **机制**：ASR 以 Qwen3-Omni 的音频理解为底座，支持语种识别；对齐器对「给定文本 + 音频」直接预测任意粒度单元的起止时间，单段 ≤ 5 分钟。
+- **关键参数**：`Qwen3ASRModel.from_pretrained("Qwen/Qwen3-ASR-1.7B", …, forced_aligner="Qwen/Qwen3-ForcedAligner-0.6B", forced_aligner_kwargs=dict(…)).transcribe(audio, language=["Chinese"], return_time_stamps=True)`；单用对齐器 `Qwen3ForcedAligner.from_pretrained(…).align(audio=…, text=…, language="Chinese")`；`pip install -U qwen-asr[vllm]` 可走 vLLM。
+- **硬件 / 速度**：ASR 4.70 GB、对齐器 1.84 GB；速度未见 4090 数字。
+- **许可**：Apache-2.0。
+- **中文**：30 语 + 22 种中文方言，支持歌声；对齐支持中文与粤语逐字。
+- **对 4090 短剧的价值**：字幕时间（已知文本）与台词门禁（未知文本）用同一套模型；比 `silencedetect` 按句数分配准确得多。
+- **评级**：**采用**。
+
+#### faster-whisper / WhisperX / stable-ts
+- **定位**：Whisper 生态三件套——faster-whisper 是 CTranslate2 推理引擎，WhisperX 在其上加 wav2vec2 强制对齐与 pyannote 说话人，stable-ts 提供 `align()` 与更好的断句。
+- **关键参数**：faster-whisper `WhisperModel("large-v3" | "turbo", device="cuda", compute_type="float16")`、`transcribe(audio, word_timestamps=True, vad_filter=True)`、`BatchedInferencePipeline(model).transcribe(audio, batch_size=16)`；WhisperX `--align_model` 可指定，中文默认 `jonatasgrosman/wav2vec2-large-xlsr-53-chinese-zh-cn`，`--diarize` 需 HF token；stable-ts `result.to_ass()`。
+- **硬件**：large-v3 CT2 权重 3.09 GB；WhisperX 自述 large-v2 beam 5 < 8 GB；需 CUDA 12 + cuDNN 9。
+- **许可**：MIT / BSD-2 / MIT；pyannote 说话人模型 CC-BY-4.0。
+- **中文**：Whisper 对短句、语气词、专名的错字率高于专门的中文模型——所以只借时间、不借文字；现有 skill 的 0.72 / 0.88 相似度阈值就是为这种噪声留的余量。
+- **对 4090 短剧的价值**：已装机量最大、Windows 上最省事；作为 Qwen3 的回退与交叉验证。
+- **评级**：faster-whisper **采用**（质检回读），WhisperX / stable-ts **试用**（对齐备选）。
 #### 字幕规范（落到 ASS 样式，1920×1080）
 - **文本永远取锁定原文**，ASR / 对齐只提供时间（h3-drama-kit playbook 08 的规则，VideoLingo 也这么做）。
 - **时间**：入点 = 首字 −0.08 s，出点 = 末字 +0.25 s；最短 0.8 s；阅读速度上限 9 字 / s；相邻字幕留 ≥ 2 帧；全部吸附到帧。极短单句（< 0.8 s）并入下一条。
@@ -474,7 +548,7 @@ ffmpeg -i ep01.mp4 -vn -af ebur128=peak=true -f null -      # 读 I / LRA / Peak
 ### 3.3 这些场景应该换别的模型
 | 场景 | H3 的问题 | 换什么 |
 |---|---|---|
-| 真人口播 / 数字人连续说话 > 15 s | 段间续接后声音发闷、身份漂移；类型包已标「弱」 | LongCat-Video-Avatar 1.6（MIT，int8 ~16 GB，ComfyUI 原生）；或 InfiniteTalk I2V |
+| 真人口播 / 数字人连续说话 > 15 s | 段间续接后声音发闷、身份漂移；类型包已标「弱」 | LongCat-Video-Avatar 1.6（MIT，int8 ~16 GB，Comfy-Org 已重打包）；或 InfiniteTalk I2V |
 | 画面不可重拍但必须改台词 / 出外语版 | H3 没有「保画面只改嘴」的官方模式 | LatentSync 1.6（真人）/ MuseTalk 1.5（许可敏感）；LTX-2.3 DubIt 观望 |
 | 全集配乐、主题曲 | `non_diegetic_music` 逐段生成互不连贯 | ACE-Step 1.5（器乐）/ YuE2（带人声主题曲）；H3 侧一律 `N/A` |
 | 连续环境声（同一场景跨多段） | 每段环境声重新生成、底噪跳变 | Stable Audio 3 small-sfx 出一条 room tone 贯穿全场 |
@@ -510,7 +584,7 @@ ffmpeg -i ep01.mp4 -vn -af ebur128=peak=true -f null -      # 读 I / LRA / Peak
 ### 4.2 `split_stems.py`
 - **用途**：H3 take → 对白 stem + 非人声 stem（链路 A / B 的前置）。
 - **CLI**：`split_stems.py selects/ep01/*.mp4 --out audio/ep01/ --engine audio-separator --model model_bs_roformer_ep_317_sdr_12.9755.ckpt`
-- **逻辑**：`ffmpeg -vn -af aresample=48000 pcm_s24le` → 调分离器 → 重命名为 `segNN.dlg.wav` / `segNN.fx.wav` → **重构校验**：`dlg + fx` 与原音轨相减的残差 RMS ≤ −40 dBFS（`amix` 反相求差）；台词区间外 `dlg` 的能量应 < −50 dBFS，否则标记「动作声漏进人声」供人工看。`--engine sam-audio` 时提示词固定 `speech`。
+- **逻辑**：`ffmpeg -vn -af aresample=48000 pcm_s24le` → 调分离器（`--output_format WAV --model_file_dir models/uvr`）→ 重命名为 `segNN.dlg.wav` / `segNN.fx.wav` → **重构校验**：`dlg + fx` 与原音轨相减的残差 RMS ≤ −40 dBFS（`amix` 反相求差）；台词区间外 `dlg` 的能量应 < −50 dBFS，否则标记「动作声漏进人声」供人工看。`--engine sam-audio` 时提示词固定 `speech`。
 - **输出**：两条 stem + `segNN.stems.json`（残差、泄漏指标）。
 
 ### 4.3 `retime_subtitles.py` ★

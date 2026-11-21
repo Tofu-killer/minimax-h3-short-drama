@@ -1,6 +1,6 @@
 # ComfyUI 节点速查：原生 MiniMax H3 节点 + 社区节点怎么接
 
-> 原生部分依据 ComfyUI `comfy_extras/nodes_minimax_h3.py`（master，2026-11-07 抓取）。社区节点的精读见 `docs/13-github-survey/01–07`。
+> 原生部分依据 ComfyUI `comfy_extras/` 各发布版源码逐 tag 比对（v0.37.2 → v0.46.2，2026-11-21 核对）。社区节点的精读见 `docs/13-github-survey/01–07`。
 
 ## 1. 原生节点（`model/conditioning/minimax`）
 
@@ -16,7 +16,7 @@
 | `MiniMaxH3SigmaShift`（显示名 ModelSamplingMiniMaxH3） | model, shift_video 12, shift_audio 3 | FL2V 768p Turbo LoRA 改 6 / 3；Ref2V 与 544p 版保持 12 / 3 |
 | `MiniMaxH3FunControlNetApply` | model, controlnet 权重, strength 1.0, start/end_percent, `control_video?`, `mask?`, `source_video?` | alibaba-pai Fun-Controlnet-Union（Canny/Depth/HED/MLSD/Pose + 修补），单文件 ~6.8 GiB，CFG 保持 1 |
 | `MiniMaxH3LatentUpscaleWithModel` | latent upscale model（LBH 系列权重）, samples, width 2560, height 1440 | 只放大视频 latent，音频原样透传；做「草稿→精修二采」的第一步 |
-| `PH3ImageConditioning` | prompt, width/height(0=自动), image_1..9 | p-h3-image 单帧出图分支（角色卡 / 剧照）。**只在 ComfyUI master，0.37.2 没有**（源码比对）；0.37.2 用 Fizgig Still / Contact Sheet，见 `image-stage.md` |
+| `PH3ImageConditioning`（≥ 0.44）/ `MiniMaxH3ImageConditioning`（≥ 0.45） | prompt, width/height(0=自动), image_1..9 | 单帧出图分支：P-H3-Image（在 fl2va 上挂 LoRA）与 MiniMax-H3-Image（独立 33B 图像模型）。0.37.2 没有这两个节点，用 Fizgig Still / Contact Sheet，或升级 ComfyUI；见 `image-stage.md` |
 | 采样 | `KSamplerSelect(res_multistep)` → `BasicScheduler(simple, steps, denoise)` → `SamplerCustomAdvanced` | 官方模板的采样器组合；`cfg` 固定 1.0 |
 | 输出 | `CreateVideo(24 fps)` → `SaveVideo` | 24 fps 不要改 |
 
@@ -26,7 +26,16 @@
 
 **Ref2VA 不要照 FL2VA 经验把 `shift_video` 改 6**：整条全黑（manju-studio 实测）；Ref2VA 用 12 / 3 或按 LoRA 说明。
 
-版本提示：FunControl 与 LatentUpscaleWithModel 是 2026-10 之后进主线的；ComfyUI 0.37 若没有这两个节点，先用社区节点 `wyzborrero/ComfyUI-H3-FunControl`、`LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler`，或升级 ComfyUI（升级前确认 Spark-H3 / FeiHou 等依赖 kitchen 的节点兼容）。
+### 原生节点从哪个版本开始有（逐 tag 源码核对，2026-11-21；当前最新 v0.46.2）
+
+| ComfyUI 版本 | 新增的 H3 相关原生节点 |
+|------|------|
+| **0.37.2**（本 skill 的基线） | `EmptyMiniMaxH3LatentAV`、`MiniMaxH3ImageToVideo`、`MiniMaxH3ReferenceToVideo`、`MiniMaxH3AddGuide`、`MiniMaxH3SigmaShift`、`MiniMaxH3FunControlNetApply`；通用：`FrameInterpolationModelLoader` / `FrameInterpolate`（FILM / RIFE 插帧）、SeedVR2 全套、`ContextWindowsManual` |
+| **0.44.0** | `MiniMaxH3ContextWindows`（官方滑窗长视频：context_length 124、context_overlap 39、fuse pyramid、freenoise 开、`split_conds_to_windows` 每窗一条提示词）、`MiniMaxH3LatentUpscaleWithModel`、`PH3ImageConditioning` |
+| **0.45.0** | `MiniMaxH3ImageConditioning`、`RelayVSRConditioning`（像素超分 ×2 / ×4） |
+
+- 0.37.2 上没有 `MiniMaxH3LatentUpscaleWithModel` 时用社区节点 `LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler`；FunControl 在 0.37.2 已是原生，不必装社区版。
+- **要不要升级**：升到 ≥ 0.45 能拿到官方滑窗、原生 latent 放大、两个出图节点和 RelayVSR；升级前逐个核对已装节点的版本窗口（Spark-H3 跳过 0.41、只支持 0.38.x–0.40.x 与 0.42.x–0.44.x；Motion-Context 启动时会自检并拒绝不匹配的核心；FeiHou 流式块不与 kitchen 同用），并先整目录备份或另装一份便携版做 A/B，不要在唯一能出片的环境上直接升。
 
 ## 2. 官方模板默认值（Comfy-Org/workflow_templates）
 
