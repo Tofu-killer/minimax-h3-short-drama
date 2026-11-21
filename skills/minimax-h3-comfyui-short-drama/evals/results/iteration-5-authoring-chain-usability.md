@@ -36,9 +36,10 @@
 | 音色参考只在该人第一句引用 | §5.3：在音频关系起作用的地方引用 | 每句都引用 |
 | 三段式里用人名而首帧模式不写外貌，模型无从知道谁是谁 | `base-en.txt` 的示例用 `the young woman`、`the baker` | 用短称（`short_phrase`，默认取 `identity_phrase` 的开头） |
 | `identity_phrase` 按生图的要求写了 30–45 词（骨相、族裔、身高），每段都整段进提示词 | 官方示例的特征只有发型 + 主服装 + 一个饰物 | 拆成两个字段：`identity_phrase`（进视频提示词，12–25 词）与 `sheet_phrase`（只给生图）；超过 30 词校验器会提醒 |
+| 有台词的段末尾没有「只说引号里的词」这句（类型包的手写示例有，脚本没有） | 非官方写法；社区实测多说词 9.3% → 1.3%（`camera-and-performance.md` §5b） | 脚本在有台词的段末尾补 `Speak only the quoted dialogue lines.` |
 | 7000 字符被当成硬上限，本地构建超了直接报错 | `comfy/text_encoders/minimax.py`：本地节点不限长度，7000 是云端 API 的限制 | 降为提示 |
 
-顺带改的：`lint_prompt.py <提示词>` 自动读同名 `.media.json`（之前要手工给秒数和图片数）；测试 agent 写的分镜在 `action` 里每镜都重复外貌（`{xu_qing}, short black hair and beige trench coat, sits …`），现在校验器会提醒、`02-storyboard.md` 写明不要这样写；类型包里的 10 个六段式示例按同一版式重写。
+顺带改的：`lint_prompt.py <提示词>` 自动读同名 `.media.json`（之前要手工给秒数和图片数）；测试 agent 写的分镜在 `action` 里每镜都重复外貌（`{xu_qing}, short black hair and beige trench coat, sits …`），现在校验器会提醒、`02-storyboard.md` 写明不要这样写；类型包里的 10 个六段式示例按同一版式重写（另一个 agent 改写，改完后逐个核对：台词、时间码、配乐与原文一致，没有残留人名，按各自文件写明的参数机检 0 错误）。
 
 ## 没有解决的 / 没有验证的
 

@@ -11,7 +11,8 @@ paired and starting with [Language], (S1..) numbering, labels defined before
 use / no phantom media / no unused media, retention keywords (audio lines must use the audio
 markers), unresolved {placeholders}, negation words, "completely still", curly quotes / full-width
 brackets, markdown fences, and length - all warnings: under 350 words the model improvises; over 700 words, or
-240 words in one shot (300 in [Shot 1], which carries the set-up), it follows less closely; over 7000 characters
+240 words in one shot (300 in the first and the last shot, which carry the set-up and the end state), it follows
+less closely; over 7000 characters
 the cloud API refuses the text (the local ComfyUI node has no limit).
 ERRORs exit 1.
 
@@ -168,7 +169,8 @@ def main():
         if words > 700: warns.append(f"detailed_description {words} words (>700): long descriptions get followed less closely - split the segment or trim the shots")
         for sm in re.finditer(r"\[Shot (\d+)\](.*?)(?=\[Shot \d+\]|\Z)", body, re.S):
             n_words = len(sm.group(2).split())
-            cap = 300 if sm.group(1) == "1" else 240          # [Shot 1] also carries the setting, the positions and the looks
+            edge = sm.group(1) == "1" or int(sm.group(1)) == nshots     # the first shot carries the set-up, the last one the end state
+            cap = 300 if edge else 240
             if n_words > cap: warns.append(f"[Shot {sm.group(1)}] runs to {n_words} words (over {cap}): one shot holds one action and one camera move")
     if len(text) > 7000: warns.append(f"prompt is {len(text)} characters: the MiniMax cloud API rejects text over 7000; the local "
                                       f"ComfyUI node has no length limit, but a prompt this long is followed less closely")

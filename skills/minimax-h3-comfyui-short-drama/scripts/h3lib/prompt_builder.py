@@ -19,6 +19,8 @@ What the builder adds on its own, because the official examples do it and author
     subject of the shot gets a short reminder ("<Subject 2>, the man in his fifties from Shot 1")
   * after a spoken line the speaker closes the mouth (Dialogue.after_line overrides the default sentence)
   * a voice reference is cited at every line of its speaker
+  * a segment with lines ends on "Speak only the quoted dialogue lines." (a community-measured guard against
+    improvised extra words); a segment without lines says that every mouth stays closed
 
 Text fields of the storyboard are inserted as written, so they have to be English sentences or phrases of the
 right kind (see assets/agent-prompts/02-storyboard.md): `action`, `lighting`, `performance`, `sound_cue`,
@@ -233,6 +235,19 @@ def _shot_parts(seg: Segment, sh: Shot, is_first: bool, labels: dict[str, str], 
     return head, [x for x in body if x]
 
 
+def only_these_words(seg: Segment) -> str:
+    """Closing sentence of a segment with lines. Measured by a community test (egguy886, see
+    references/camera-and-performance.md 5b/5c): "Speak only the quoted dialogue lines" cut improvised extra
+    words from 9.3% of takes to 1.3%."""
+    lines = [d for sh in seg.shots for d in sh.dialogue]
+    if not lines:
+        return ""
+    first = "Speak only the quoted dialogue line." if len(lines) == 1 else "Speak only the quoted dialogue lines."
+    if len({d.speaker for d in lines}) > 1:
+        return first + " Those are the only words in the clip."
+    return first + " After that nobody says anything else."
+
+
 def _closing(seg: Segment, labels: dict[str, str]) -> str:
     """The end state is written out unless the segment closes on an insert - there a room-wide state would fight the shot."""
     out = []
@@ -241,7 +256,8 @@ def _closing(seg: Segment, labels: dict[str, str]) -> str:
         out.append(f"The segment ends in this state: {_state(seg.end_state, labels)}.")
     if seg.negatives.strip():
         out.append(_sentence(seg.negatives, labels))
-    return " ".join(out)
+    out.append(only_these_words(seg))
+    return " ".join(x for x in out if x)
 
 
 def _opening(ep: Episode, seg: Segment, labels: dict[str, str]) -> dict[str, str]:
@@ -597,7 +613,7 @@ def build_three_part(ep: Episode, seg: Segment) -> BuiltPrompt:
     if seg.mode == "fl2va":
         parts[-1]["closing"] = " ".join(x for x in (
             "The shot settles into the pose, spacing and composition established by Picture 2 at the end.",
-            _sentence(seg.negatives, labels)) if x)
+            _sentence(seg.negatives, labels), only_these_words(seg)) if x)
     else:
         parts[-1]["closing"] = _closing(seg, labels)
     _introduce(heads, parts, subjects)

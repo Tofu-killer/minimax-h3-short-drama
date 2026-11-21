@@ -24,7 +24,7 @@
 | 道具是虚构的（例：保险柜里的红色物品） | 请求里没有道具参考图，只有人物与场景 | 道具目录化、绑定进 `prop_ids`、`the exact item shown in <Picture N>` + `no other item is substituted` |
 | 角色换装、长出喷气背包 | 该段没带该角色的服装参考；否定句被渲染 | 每段都带角色 2 图；正向锁定（`his back is bare except…`） |
 | 角色瞬移 / 消失 / 多出一个人 | 多人镜头未写明每人位置与动作；`continuity` 为空 | 每人每镜都写位置/姿态；`end_state`→下一段开场；群像先写人数 |
-| 台词复读两遍 | 台词写了两处（动作句 + 对白句）；无 (S1) | 只写一次 `<Subject 1> (S1) says: <d>…</d>` |
+| 台词复读两遍 | 台词写了两处（动作句 + 对白句）；无 (S1) | 只写一次 `<Subject 1> (S1) says softly, <d>…</d>`（六段式；三段式是 `The woman … (S1) says: <d>…</d>`） |
 | 错人张嘴 | 一镜两人开口；听者没写闭嘴 | 一镜一人；`listens with mouth closed` |
 | 字幕重复/乱码 | 让模型画字幕 | 后期烧录 |
 | 画幅不对 | 把 16:9 写进文字 | 用节点/参数设定宽高 |

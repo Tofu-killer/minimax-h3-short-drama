@@ -72,12 +72,14 @@ non_diegetic_music:
 N/A
 ```
 
-**脚本替你做的四件事**（都来自官方完整示例；分镜里不要自己再写一遍）：
+**脚本替你做的五件事**（前四件来自官方完整示例；分镜里不要自己再写一遍）：
 
 1. **人不写名字。** 定义行是 `the <who> in <Picture N>, with <features>`（官方 §2.1）；一个人有多张图就写明每张图提供什么（`whose face and hairstyle come from … and whose build and outfit come from …`，官方「state what each asset provides」）。没有标签的地方（三段式、没参考图的人）用短称 `the woman in the black suit jacket`（`short_phrase`，不填就取 `identity_phrase` 的开头：`the woman in her early thirties`）。
 2. **首次清楚出场处把外貌再说一遍**（官方 §5.3：at the first clear appearance describe its referenced characteristics）：紧跟在标签后面作同位语。「清楚出场」= 人在画面里、不是只露肩膀 / 手 / 背影、并且这一镜的景别写的是他或没写任何人（建立镜头）；别人的特写镜头不算。在那之前的一瞥只给短称；之后每次切镜、该镜的主体会带一句 `…, the <短称> from Shot k`。道具同理，首次出现处带一遍描述。
 3. **台词后闭嘴。** 官方示例每句台词后面都跟一句 `She closes her lips and …`。`dialogue[].after_line` 写这句（说完之后这个人做什么）；不写则补 `<Subject N> closes his / her lips.`
 4. **音色参考每句都引用**（官方 §5.3：在音频关系起作用的地方引用 `<Audio N>`）：首句 `using the voice timbre referenced from <Audio 1>`，之后 `in the same voice referenced from <Audio 1>`。没有音色参考的人，首次开口处写嗓音：`<Subject 4> (S2), with a tired, gravelly voice and slow, measured delivery, says …`。
+
+5. **只说引号里的词。** 有台词的段在末尾加 `Speak only the quoted dialogue lines.`（单人再加 `After that nobody says anything else.`，多人加 `Those are the only words in the clip.`）——这句不是官方写法，是社区实测的防多说词手段（多说词 9.3% → 1.3%，`camera-and-performance.md` §5b）；没有台词的段在 `[Shot 1]` 里写 `Nobody speaks in this clip; every mouth stays closed …`。
 
 场景、开场站位、承接状态都在 `[Shot 1]` 里（官方 §5.2：`[Shot 1]` 之前只用一两句交代风格）。
 
@@ -89,7 +91,7 @@ N/A
 - `<Subject N>` 只给可复用内容，`<Picture N>` 只给具体帧锚；不发明 `<Image N>` / `<Environment N>`；定义过的标签必须在正文引用且有 retention 行；接了图不提等于白占配额。
 - 参考图：目标画幅、短边 ~768、剪影分明，不画箭头 / 标签 / 网格。
 - 多人镜只给首帧，不加 `<Picture>` 身份参考（会多出一人）；单人镜加身份参考时写明「仅外观参考，不是要切过去的画面」；写 `Exactly N people`。
-- 长度：官方说生成任务的 `detailed_description` 通常 350–500 词，对白密的段以装下完整的说话时间线为先。脚本带上站位、外貌、收尾状态之后一般落在 450–600 词。`lint_prompt.py` 只警告：< 350 词（模型会自由发挥甚至烧字幕）、> 700 词、单镜 > 240 词（`[Shot 1]` 带着开场交代，放宽到 300）。写分镜时每镜的 action + performance 合计 50–100 词比较合适；灯光只在这一镜的光和风格行不一样时才写。
+- 长度：官方说生成任务的 `detailed_description` 通常 350–500 词，对白密的段以装下完整的说话时间线为先。脚本带上站位、外貌、收尾状态之后一般落在 450–600 词。`lint_prompt.py` 只警告：< 350 词（模型会自由发挥甚至烧字幕）、> 700 词、单镜 > 240 词（首镜带着开场交代、末镜带着结束状态，放宽到 300）。写分镜时每镜的 action + performance 合计 50–100 词比较合适；灯光只在这一镜的光和风格行不一样时才写。
 - 7000 字符是 MiniMax **云端 API** 的文本上限；本地 ComfyUI 节点没有长度限制（文本编码器是 Qwen3-VL-32B，直接读原文、不套对话模板，`comfy/text_encoders/minimax.py`）。`<d>` 与 `</d>` 在分词器里各是一个专用 token：必须原样写，中间不加空格、不换括号。
 - 多段（30 / 60 s）：每段自包含，把全局规则拼进每一段；上一段末帧 = 本段首态；BGM / 环境音「不重启」写进两段；相邻段最后 ~1.4 s 与开头 ~0.9 s 当一次呼吸设计。
 

@@ -44,20 +44,32 @@
 ## 示例提示词（Ref2VA 路线 A，10 s，1 图 + 1 音频）
 
 ```text
-subject_definitions: <Subject 1> is Lao Zhou, a presenter in his late thirties with a square face, short neat black hair, thin black-framed glasses, a clean-shaven jaw, wearing a navy crew-neck sweater over a light grey collared shirt, defined by <Picture 1>, which also shows the home studio behind him: a light wooden bookshelf, a small green plant and a warm desk lamp on the left. <Audio 1> is the voice-timbre reference for <Subject 1> (S1).
+subject_definitions:
+<Subject 1> is the presenter in his late thirties in <Picture 1>, with a square face, short neat black hair, thin black-framed glasses and a clean-shaven jaw, wearing a navy crew-neck sweater over a light grey collared shirt.
+<Subject 2> is the environment in <Picture 1>, the home studio behind <Subject 1>: a light wooden bookshelf, a small green plant and a warm desk lamp on the left.
+<Audio 1> is the voice-timbre reference for <Subject 1> (S1).
 
-summary: [reference generation + audio reference] A talking-head clip: Lao Zhou faces the camera in his home studio and delivers two short lines about a money-saving habit, with one jump cut to a tighter framing; two shots, 10 seconds, 16:9.
+summary:
+[reference generation + audio reference] A talking-head clip: <Subject 1> faces the camera in <Subject 2>, his home studio, and delivers two short lines about a money-saving habit, with one jump cut to a tighter framing, across two shots. <Audio 1> is the voice-timbre reference for <Subject 1>.
 
-retention_analysis: <Picture 1>: fully_preserved - facial identity, hairstyle, glasses, sweater and shirt, bookshelf, plant and lamp placement; no other garment is substituted. <Audio 1>: reference - voice timbre only; every spoken word comes solely from the quoted dialogue lines.
+retention_analysis:
+<Subject 1> (appears in [Shot 1], [Shot 2]): fully_preserved - the facial identity, hairstyle, glasses, sweater and shirt are retained from <Picture 1>; no other garment is substituted; only the person is taken from this picture for this label, the setting comes from <Subject 2>.
+<Subject 2> (appears in [Shot 1], [Shot 2]): fully_preserved - the bookshelf, plant and lamp placement are retained from <Picture 1>.
+<Audio 1>: reference - its vocal timbre guides the dialogue delivery of <Subject 1> without copying the original signal; the spoken words come from the quoted dialogue lines.
 
-detailed_description: Live-action talking-head video, photoreal, natural creator-studio look, shot on a 35mm lens at chest height, shallow depth of field with the bookshelf softly blurred, a large soft key light from frame right, the warm desk lamp glowing on the left as a practical, matte and evenly lit skin with natural texture, a palette of navy, light wood and warm white, relaxed and friendly delivery. The setting is the home studio shown in <Picture 1>. Exactly one person is present, framed from the mid-chest up, centered, both hands resting below the bottom edge of the frame, face toward the lens the whole time. The camera is static, on a tripod, with no camera movement whatsoever. [Shot 1] A medium close-up of <Subject 1>, the presenter with short neat black hair, thin black-framed glasses and the navy crew-neck sweater over a light grey collar, seated upright and facing the lens, shoulders relaxed and square to the camera, the desk lamp glowing softly over his left shoulder and the green plant blurred behind his right; he blinks once, draws a light breath, gives a small open smile, then, speaking to the camera with a warm, clear, mid-pitched voice and an easy, even pace, with clear, pronounced lip movements that open and close fully on every syllable, (S1) says: <d>[Chinese] 大家好，今天聊一个省钱的小习惯。</d> [Shot 2] At 00:05.200, the shot cuts to a tighter close-up of <Subject 1> from the same angle, his face filling the center third of the frame, the glasses catching a soft highlight from the key light, the navy collar at the bottom of the frame; his eyebrows lift slightly with interest, he leans in a few centimetres toward the lens, keeping his head level and his eyes locked on the lens, and, speaking to the camera with the same warm, clear, mid-pitched voice and a slightly more emphatic pace, with clear, pronounced lip movements, (S1) says: <d>[Chinese] 每天记账五分钟，月底多存三百。</d> In the final second he holds the pose, breathing, while the framing stays put. The segment ends with <Subject 1> in close-up at frame center, eyes on the lens. Speak only the quoted dialogue lines. After that nobody says anything else.
+detailed_description:
+The target video is rendered as live-action talking-head video, photoreal, natural creator-studio look, shot on a 35mm lens at chest height, shallow depth of field with the bookshelf softly blurred, a large soft key light from frame right, the warm desk lamp glowing on the left as a practical, matte and evenly lit skin with natural texture, a palette of navy, light wood and warm white, relaxed and friendly delivery.
+[Shot 1] A medium close-up of <Subject 1>, the presenter with short neat black hair, thin black-framed glasses and the navy crew-neck sweater over a light grey collar, seated upright and facing the lens, shoulders relaxed and square to the camera, the desk lamp glowing softly over his left shoulder and the green plant blurred behind his right. The setting is <Subject 2>, the home studio. Exactly one person is present, framed from the mid-chest up, centered, both hands resting below the bottom edge of the frame, face toward the lens the whole time. The camera is static, on a tripod, with no camera movement whatsoever. He blinks once, draws a light breath and gives a small open smile. <Subject 1> (S1), using the voice timbre referenced from <Audio 1>, says, speaking to the camera with a warm, clear, mid-pitched voice and an easy, even pace, with clear, pronounced lip movements that open and close fully on every syllable, <d>[Chinese] 大家好，今天聊一个省钱的小习惯。</d> He closes his lips.
+[Shot 2] At 00:05.200, the shot cuts to a tighter close-up of <Subject 1> from the same angle, his face filling the center third of the frame, the glasses catching a soft highlight from the key light, the navy collar at the bottom of the frame; his eyebrows lift slightly with interest and he leans in a few centimetres toward the lens, keeping his head level and his eyes locked on the lens. <Subject 1> (S1), in the same voice referenced from <Audio 1>, says, speaking to the camera with the same warm, clear, mid-pitched voice and a slightly more emphatic pace, with clear, pronounced lip movements, <d>[Chinese] 每天记账五分钟，月底多存三百。</d> He closes his lips. In the final second he holds the pose, breathing, while the framing stays put. The segment ends with <Subject 1> in close-up at frame center, eyes on the lens. Speak only the quoted dialogue lines. After that nobody says anything else.
 
-overall_soundscape: A quiet treated-room tone, a dry, close-miked male voice, a soft rustle of the sweater as he leans in, one light breath before the second line.
+overall_soundscape:
+A quiet treated-room tone, a dry, close-miked male voice, a soft rustle of the sweater as he leans in, one light breath before the second line.
 
-non_diegetic_music: N/A
+non_diegetic_music:
+N/A
 ```
 
-lint：`--seconds 10 --images 1 --audios 1` → PASS，0 error / 0 warning；367 词；台词 27 字（上限 36）。
+lint：`--seconds 10 --images 1 --audios 1` → PASS，0 error / 0 warning；389 词；台词 27 字（上限 36）。
 
 ## 该类型禁忌
 

@@ -1,8 +1,11 @@
 # 对白写法速查
 
 ```
-# 普通台词（动作先于台词，情绪在 says 前）
-She sets the cup down, then <Subject 1>, a woman in her late twenties with a low, slightly husky voice (S1), says flatly: <d>[Chinese] 你迟到了四十分钟。</d>
+# 普通台词 · 六段式（动作在前一句；(S1) 紧跟标签，嗓音随后，语气是 says 后的状语，说完闭嘴）
+<Subject 1> sets the cup down. <Subject 1> (S1), with a low, slightly husky voice, says flatly, <d>[Chinese] 你迟到了四十分钟。</d> She closes her lips.
+
+# 普通台词 · 三段式（没有标签：短称 + 嗓音 + (S1)，冒号）
+The woman in the grey coat sets the cup down. The woman in the grey coat with a low, slightly husky voice (S1) says flatly: <d>[Chinese] 你迟到了四十分钟。</d> She closes her lips.
 
 # 听者
 <Subject 2> listens with his mouth closed and lowers his eyes.
