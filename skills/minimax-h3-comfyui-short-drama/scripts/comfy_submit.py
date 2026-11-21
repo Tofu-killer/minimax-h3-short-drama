@@ -169,6 +169,7 @@ def apply_sets(wf, sets, server, media, do_upload, by_title=False):
 
 
 H3_REF, H3_I2V, H3_EMPTY = "MiniMaxH3ReferenceToVideo", "MiniMaxH3ImageToVideo", "EmptyMiniMaxH3LatentAV"
+H3_SHIFT = "MiniMaxH3SigmaShift"
 REF_GROUPS = ("ref_images.", "ref_videos.", "ref_video_audios.", "ref_audios.")
 
 
@@ -322,6 +323,19 @@ def literal(wf: dict, value, depth: int = 0):
     return None
 
 
+def upstream(wf: dict, link) -> set[str]:
+    """Ids of every node a link depends on (the node it comes from, and everything wired into that node)."""
+    seen: set[str] = set()
+    todo = [link]
+    while todo:
+        cur = todo.pop()
+        if not (isinstance(cur, list) and len(cur) == 2 and str(cur[0]) in wf) or str(cur[0]) in seen:
+            continue
+        seen.add(str(cur[0]))
+        todo.extend(v for v in wf[str(cur[0])].get("inputs", {}).values() if isinstance(v, list))
+    return seen
+
+
 def literals(wf: dict, inputs: dict) -> dict:
     out = {}
     for name, value in inputs.items():
@@ -403,11 +417,36 @@ def advice(wf: dict, ratio: str | None) -> list[str]:
                 out.append("voice references are wired but the H3 reference node has no `audio_vae` input: the samples are then "
                            "not heard by the model at all (only their labels reach the text encoder) - connect the audio VAE")
         if cls in (H3_REF, H3_I2V, H3_EMPTY) and ratio in RATIOS and isinstance(inp.get("width"), int) and isinstance(inp.get("height"), int):
-            got = inp["width"] / inp["height"]
+            w, h = inp["width"], inp["height"]
+            got = w / h
             if abs(got / RATIOS[ratio] - 1) > 0.005:
-                out.append(f"the canvas {inp['width']}x{inp['height']} is {got:.3f}:1, the episode is {ratio} ({RATIOS[ratio]:.3f}:1): "
-                           f"crop or scale to {ratio} in the edit (1344x768 -> crop 6 px top and bottom, then scale)")
+                if got < RATIOS[ratio]:                          # taller than the episode: rows come off
+                    keep = int(round(w / RATIOS[ratio] / 2)) * 2
+                    how = f"crop {(h - keep) // 2} px top and bottom to {w}x{keep}, then scale"
+                else:                                            # wider: columns come off
+                    keep = int(round(h * RATIOS[ratio] / 2)) * 2
+                    how = f"crop {(w - keep) // 2} px left and right to {keep}x{h}, then scale"
+                out.append(f"the canvas {w}x{h} is {got:.3f}:1, the episode is {ratio} ({RATIOS[ratio]:.3f}:1): "
+                           f"bring it to {ratio} in the edit ({how}); mix_episode.py does this for the delivery size")
     distilled = [x for x in loras if any(t in x.lower() for t in ("turbo", "pdd", "lightx2v", "distill", "step"))]
+    # flow shift: the model's own default is video 12 / audio 3; MiniMaxH3SigmaShift changes it for whatever is wired after it
+    shift_nodes = {k: literals(wf, v.get("inputs", {})) for k, v in wf.items() if v.get("class_type") == H3_SHIFT}
+    shift = next((x.get("shift_video") for x in shift_nodes.values() if isinstance(x.get("shift_video"), (int, float))),
+                 None if shift_nodes else 12.0)                                   # None: set by something the preview cannot read
+    if shift is not None and abs(shift - 12.0) > 1e-6:
+        for k, v in wf.items():
+            if v.get("class_type") == "BasicScheduler" and not set(shift_nodes) & upstream(wf, v.get("inputs", {}).get("model")):
+                out.append(f"BasicScheduler [{k}] takes its model from before {H3_SHIFT}: the step schedule is then built with the "
+                           f"default video shift 12 while the model is told {shift:g} - feed the scheduler from the shift node's output too")
+    for name in distilled:
+        low = name.lower()
+        if "minimax_h3" in low and "turbo" in low and shift is not None:
+            if "fl2v" in low and "768p" in low and abs(shift - 6.0) > 1e-6:
+                out.append(f"{name}: its authors list training shifts 6 / 3 for the FL2V 768p files; this workflow runs video shift "
+                           f"{shift:g}" + ("" if shift_nodes else " (the model default - there is no shift node)")
+                           + f" - set {H3_SHIFT} to 6 / 3 and wire the guider and the scheduler after it")
+            elif "768p" not in low and abs(shift - 12.0) > 1e-6:
+                out.append(f"{name} is a 544p-tier file trained at shifts 12 / 3 (the model default); this workflow runs video shift {shift:g}")
     canvas = next((literals(wf, v.get("inputs", {})) for v in wf.values() if v.get("class_type") in (H3_REF, H3_I2V, H3_EMPTY)), {})
     px = canvas.get("width", 0) * canvas.get("height", 0) if isinstance(canvas.get("width"), int) and isinstance(canvas.get("height"), int) else 0
     for name in distilled:

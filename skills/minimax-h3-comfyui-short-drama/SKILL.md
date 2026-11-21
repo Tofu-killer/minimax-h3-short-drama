@@ -44,7 +44,7 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 4. **台词预算**：硬上限 ≤ (段长−2 s)×4.5 字（校验器口径），目标语速 3.3–4 字/s，快档 ≤ 5 字/s 且连续不超 3 s；超了拆段，不要让角色说快。
 5. **参考媒体一职责一张图**：脸 / 服装 / 环境 / 道具 / 音色分开；编号用脚本替换，不手写 `<Picture N>`。
 6. **剧情里出现的关键道具要有参考图**（脚本会声明 `the exact item shown in <Picture N>`），否则模型一定会编，而且每段编得不一样——没图时校验器只警告、提示词里用文字描述它，结果要如实告诉用户；等级框、UI、字幕一律后期叠。
-7. **CFG 固定 1.0**；Turbo LoRA 用与分辨率匹配的版本（1344×768 用 `_768p_` 版）；SigmaShift：FL2V 768p 版视频 6 / 音频 3，Ref2V 与 544p 版 12 / 3（lightx2v 官方只对 FL2V 推荐 6）。
+7. **CFG 固定 1.0**；Turbo LoRA 用与分辨率匹配的版本（1344×768 用 `_768p_` 版）；SigmaShift：FL2V 768p 版视频 6 / 音频 3（调度器和引导器的 `model` 都要接 shift 节点的输出），Ref2V 与 544p 版 12 / 3（就是模型默认值；lightx2v 官方只对 FL2V 推荐 6）。
 8. **加速只叠「无损 + 一个蒸馏」**：SageAttention（或 Sol-Attn 稠密核）+ 一个 Turbo/PDD LoRA；不叠加两个蒸馏 LoRA，不把 SageAttention 与 `MiniMaxLowVRAMAttention` 同开，不在精修档开 Spectrum / BlockSparse 等有损方案。
 9. **先跑一次基线再加东西**：基线 = int8 底模 + Turbo 8 步 + Sage、别的加速全关，用一段固定的 10 s 提示词记下耗时；之后逐个打开别的加速项，一次只改一个变量。`comfy_submit.py --log logs/takes.csv` 会记下每个 take 的耗时、seed、帧数和设置摘要（分辨率 / 步数 / 模型 / LoRA）；评分自己填在 `score` 列，显存峰值看 ComfyUI 控制台。
 10. **抽卡有上限**：一批 2–3 个 seed；同一个问题连续两批都在 = 改提示词或分镜，不是继续换 seed。偶发的技术故障（黑场、无声、任务报错）原样重试一次。

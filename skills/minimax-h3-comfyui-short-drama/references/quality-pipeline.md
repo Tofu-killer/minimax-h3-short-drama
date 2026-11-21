@@ -50,10 +50,10 @@
 - **`model` 和步数有三种配法**：① 一采的模型原样接进来（同样的 LoRA 和 shift），`steps_override` 填 2——节点自己的说明是「turbo LoRA 配 `steps_override` 可用」；② 作者实测过的配方：挂 DMAD LoRA 0.8 的模型 + `steps_override 2`（DMAD 要挂在没有 Turbo 的底模上，两个蒸馏 LoRA 不叠，铁律 8）；③ 不挂任何蒸馏 LoRA 的底模 + `steps_override 0`（原生调度的最后 4 步，最慢）。本流程的一采是 lightx2v Turbo 8 步，先试 ①。三种在 4090 上都没有实跑过，定下来之前各出一条对比。
 - **作者的主张和本流程的差别**：作者建议一采用原生 20 步（他的测试里 Turbo 一采细节少，而且 Turbo 和原生出的是两条不同的片段）。本流程默认一采就是 Turbo 8 步的草稿，精修保住的是这条草稿；想要原生一采的细节，就得 20 步重出——那是一条新片段，要重新选片和观测（铁律 16）。
 - 有 FaceRefine 结果接 `face_atlas`（σ 0.45 会把只占一两个 token 的小脸重画坏）。作者的耗时是 5090 上 5 s 片段多花约 1 分钟；24 GB 上 10 s 以上的段没有数字。
-- 来源：ResCascade = GitHub `tazmannner/ComfyUI-H3-ResCascade`；它要求先装 LBH 放大器（GitHub `LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler`，权重在 HF `LBH-123-AI/Minimax_h3_latent_Upscaler`，放 `models/latent_upscale_models/`）；DMAD LoRA 在 HF `Kijai/MiniMax-H3-experimental` 的 `loras/`。
+- 来源：ResCascade = GitHub `tazmannner/ComfyUI-H3-ResCascade`；它要求先装 LBH 放大器（GitHub `LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler`，`git clone` 进 `custom_nodes` 即可，不用另装依赖），权重在 HF `LBH-123-AI/Minimax_h3_latent_Upscaler`：`H3 Hires Fix` 用的是 **3D 版**，下 `minimax_h3_latent_upscaler_3d_conv_v1/minimax_h3_latent_upscaler_3d_conv_v1_fp16.safetensors`（约 0.7 GB），放 `ComfyUI/models/latent_upscale_models/`；同仓库 2026-11-10 新出的 2D 版权重（`…_2d_conv_v1_…`）只能配 LBH 自己的 2D 节点，和 `H3 Hires Fix` 不通用（HF 文件清单与两个仓库的 README，2026-11-21 核对）；DMAD LoRA 在 HF `Kijai/MiniMax-H3-experimental` 的 `loras/`。
 - 1344×768 是 7:4（1.750），1920×1088 是 1.765，差 0.8%：二采是在新尺寸上重新采样，不是把画面拉过去，这点差别看不出来；交付时上下各裁 4 px 到 1920×1080。
 
-**手搓等价**（不装 ResCascade 时；`LTXVSeparateAVLatent` / `LTXVConcatAVLatent` 是 ComfyUI 自带节点，0.37.2 的 `comfy_extras/nodes_lt.py`；这条路要在 1920×1088 另建一个 H3 条件节点，工作流里就有两个，`--media` 一次只接一个（用 `--h3-node` 指定），另一个得手工保持一致，不建议第一次就这么做）：`MinimaxH3LatentUpscaler3D`（`minimax_h3_latent_upscaler_3d_fp16.safetensors`，放 `models/latent_upscale_models/`；或原生 `MiniMaxH3LatentUpscaleWithModel`）只放大 video latent → `LTXVConcatAVLatent` 拼回原音频 → 在 1920×1088 **重建**同 prompt / 参考的 conditioning（Ref2VA 必须重建 Guider）→ `ManualSigmas 1.0, 0.7, 0.4, 0`（1 步 turbo 头 + 2 步 euler 尾；3 步尾 +17% 闪烁）→ euler + DisableNoise。这组数是该工作流作者配合自己的加噪方式用的，起点不是下一条说的 0.45；要严格保住中选片段就用上面的 ResCascade（`sigma_start 0.45`），手搓时用同 seed 对比确认没有换片。
+**手搓等价**（不装 ResCascade 时；`LTXVSeparateAVLatent` / `LTXVConcatAVLatent` 是 ComfyUI 自带节点，0.37.2 的 `comfy_extras/nodes_lt.py`；这条路要在 1920×1088 另建一个 H3 条件节点，工作流里就有两个，`--media` 一次只接一个（用 `--h3-node` 指定），另一个得手工保持一致，不建议第一次就这么做）：LBH 的 3D 放大节点（界面里叫 `Minimax H3 Latent Upscaler (3D)`，权重 `minimax_h3_latent_upscaler_3d_conv_v1_fp16.safetensors`，放 `models/latent_upscale_models/`；也可以用它的 2D 节点配 `minimax_h3_latent_upscaler_2d_conv_v1_fp16.safetensors`，更小、可调锐度，两种权重不通用；或原生 `MiniMaxH3LatentUpscaleWithModel`）只放大 video latent → `LTXVConcatAVLatent` 拼回原音频 → 在 1920×1088 **重建**同 prompt / 参考的 conditioning（Ref2VA 必须重建 Guider）→ `ManualSigmas 1.0, 0.7, 0.4, 0`（1 步 turbo 头 + 2 步 euler 尾；3 步尾 +17% 闪烁）→ euler + DisableNoise。这组数是该工作流作者配合自己的加噪方式用的，起点不是下一条说的 0.45；要严格保住中选片段就用上面的 ResCascade（`sigma_start 0.45`），手搓时用同 seed 对比确认没有换片。
 - σ 起点含义：0.31 软、**0.45 保 take**、0.56 重画五官、0.9 换片。**按目的选三档**：保道具 / 文字 `0.6316, 0.3158, 0`；保纹理一致 σ 0.45 起；`0.9035` 起只用于「换尺寸再抽」（会把纸箱标签改色变透明）。
 - 二采永远钉死一采音频（Tr1dae `audio_denoise=0`、bbaudio / T8 `preserve_first_pass`、LongMedia Refine 音频 exact passthrough：audio noise 0 + mask 0，16 GB 卡 refine 窗 73 帧）。
 - 二采用 euler / res_multistep 非祖先采样器；LMS 类多步法会把逐帧纹理外推成颗粒。
@@ -66,7 +66,7 @@
 
 **漫剧**：RelayHires：AnimeSR 放大 → taeh3 编码 → 1 步 DMAD 0.8 从 σ 0.60，`window 4 / anchor_stride 8`；真人改 `RealESRGAN_x2plus`。
 
-**本流程的对白段是 8–13 s，按这个顺序试**：先整段直接二采（上面的首选）；1920×1088 × 243–328 帧在 24 GB 上够不够没人测过，爆显存或者慢到不可接受，就改下面的分块方案——分块只换放大方式，中选的片段和音频不变。
+**本流程的对白段是 8–13 s，按这个顺序试**：先整段直接二采（上面的首选）；LBH 的说明写得很直接——latent 放大只省时间，二采仍然在目标分辨率上跑，显存峰值接近直接生成 1920×1088。1920×1088 × 243–328 帧在 24 GB 上够不够没人测过，爆显存或者慢到不可接受，就改下面的分块方案——分块只换放大方式，中选的片段和音频不变。
 
 **10–15 s 或 OOM**：bbaudio `MMH3 Ultimate Upscale`（tile 576–768（32 倍数）、overlap 128、chunk 136–170 帧（17 倍数）/ overlap 17、anchor 0.999，二采 1–2 步 denoise 0.2–0.3，音频不重采）或 LBH `MMH3 Split Upscale`（`seam_denoise 0.5–0.8`）。多段续接的精修用 CGlide `Upscale Hold` 钉上一段精修尾。
 - LBH 3D 对 > 32 latent 帧（> ~110 帧）走时间分块，检查首帧网格状字形伪影；短片关 `enable_temporal_chunking`。

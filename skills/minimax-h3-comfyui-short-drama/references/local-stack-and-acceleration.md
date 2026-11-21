@@ -36,7 +36,7 @@
 ### 草稿档（两档：快速预览 ≤ 2–3 min / 条；同构图草稿预计 5–8 min / 条）
 - 权重：`ref2va_pruned_int8_convrot`（或 fl2va）+ `qwen3vl_32b_minimax_h3_nvfp4_awq` + int8 视频 VAE + fp32 音频 VAE
 - LoRA：`minimax_h3_ref2v_turbo_8step_v1.1_768p_comfyui_bf16` 强度 1.0（抽卡可降 `ref2v_turbo_4step_v1.0_768p`；声音不稳降 0.75）
-- 采样：8 步，`res_multistep` + `simple`（官方模板的组合；Euler + `simple` 也可以），CFG 1.0（官方模板用 `BasicGuider`，本来就没有 CFG 分支）；`MiniMaxH3SigmaShift`：Ref2V 12 / 3，FL2V 768p 版 6 / 3
+- 采样：8 步，`euler` + `simple`（Turbo LoRA 作者 lightx2v 的示例工作流和说明用的就是它；Comfy 官方模板的 `res_multistep` + `simple` 也能跑，想换就拿同一段、seed+1 比一次），CFG 1.0（用 `BasicGuider`，本来就没有 CFG 分支）；shift：Ref2V 12 / 3 就是模型默认值，接不接 `MiniMaxH3SigmaShift` 都一样；FL2V 768p 版要用这个节点改成 6 / 3，并且**调度器的 `model` 也要接它的输出**（`comfyui-nodes.md` §1）
 - 注意力：KJ Sage 两节点；**不接** `MiniMaxLowVRAMAttention`（与 Sage 同开实测第一步 693 s——这是用户机器上当时那版 KJNodes 的结果；新版源码里这两个节点是按能配合来写的，更新 KJNodes 之后想用它省显存，先单独拿同一段比一次再决定）；工作流里只留这一个注意力补丁，不再接 kitchen / BlockSparse 的注意力节点（启动参数 `--use-ck-attention` 是另一回事，见文末「出图与出视频分实例」；它和 KJ Sage 同开时谁生效以日志为准，配好后用同 seed 各跑一次计时）；省显存改 KJ `MiniMaxChunkFeedForward` 或 star7 分块（`chunk_tokens 8192 / mlp 4096 / qkv 4096`）
 - 分辨率与 LoRA，两档各有用途：
   - **快速预览档** 864×480 或 960×544：只用来看构图和调度对不对，选中后要在 1344×768 重跑（那是一条新片段，要重新选片）。Ref2V 没有 8 步的 544p 版 LoRA（仓库里不带 `768p` 的 Ref2V 文件只有 4 步的 `minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16`，官方 r2v 模板默认挂的就是它）；下面那条 134 s 的实测用的是 8 步 LoRA 直接跑 864×480。FL2V 有 8 步的 544p 版：`minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16`。
@@ -58,7 +58,7 @@
 - 预计：1344×768 × 10 s × 8 步 ≈ 5–8 min（4090，含 VAE）
 
 ### FL2VA（I2VA 首帧 / 尾帧衔接）
-`fl2va_pruned_int8_convrot` + `minimax_h3_fl2v_turbo_8step_v1.1_768p_comfyui_bf16`，shift 6 / 3；其余同上。
+`fl2va_pruned_int8_convrot` + `minimax_h3_fl2v_turbo_8step_v1.2_768p_comfyui_bf16`（2026-11 的新版；作者在模型卡里拿 v1.1 出问题的例子重测，v1.2 更贴提示词、更清晰；手里已有 v1.1 也能用），shift 6 / 3（`BasicGuider` 和 `BasicScheduler` 都接 shift 节点的输出）；其余同上。
 
 ## 3. 明确不要叠加
 
@@ -119,10 +119,10 @@ Spark-H3 跳过 0.41（要 0.38.x–0.40.x 或 0.42.x–0.44.x）；Spectrum 需
 ## 7. 下载清单（HuggingFace，澳洲可直连）
 
 - Comfy-Org/MiniMax-H3：`diffusion_models/minimax_h3_{ref2va,fl2va}_pruned_int8_convrot.safetensors`、`text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors`、`vae/minimax_h3_video_vae_int8_convrot.safetensors`（或 `…_fp16`）+ `vae/minimax_h3_audio_vae_fp32.safetensors`；`loras/` 里是官方模板默认挂的三个 LoRA（`fl2v_turbo_4step_v1.0_768p`、`fl2v_turbo_8step_v1.0`、`ref2v_turbo_4step_v0.1`）
-- lightx2v/Minimax-h3-Turbo（文件名都带 `_comfyui_bf16.safetensors` 的才是 ComfyUI 用的）：Ref2V `minimax_h3_ref2v_turbo_8step_v1.1_768p`（草稿档默认）、`…ref2v_turbo_4step_v1.0_768p`、`…ref2v_turbo_4step_v0.1`（544p 档）；FL2V `minimax_h3_fl2v_turbo_8step_v1.1_768p`（另有更新的 `v1.2_768p`）、`…fl2v_turbo_4step_v1.3_768p`、`…fl2v_turbo_8step_v1.0`（544p 档）
+- lightx2v/Minimax-h3-Turbo（文件名都带 `_comfyui_bf16.safetensors` 的才是 ComfyUI 用的）：Ref2V `minimax_h3_ref2v_turbo_8step_v1.1_768p`（草稿档默认）、`…ref2v_turbo_4step_v1.0_768p`、`…ref2v_turbo_4step_v0.1`（544p 档）；FL2V `minimax_h3_fl2v_turbo_8step_v1.2_768p`（默认；`v1.1_768p`、`v1.0_768p` 是旧版）、`…fl2v_turbo_4step_v1.3_768p`、`…fl2v_turbo_8step_v1.0`（544p 档）
 - larryvrh/MiniMax-H3-Turbo-Lora：`minimax_h3_turbo_v4_step600_ema.safetensors`（FL2VA 4 步备选，漫剧友好）
 - alibaba-pai/MiniMax-H3-Acc-LoRAs（PDD 8 步；新版 ComfyUI 原生 LoRA-bank 可直接加载，旧版用 Jalen-Brunson 节点或 aptech0081 重打包）
-- LBH-123-AI/Minimax_h3_latent_Upscaler（latent 二采权重，装原版节点，不装 xmarre `-Plus` 分支）
+- LBH-123-AI/Minimax_h3_latent_Upscaler（latent 二采权重：`minimax_h3_latent_upscaler_3d_conv_v1/minimax_h3_latent_upscaler_3d_conv_v1_fp16.safetensors`，约 0.7 GB，放 `models/latent_upscale_models/`；节点装 GitHub `LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler` 原版，不装 xmarre `-Plus` 分支）
 - lihaoyun6/MiniMax-H3-Ref-Patch（FL2VA 仿 Ref2VA）
 - alibaba-pai/MiniMax-H3-Fun-Controlnet-Union（姿态 / 深度 / 边缘控制）
 - Imagineer13/H3-Anti-Burn-LoRA（仅续接链上的皮肤斑点修复）

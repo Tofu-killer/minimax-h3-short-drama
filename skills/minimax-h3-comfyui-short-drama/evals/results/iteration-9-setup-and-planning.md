@@ -28,6 +28,9 @@
 | 官方 Qwen-Image 2.1 模板里有一条默认关闭的提示词扩写支路，它要的 9.5 GB 模型文件不在 skill 的下载清单里；开关关着也会被 ComfyUI 校验，缺文件就拒绝提交 | 0.37.2 `execution.py`：校验沿所有连线走 | 写明两种解法：下载它，或删掉那条支路 |
 | **ComfyUI 自带的 `SaveLatent` 存不了 H3 的 latent**：H3 的 latent 是视频和音频两个张量合在一起的，`SaveLatent` 对它调的方法在这种对象上不存在 | 0.37.2 `nodes.py` + `comfy/nested_tensor.py` | 精修的默认做法改成「同 seed、同设置重跑一采，再接放大」；想存 latent 的要先用自带节点拆开，写了步骤 |
 | **文档里精修节点 `H3 Hires Fix` 的接法已经过时**：写的是前面先拆 latent、后面再接采样器、参考条件要在新尺寸重建；当前版本直接吃音画合并的 latent、在节点内部完成采样、Ref2VA 的参考原样沿用、首尾帧关键帧自动丢掉 | 2026-11-21 读该仓库 main 分支的 `hires.py` 和 README | `quality-pipeline.md` §4 按源码重写：接线、三种模型 / 步数配法、作者主张（一采用原生 20 步）和本流程（一采是 Turbo 草稿）的差别 |
+| **精修要下的放大器权重文件名写错了**：文档写的 `minimax_h3_latent_upscaler_3d_fp16.safetensors` 在 HF 上不存在，真实文件是 `minimax_h3_latent_upscaler_3d_conv_v1/minimax_h3_latent_upscaler_3d_conv_v1_fp16.safetensors`；同仓库新出的 2D 版和精修节点不通用 | HF 文件清单 + 两个仓库的 README | 改成真实文件名，写明用 3D 版 |
+| **改 shift 时调度器会接错位置**：FL2V 的 768p Turbo LoRA 要把 shift 设成 6 / 3，而 Comfy 官方模板里调度器的模型直接来自加载节点。只把 shift 节点接到引导器那一路，步数表仍按默认的 12 算，模型却按 6 换算 | 0.37.2 的 shift 节点源码 + 官方模板与 LoRA 作者示例工作流的连线对比 | 文档写明两处都要接 shift 节点的输出；`comfy_submit.py` 预览检查这一点，也检查 Turbo LoRA 和 shift 是否配对 |
+| **Turbo LoRA 的作者有现成的 ComfyUI 示例工作流**（LoRA、shift、VAE 都接好了，只用自带节点），比手改 Comfy 官方模板少改很多；他们用的采样器是 euler；FL2V 的 8 步 LoRA 已经出到 v1.2 | GitHub `ModelTC/Minimax-H3-Turbo` 的 README、安装说明和三个示例 JSON | `comfyui-nodes.md` §3 把它列为推荐起点（A），官方模板降为备选（B）；挂 Turbo 的采样器统一成 euler；FL2V 默认 LoRA 换成 v1.2 |
 | 精修如果用同一个 seed、同一个 `--tag` 提交，结果会落进中选草稿的目录，草稿被挪进 `_prev_…`，之前记下的片段路径失效 | 读脚本 + 在模拟服务上复现 | 预览里对这种情况提醒并建议另起 `--tag`；文档的精修命令带上 `--tag <段号>_refine` |
 | `build_prompts.py` 遇到分镜里写了、磁盘上没有的参考文件，会抛一长串 Python 回溯 | 回归时撞到 | 改成一行说明，其它段照常生成 |
 | `SKILL.md` 头部的 compatibility 字段这一轮被我加到 566 字，超过安装器 500 字的上限，打包会被拒 | 打包器的校验规则 | 缩到 473 字；自检新增一项检查头部长度 |
