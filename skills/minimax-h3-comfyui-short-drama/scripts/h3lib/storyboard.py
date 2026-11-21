@@ -582,7 +582,7 @@ def validate_episode(ep: Episode) -> list[str]:
             prev = sh.start
             if sh.start >= seg.duration:
                 problems.append(f"{tag} shot {sh.index}: start {sh.start} >= duration {seg.duration}")
-            speakers = [d.speaker for d in sh.dialogue if not d.offscreen]
+            speakers = [d.speaker for d in sh.dialogue if not d.offscreen and d.speaker != "narrator"]   # a narrator has no mouth on screen
             if len(set(speakers)) > 1:
                 problems.append(f"{tag} shot {sh.index}: {len(set(speakers))} on-screen speakers in one shot "
                                 f"(one speaker per shot keeps lip-sync stable)")
