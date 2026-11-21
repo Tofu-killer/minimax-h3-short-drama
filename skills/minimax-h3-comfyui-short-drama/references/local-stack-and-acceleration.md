@@ -15,7 +15,7 @@
 | 便宜的模型 | pruned（AdaLN 剪枝）int8、nvfp4、GGUF、VDN 架构替换、ClipProj 小文本编码器 | 剪枝略损细节 | 24 GB 用 int8_convrot（pruned 更省显存，不剪枝画质更稳） |
 
 **基线链**（所有加速都在它之上同 seed A/B）：
-`UNETLoader(int8_convrot)` → `LoraLoaderModelOnly(lightx2v *_turbo_8step_v1.1*_comfyui_bf16, 1.0)` → KJ `PatchSageAttentionKJ(auto)` → KJ `MiniMaxH3MemoryEfficientSageAttentionPatch` → `MiniMaxH3SigmaShift` → Guider。先全关跑一次基线，再逐个开，一次只改一个变量。同 seed 同参数重跑会命中 ComfyUI 结果缓存秒出，计时与对比用 seed+1。
+`UNETLoader(int8_convrot)` → `LoraLoaderModelOnly(lightx2v *_turbo_8step_v1.1*_comfyui_bf16, 1.0)` → KJ `PathchSageAttentionKJ(auto)`（KJNodes 里这个节点名本身就拼成 Pathch，搜节点时照这个拼） → KJ `MiniMaxH3MemoryEfficientSageAttentionPatch` → `MiniMaxH3SigmaShift` → Guider。先全关跑一次基线，再逐个开，一次只改一个变量。同 seed 同参数重跑会命中 ComfyUI 结果缓存秒出，计时与对比用 seed+1。
 
 - **int8_convrot 底模上挂 LoRA 用运行时分支 / bypass，不反量化合并**：合并往返注入 ~1.5% 权重噪声而 H3 LoRA delta 只有 0.01–0.08%；多 LoRA 用 PowerLoraStack `quantized_layers=auto`，视频风格 LoRA 的 audio 模态缩到 0–0.25。装 LoRA 后日志必须出现 `208 patches attached`。
 - 8 步 Turbo 上叠风格 / 运镜 LoRA，**额外 LoRA 强度之和 ≤ 1.3**（0.6+0.3+0.4 实心；0.8+0.5+0.6 小物件透明重影）。
@@ -27,7 +27,7 @@
 - LoRA：`minimax_h3_ref2v_turbo_8step_v1.1_768p_comfyui_bf16` 强度 1.0（抽卡可降 `ref2v_turbo_4step_v1.0_768p`；声音不稳降 0.75）
 - 采样：8 步 Euler + `simple`（或 `res_multistep`），CFG 1.0；`MiniMaxH3SigmaShift`：Ref2V 12 / 3，FL2V 768p 版 6 / 3
 - 注意力：KJ Sage 两节点；**不接** `MiniMaxLowVRAMAttention`（与 Sage 同开实测第一步 693 s）；旁路 kitchen / BlockSparse；省显存改 KJ `MiniMaxChunkFeedForward` 或 star7 分块（`chunk_tokens 8192 / mlp 4096 / qkv 4096`）
-- 分辨率：求快用 864×480 或 960×544（Turbo LoRA 换成文件名带 `544p` 的同系列版本——LoRA 档位要和分辨率配对，见 SKILL.md 铁律 7）；要和成片同构图、之后同 seed 精修就直接 1344×768 配上面的 768p 版。5–10 s；`ref_image_size = match`（参考 token 预算：2 张角色图 `match` ≈ 1,550 token、`max` ≈ 12,320；124 帧参考视频 14k–27k token——**重者胜**，否定句与「视频里的人就是 Subject 1」都压不过它）；每段 2–4 个 seed
+- 分辨率：求快用 864×480 或 960×544（Turbo LoRA 换成同系列的 544p 训练版——文件名里**不带** `768p` 的那个；LoRA 档位要和分辨率配对，见 SKILL.md 铁律 7）；要和成片同构图、之后同 seed 精修就直接 1344×768 配上面的 768p 版。5–10 s；`ref_image_size = match`（参考 token 预算：2 张角色图 `match` ≈ 1,550 token、`max` ≈ 12,320；124 帧参考视频 14k–27k token——**重者胜**，否定句与「视频里的人就是 Subject 1」都压不过它）；每段 2–4 个 seed
 - 实测：864×480 × 10 s × 8 步 ≈ 134 s（4090）
 - 同一提示词多 seed 抽卡时把条件编码落盘复用（pepikir `H3SaveConditioning/LoadConditioning` 或 CLIPCached），采样图里不放 CLIPLoader；多段接力先编码所有段的条件再连续采样（E/E/E/S/S/S），避免 TE / VAE / DiT 往返加载，−25~45%；32 GB 内存机器单图 `--cache-none`；TE 与 DiT 放 NVMe（编码 90→25 s）
 - 可选（ComfyUI ≥ 0.38 后）：Veda `VedaSparseAttention` 放在 LoRA 与 Sage 补丁之后、Guider 之前，预测器只保证 1344×768 / 768×1344 / 768×768 / 1024×768 × 5/10/14 s × 8 步 Turbo；首次 Ctrl+B 旁路同 seed 对比再默认开；5090 实测（mathruffian）Veda 开着会在第 51/119/187 帧闪帧

@@ -59,7 +59,7 @@ LoadImage ×N（按 media.json 顺序）→ MiniMaxH3ReferenceToVideo(prompt, 13
 SamplerCustomAdvanced(noise seed, model, positive, res_multistep, simple 8, latent) → latent
 VAEDecode(video vae) + 音频解码(audio vae) → CreateVideo(24) → SaveVideo
 ```
-草稿档把分辨率降到 864×480 或 1056×608 抽卡，中选后用同 seed 在 1344×768 重跑或走 latent 二采（见 `quality-pipeline.md`）。
+草稿档把分辨率降到 864×480 或 960×544 抽卡（Turbo LoRA 换成 544p 训练版，即文件名里**不带** `768p` 的那个），中选后用同 seed 在 1344×768 重跑或走 latent 二采（见 `quality-pipeline.md`）。
 
 ## 4. 社区节点分类（详见各精读文件）
 

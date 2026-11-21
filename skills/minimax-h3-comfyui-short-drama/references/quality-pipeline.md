@@ -23,7 +23,7 @@
 
 ## 2. Stage 1 · 草稿抽卡
 
-- 864×480–1344×768，Turbo 8 步（抽卡可 4 步），CFG 1，见 `local-stack-and-acceleration.md`。
+- 864×480–1344×768，Turbo 8 步（只看构图、没有运镜的镜头可 4 步），CFG 1，见 `local-stack-and-acceleration.md`。
 - **保存一采 latent**（SaveLatent / Tr1dae Save Package / CGlide `.h3latent`），音频一并保留；后续精修与续接都从 latent 走，不要解码再编码（6 段后饱和 −14%、边缘脆化 +55%）。
 - 电影质感且时间允许：中选镜头改用 **1 MP 原生 20 步 beta57** 重跑一采（或 Fast Tail：前 12 步 euler + 4 步 dpmpp_2m，−20%）；ResCascade 实测 Turbo 一采会丢细节 / 换 take，而精修阶段用 Turbo 无损。
 - 音频差但画面好：`H3 Audio Refine Sampler` 冻结视频、6 步 `audio_denoise 0.5`，精修分支从 Turbo LoRA **之前**的 MODEL 分出。TTS 对白则 `MiniMax H3 Timed Audio(start_frame)` → `Exact Audio Lock`，同一 `start_frame` 接 `MiniMaxH3AddGuide.frame_idx`，成片混 `exact_audio`。

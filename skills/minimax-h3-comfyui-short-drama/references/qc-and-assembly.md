@@ -123,17 +123,36 @@
 
 ```
 project/
-├── project.yaml           # 风格、画幅、模型组合、LoRA 版本
-├── bible/                 # 角色 / 场景 / 道具图 + 识别短语 + 音色样本
-├── episodes/ep01.json     # 分镜
-├── prompts/               # 每段最终提示词（含替换后的标签）
-├── takes/ep01/s03/        # 每个候选 mp4 + 参数 json
+├── project.yaml           # 给人和 agent 看的项目记录（没有脚本读它），见下
+├── workflows/             # 你导出的 API 版工作流（草稿档、精修档各一份）
+├── bible/                 # 角色 / 场景 / 道具图 + 音色样本（+ 多集共用的资产表）
+├── episodes/ep01.json     # 分镜：资产表（characters / scenes / props）+ stagings + segments
+├── prompts/ep01/          # 每段提示词 + .media.json + cues.srt
+├── takes/ep01/s03/        # comfy_submit.py 的输出：每个候选一个文件夹（mp4 + run.json）
 ├── selects/ep01/          # 精修 / 超分后的中选片段，文件名带段 id
 ├── edit/ep01.edl.json     # 剪辑单（+ 导出的 .otio / .xml）
 ├── subs/ep01.srt|.ass     # 字幕
 ├── audio/ep01/            # 配乐、环境声、导出的 stem
 ├── final/ep01.mp4         # 成片 + .mix.wav + .mix.report.json
-├── qc/                    # probe / dialogue / identity 报告、联络表、review.md
-└── logs/takes.csv
+├── qc/                    # probe / dialogue / identity 报告、观测表、联络表、review.md
+└── logs/takes.csv         # 每个 take 一行：耗时、seed、帧数、设置摘要（分辨率 / 步数 / 模型 / LoRA）、评分
 ```
+
+- **资产表放哪**：就是分镜 JSON 里的 `characters` / `scenes` / `props`，这是唯一被脚本读取的一份。多集共用时另存一份 `bible/series_bible.json` 当母本，新一集从它复制——目前没有脚本做合并，改了母本要自己同步到各集。
+- **「采纳的片段」是哪个文件**：选片在草稿阶段做，采纳的就是 `takes/…/` 里那条草稿 mp4；`observe_take.py` 观测的也是它（记下路径和 sha256）。同 seed 精修不改构图，精修 / 超分后的文件才放进 `selects/`，剪辑单用的是 `selects/` 里的。
+- **`project.yaml`** 记下这个项目固定不变的东西，换机器或隔了几周回来能照着重建。没有固定格式，建议至少这些：
+
+```yaml
+title: 最后一班渡船
+ratio: "16:9"
+canvas: 1344x768            # 生成画布；交付时裁 6 px 上下再缩放到 1920x1080
+style: "Live-action, cinematic, ..."      # 与分镜 JSON 的 style 一致
+comfyui: 0.37.2
+models:
+  unet: minimax_h3_ref2va_pruned_int8_convrot.safetensors
+  text_encoder: qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors
+draft:   {workflow: workflows/draft.api.json,  steps: 8,  lora: "<Turbo 8 步 768p 版文件名>", shift: "12 / 3"}
+refine:  {workflow: workflows/refine.api.json, steps: 20, lora: none}
+```
+
 任何一段都能从 `prompts/ + bible/ + project.yaml` 重新生成；成片能从 `selects/ + edit/` 重新装配。

@@ -337,7 +337,7 @@
         },
         "action": {
          "type": "string",
-         "description": "≥ 8 words, starting state → movement → ending state, ends with a period"
+         "description": "≥ 8 words, starting state → movement → ending state (a closing period is optional; no looks, no speech verbs)"
         },
         "on_screen_characters": {
          "type": "array",
@@ -405,7 +405,7 @@
      },
      "first_frame_prompt": {
       "type": "string",
-      "description": "i2va/fl2va only: English still-image prompt for the shot's literal first frame (see assets/image-prompts.md)"
+      "description": "For a segment that gets a generated first frame (any mode, including ref2va + first_frame): English still-image prompt for the literal first frame (see assets/image-prompts.md)"
      },
      "summary": {
       "type": "string",

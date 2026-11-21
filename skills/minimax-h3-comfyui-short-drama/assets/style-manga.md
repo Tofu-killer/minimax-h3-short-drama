@@ -30,4 +30,4 @@ Anime character reference sheet, {角色描述}, front view and three-quarter vi
 - 参考 APIDot 的动画示例写法（docs/04 §8 示例 4）。
 
 ## H3 配置
-ref2va，768P；4 步抽卡 / 8 步成片；2D 风格对拖影不敏感，可多用 4 步；二采按需。
+ref2va，768P；草稿 Turbo 8 步（2D 风格对拖影不敏感，没有运镜的镜头可以用 4 步）；有运镜的镜头精修同样 20 步、关 Turbo；二采按需。

@@ -23,4 +23,4 @@ Photorealistic portrait reference sheet, {角色描述: 年龄段、脸型、发
 `slow push in` / `static locked-off` / `handheld with slight tremor` / `slow lateral track`；`window light` / `single practical lamp` / `overcast soft light` / `sodium streetlight`。
 
 ## H3 配置
-ref2va，768P（1344×768 或 768×1344），8 步成片 / 4 步抽卡（仅构图），shift 12/3（Ref2V）；脸部特写段过一遍二采（去油）。
+ref2va，768P（1344×768 或 768×1344），草稿 Turbo 8 步（4 步只用来看构图，会抹掉运镜）；中选后同 seed 精修，有运镜的镜头 20 步、关 Turbo（SKILL.md 铁律 16）；shift 12/3（Ref2V）；脸部特写段过一遍二采（去油）。

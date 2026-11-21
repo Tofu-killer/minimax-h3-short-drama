@@ -59,8 +59,8 @@ retention_analysis:
 <Picture 3> ([Shot 3] final composition anchor): partially_preserved - the plinth, background color, product placement and negative space are retained for the final shot; the camera may move before the final shot.
 
 detailed_description:
-The target video is rendered as minimalist premium product film, photoreal, clean studio look, shot on a 100mm macro lens and an 85mm lens, one large soft key light from frame left, a thin hard rim light from behind tracing the edge of the bottle, a seamless warm-white background, a palette of warm white, sage green and brushed silver, restrained elegant motion, crisp focus on product surfaces.
-[Shot 1] An extreme macro close-up on the brushed silver screw cap of <Subject 1>. Exactly one product is present, and it is always <Subject 1>, keeping its sage-green body color in every frame. The cap is already lifted a few millimetres and rotates a quarter turn counterclockwise, the brushed metal grain catching a slow-moving rim highlight that slides across its edge, then the cap lifts clear out of the frame upward and a soft thread of white steam rises from the open mouth. The camera tracks slowly along the rim of the cap from left to right.
+The target video is in the following style: minimalist premium product film, photoreal, clean studio look, shot on a 100mm macro lens and an 85mm lens, one large soft key light from frame left, a thin hard rim light from behind tracing the edge of the bottle, a seamless warm-white background, a palette of warm white, sage green and brushed silver, restrained elegant motion, crisp focus on product surfaces.
+[Shot 1] The video opens on an extreme macro close-up on the brushed silver screw cap of <Subject 1>. Exactly one product is present, and it is always <Subject 1>, keeping its sage-green body color in every frame. The cap is already lifted a few millimetres and rotates a quarter turn counterclockwise, the brushed metal grain catching a slow-moving rim highlight that slides across its edge, then the cap lifts clear out of the frame upward and a soft thread of white steam rises from the open mouth. The camera tracks slowly along the rim of the cap from left to right.
 [Shot 2] At 00:03.600, the shot cuts to a medium shot from a low angle: <Subject 1>, the tall matte sage-green stainless-steel vacuum bottle, stands upright on the warm-white plinth with its cap set beside it, the thread of steam curling up from the open mouth into the light, the matte sage-green body showing its fine powder-coat texture as the rim highlight travels from the base up to the silver shoulder ring. The camera pedestals up from the base to the shoulder ring at slow speed, with the horizon kept level.
 [Shot 3] At 00:06.800, the shot cuts to the final hero composition matching <Picture 3>: <Subject 1> stands at the right third of the frame on the plinth with the cap screwed back on, steam fading, wide warm-white negative space on the left. At 00:07.800 a single line of English copy in SF Pro Display Semibold fades in at the vertical center of the left negative space, left-aligned, reading "Warm Hours, Every Day", the words "Warm Hours," in dark grey and "Every Day" in sage green, the whole line sliding a few pixels to the right as it settles and then holding steady to the end. The camera holds a static shot. In the final second the bottle, the light and the copy hold their positions while the framing stays put. Nobody speaks.
 
@@ -71,7 +71,7 @@ non_diegetic_music:
 A minimal electronic track at a slow tempo with soft felt-piano notes over a warm sub pulse, a light chime landing as the copy line appears, fading out with the final hold.
 ```
 
-lint：`--seconds 10 --images 3 --audios 0` → PASS，0 error / 0 warning；389 词。画面文案若出现错字：同 seed 去掉文案句重出，文案后期叠。
+lint：`--seconds 10 --images 3 --audios 0` → PASS，0 error / 0 warning；395 词。画面文案若出现错字：同 seed 去掉文案句重出，文案后期叠。
 
 ## 该类型禁忌
 
