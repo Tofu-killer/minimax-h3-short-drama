@@ -73,7 +73,7 @@ B6 的四个选项：
    `ffmpeg -itsscale 0.96 -i seg.mp4 -an -c:v copy -video_track_timescale 25000 seg25.mp4`；
    `ffmpeg -i new_dialogue.wav -af atempo=1.0416667 -ar 16000 -ac 1 a25.wav`；
    `python -m scripts.inference --unet_config_path configs/unet/stage2_512.yaml --inference_ckpt_path checkpoints/latentsync_unet.pt --inference_steps 20 --guidance_scale 1.5 --enable_deepcache --video_path seg25.mp4 --audio_path a25.wav --video_out_path out25.mp4`；
-   `ffmpeg -itsscale 1.0416667 -i out25.mp4 -an -c:v copy -video_track_timescale 24000 out24.mp4`，最后混回**原速**音频。（重打时间戳往返已实跑：144 帧 → 144 帧，6.000 s。）
+   `ffmpeg -itsscale 1.0416667 -i out25.mp4 -an -c:v copy -video_track_timescale 24000 out24.mp4`，最后混回**原速**音频。（重打时间戳往返已实跑：含 B 帧的 362 帧片段 24 → 25 → 24 fps 后仍为 362 帧，逐帧解码哈希与原片一致。）
 2. **MuseTalk 1.5**（MIT、实时级、脸区 256 px）：中远景、批量、预览用；特写会糊。
 3. **H3 重拍（最稳）**：原首帧作 `first_frame` 锚 + 同提示词 + `MiniMaxH3TimedAudio → MiniMaxH3DialogueAudioLock`（即链路 C 的做法）。画面是新 take，但开场帧、人物、台词时间全部受控。
 4. **整段 V2V**：InfiniteTalk V2V（Wan2.1 14B，连头和身体一起重生成，镜头只是「模仿」原片）、LTX-2.3 `DubItPipeline`、Chanjing-Avatar V2V 5B（只重生成脸区，Linux）。24 GB 上都要 offload / GGUF，速度未验证。
@@ -101,6 +101,7 @@ B6 的四个选项：
 | 台词可控 | 只能抽卡（现有 Whisper 门禁） | 文本 100% 可控，可改词、可换语言 | 文本 100% 可控 |
 | GPU 遍数 / 段 | 分离 1 + VC ≤ 1（都远小于一次 H3 采样） | TTS 1 + 改嘴 1（或重拍 1 次 H3） | TTS 1 + H3 1（本来就要生成） |
 | 人工环节 | 听 VC 结果 | 听 TTS + 逐镜看嘴 | 听 TTS（在花 GPU 之前） |
+| 工时（60 s、约 7 段、约 14 句；估计值，未实测） | 机器：分离 + 对齐 + 少量 VC，分钟级；人工审听约 10–15 分钟 | 约为 A 的 3–4 倍：TTS 抽卡审听 + 每个对白镜一次改嘴 + 逐镜复查，失败镜还要重拍 | 前置审听 TTS 约 15 分钟；之后与正常生成等同，但省掉「台词念错」的重抽 |
 | 主要风险 | VC 引入金属声 / 损高频（22 kHz 模型）；分离残留 | 两次生成误差叠加；24↔25 fps 处理出错即音画漂移 | 音频锁 + 8 步 Turbo 时画面运动变少（未验证）；多说话人归属错人 |
 | 适用类型 | **对白短剧（真人向）首选**；已出片只想救声音 | 已有满意画面但台词必须改 / 译制 / 换语言；真人口播补救 | **漫剧、MV、口播、广告、多语言版本**；台词密、要卡点的集 |
 
@@ -224,6 +225,14 @@ B6 的四个选项：
 - **Chatterbox**（MIT，README 声明仓库归档）：官方 ComfyUI 模板带 `FL_ChatterboxVC(input_audio, target_voice)`——在 ComfyUI 里做参考式 VC 最省事的入口。**试用**（只为 VC）。
 - **Step-Audio-EditX**（Apache-2.0，8.3 GB）：对已生成的语音做二次情感 / 风格编辑（14 情感、32 风格），TTS-Audio-Suite 里是独立的 Second Pass 节点。**试用**（TTS 太平时补情绪）。
 
+#### 任务单里点名、但本轮判为「跳过」的旧项目
+- **F5-TTS**（★15633，push 2026-11-03）：仍在维护、速度快、`fix_duration` 可定总时长，但预训练权重因 Emilia 数据集为 **CC-BY-NC**，商单不可用。
+- **Spark-TTS**（★10983）：最后推送 2025-04-09，已 19 个月无更新；各家新表里相似度垫底（Seed-TTS zh SIM 66.0）。
+- **MegaTTS3**（★6114，push 2026-06-15）：仅中英；本次 README 抓取失败、未读到新版本信息，不纳入。
+- **VibeVoice-TTS**：微软 2025-09-05 已从官方仓库撤下 TTS 代码（权重仍在 HF），只能用社区 fork；官方重心转到 VibeVoice-ASR。
+- **OpenAudio S1 / Fish Speech 1.x**：已被 S2-Pro（2026-03）与 Drama 3（2026-10）取代。
+- **OpenVoice V2**：2025-04 后停更，音色转换质量被 seed-vc / CosyVoice VC 超过。
+
 #### 商业对照（未实测，仅作质量参照）
 - **MiniMax Speech**：官方 MCP（MiniMax-AI/MiniMax-MCP）暴露 `text_to_audio` / `voice_clone` / `voice_design`；开源论文表里它的 Seed-TTS zh CER 0.83、SIM 78.3，与 CosyVoice3-RL 同档。
 - **ElevenLabs / Fish Audio / HeyGen / VEED / sync.so**：ComfyUI 官方模板已有 API 节点（`api_elevenlabs_v4_text_to_dialogue`、`api_elevenlabs_speech_to_speech`、`api_elevenlabs_voice_isolation`、`api_veed_lipsync_2_0`、`api_veed_dubbing`、`api_sync_so_talking_image`）。本地链路某一环卡住时可单点替换；价格与条款未核实。
@@ -284,6 +293,13 @@ B6 的四个选项：
 | HuMo / Wan2.2-S2V / EchoMimic v3 / FantasyTalking / Sonic / OmniAvatar | I2V 数字人 | Apache-2.0（Sonic 非商用） | 480–720P | 25 | 14–17B 级 | 各异 | 官方模板 `video_humo` 等 | 观望 |
 | LivePortrait（★19541） | 表情 / 头动迁移（非音频） | GitHub 标 NOASSERTION（依赖 insightface，商用前核对） | 512 | — | 实时级 | — | kijai/ComfyUI-LivePortraitKJ（2024 停更） | 试用（修表情） |
 | H3 ExactAudioLock（★16） | H3 自身音频驱动 | MIT | H3 原生 | 24 | = 一次 H3 采样 | 取决于 H3 | 自身 | **采用**（链路 C） |
+
+**四个问题的直接回答**
+- **哪些能在已有视频上只改嘴**：LatentSync、MuseTalk、ComplexSync（权重拿不到）、Wav2Lip 系（2020，脸区 96 px，仓库声明仅限个人 / 研究 / 非商用）、facefusion 内置 lip syncer（OpenRAIL-AS）；Chanjing V2V 5B 重生成整个脸区；InfiniteTalk V2V、LTX DubIt、H3 重拍都会改动嘴以外的画面。
+- **对动漫脸是否有效**：没有任何一家给出二维画风的指标；这些模型都依赖真人人脸检测与对齐（InsightFace / S3FD / DWPose），二维角色经常检测不到或对齐错位。结论：**漫剧不要走「事后改嘴」**，用 H3 音频锁生成（漫剧口型容错高，skill `style-manga.md` 的 `simple anime lip flaps`）或接受原生口型。（未实测）
+- **中文效果**：LatentSync 从 1.5 起专门改善中文；MuseTalk 标明支持中 / 英 / 日；InfiniteTalk 的音频编码器是中文 wav2vec2；LongCat 用 Whisper large-v3 特征。口型模型只看音素能量与节奏，TTS 语速过快（> 6 字 / s）时所有模型都会糊成「半开嘴」（经验判断，未实测）。
+- **24 GB 上的速度**：可引用的只有三条作者数据——MuseTalk V100 30 fps+；LongCat 1.6 在 4090 上 768×512、10.1 s 约 162 s（第三方节点作者）；InfiniteTalk 社区中文工作流 Q8 GGUF 要 32 GB。LatentSync、Chanjing、LTX DubIt 均无 4090 数字。
+- **未入表的同类**：Ovi（character-ai，★1764，Apache-2.0，联合音画生成，社区整合包标注需 20 GB 显存 + 48 GB 内存）、Hallo3（★1423，MIT，2025-03 停更）、EchoMimic v2 / v3——都是「图 + 音频 → 新视频」，与 H3 自身能力重叠。
 
 #### LatentSync 1.5 / 1.6（bytedance/LatentSync）
 - **定位**：端到端音频条件 latent 扩散改嘴，不经中间运动表示；目前开源「只改嘴」里清晰度最高。
@@ -372,6 +388,14 @@ B6 的四个选项：
 | Stable Audio 3 small-music / medium | stable-audio-community | 文本 → 器乐 | 2.27 / 9.22 GB | 原生 | 试用（短 sting） |
 | HeartMuLa oss-3B（★3810） | Apache-2.0 | 歌曲；RTF ≈ 1.0 | 可 | 第三方节点 | 观望 |
 | DiffRhythm 2 / SongGeneration | Apache-2.0 / 自定义 | 整曲 | 可 | 第三方 | 观望 |
+
+**按画面情绪 / 节拍卡点的工作流**
+1. **定速度**：分镜阶段按类型给 BPM 区间（对白戏 70–95、悬疑 60–80、动作 120–140、喜剧 100–120——经验区间，未验证）；若两个最重要的切点（如钩子结束与反转）间隔 `Δt` 秒，取 `BPM = 60 × n / Δt` 中落在区间内的整数拍 `n`，这两个点就天然在拍上。
+2. **按元数据生成**：ACE-Step 1.5 `bpm / duration / timesignature / keyscale` 填实数，tags 写流派 + 乐器 + 情绪词（官方器乐模板就是 `piano, guitar, synthesizer, fast, happy, cheerful` 这种写法）；同一集所有段落共用 BPM 与调。注意这与 H3 提示词里「配乐只写乐器、禁情绪词」（lint A8）是两套规则，别混用。
+3. **求拍点**：`beat_grid.py` 用已知 BPM 搜相位，得到拍格（§4.8）。
+4. **吸附切点**：每个硬切点找最近的 1/4 或 1/8 拍，偏移 ≤ 3 帧就用该段的头尾余量移动切点；> 3 帧不动（宁可不卡也不改表演节奏）。
+5. **重音与留白**：转场处用 `repaint` 重画 1–2 小节加重音，或叠一条 Stable Audio 3 的 low boom；对白密集段让 ducking 处理，不必另出「无鼓版」。
+6. **MV 反过来做**：先有歌（YuE2 / ACE-Step），按小节和换气点切段（animede 的做法是按静音、音量谷、小节做动态规划切分，每段 5–10 s），再用链路 C 整条锁生成画面。
 
 #### ACE-Step 1.5（ace-step/ACE-Step-1.5）
 - **定位**：LM 规划 + DiT 的音乐基础模型，自评「介于 Suno v4.5 与 v5 之间」；MIT。
@@ -611,11 +635,15 @@ ffmpeg -i ep01.mp4 -vn -af ebur128=peak=true -f null -      # 读 I / LRA / Peak
 - **逻辑**：① 每段对白 stem 调对齐器（模板：Qwen3-ForcedAligner `align(audio, text, language)`；备选 `whisperx`、`stable-ts align`、faster-whisper `word_timestamps`），统一成 `[{text, start, end}]`。② 把对齐单元摊成逐字时间，与**去标点的锁定原文**做 `difflib.SequenceMatcher`，只取 `equal` 块建立「原文字 → 时间」映射（ASR 错字不影响文本）。③ 每句：`start = 首个命中字 − 0.08`，`end = 末个命中字 + 0.25`，再套最短 0.8 s、≤ 9 字 / s、相邻留 ≥ 2 帧、吸附帧；覆盖率 < 0.6 的句子标 `needs_review`。④ 加上段起点 `T_i` 得到全片时间；写 SRT 与 ASS（§2.7 样式）。
 - **核心函数（已实跑）**：
 ```python
-chars = [(ch, u_start + k*d, u_start + (k+1)*d) for u in units for k, ch in enumerate(norm(u["text"]))]  # d = 单元时长/字数
-sm = difflib.SequenceMatcher(None, ref, "".join(c[0] for c in chars), autojunk=False)
+chars = []                                            # 把对齐单元摊成逐字时间
+for u in units:                                       # units: [{text, start, end}]，字或词都行
+    s = norm(u["text"]); d = (u["end"] - u["start"]) / max(len(s), 1)
+    chars += [(ch, u["start"] + k * d, u["start"] + (k + 1) * d) for k, ch in enumerate(s)]
+sm = difflib.SequenceMatcher(None, ref, "".join(c[0] for c in chars), autojunk=False)   # ref = 去标点的锁定原文
 r2h = {i1 + k: j1 + k for tag, i1, i2, j1, j2 in sm.get_opcodes() if tag == "equal" for k in range(i2 - i1)}
-hit = [r2h[i] for i in range(a, b) if i in r2h]                 # a:b = 该句在 ref 中的字区间
-start, end = chars[hit[0]][1] - 0.08, max(chars[hit[-1]][2] + 0.25, start + 0.8, start + (b - a) / 9.0)
+hit = [r2h[i] for i in range(a, b) if i in r2h]       # a:b = 该句在 ref 中的字区间；覆盖率 = len(hit) / (b - a)
+start = chars[hit[0]][1] - 0.08
+end = max(chars[hit[-1]][2] + 0.25, start + 0.8, start + (b - a) / 9.0)
 ```
   样例：ASR 把「知道的」识别成「知到的」时覆盖率 0.917，字幕仍输出锁定原文，时间 0.542 → 2.250 s。
 
@@ -663,6 +691,7 @@ script = draft.DraftFolder(root).create_draft(name, 1920, 1080, fps=24, allow_re
 script.append_tracks([TrackSpec(TrackType.audio, "music"), TrackSpec(TrackType.audio, "dialogue_a"),
                       TrackSpec(TrackType.audio, "dialogue_b"), TrackSpec(TrackType.video, "picture"),
                       TrackSpec(TrackType.text, "subtitle")])
+# 以下三行在「逐段」循环内：t = 已累计微秒，n = 该段帧数，in_f = 入点帧，lcut = L-cut 微秒
 v = draft.VideoSegment(path, trange(t, us(n)), source_timerange=trange(us(in_f), us(n)), volume=0.0)
 a = draft.AudioSegment(dlg, trange(t, us(n) + lcut), source_timerange=trange(us(in_f), us(n) + lcut)); a.add_fade("0.01s", "0.12s")
 script.add_segment(v, "picture").add_segment(a, "dialogue_a" if i % 2 == 0 else "dialogue_b")   # 交错两轨容纳 L-cut 重叠
@@ -737,6 +766,6 @@ script.import_srt(srt, track_name="subtitle", text_style=TextStyle(size=7.0, aut
 - 平台：YouTube 帮助「Recommended upload encoding settings」（support.google.com/youtube/answer/1722171）；B 站 / 抖音仅检索到社区文章，未采信为规范。
 
 **本次实跑（合成素材：3 段 1344×768@24 fps + 32 kHz 立体声「说话」音频 + 48 kHz 配乐）**
-- ffmpeg 6.1.1：两遍 `loudnorm`（−34.9 / −48.7 / −27.4 LUFS → −16.0 / −16.1 / −16.1，Linear）；帧精确裁切 + 7:4→16:9 + `concat -c copy`（354 帧）；时间线混音 + 环境声 + sidechain ducking + 限幅 + 成片 `loudnorm`（−14.0 LUFS，音画均 14.750 s）；ASS / SRT 烧录（文泉驿字体）；`lut3d` 恒等 LUT + `lutyuv` 黑位（YMIN = 36）；24↔25 fps 时间戳往返（144 帧不变）；`fps=30`、`minterpolate`、`xfade` 4 帧叠化（232 帧）。
+- ffmpeg 6.1.1：两遍 `loudnorm`（−34.9 / −48.7 / −27.4 LUFS → −16.0 / −16.1 / −16.1，Linear）；帧精确裁切 + 7:4→16:9 + `concat -c copy`（354 帧）；时间线混音 + 环境声 + sidechain ducking + 限幅 + 成片 `loudnorm`（−14.0 LUFS，音画均 14.750 s）；ASS / SRT 烧录（文泉驿字体）；`lut3d` 恒等 LUT + `lutyuv` 黑位（YMIN = 36）；24↔25 fps 时间戳往返（144 帧与含 B 帧的 362 帧两组，帧数不变、逐帧解码哈希一致；`avg_frame_rate` 有 1e-4 量级偏差，来自 B 帧起始偏移，可忽略）；`fps=30`、`minterpolate`、`xfade` 4 帧叠化（232 帧）。
 - Python 原型：`retime_subtitles`（difflib 映射）、`unify_voice` 的偏移与 F0 检测、`beat_grid`（梳状搜索）、`export_capcut_draft`（pyJianYingDraft 0.3.1）、`export_otio`（OpenTimelineIO 0.18.1 + fcp / cmx3600 适配器）。原型文件暂存于 `/tmp/claude-0/-home-user/d049cf81-589a-59f7-bbcd-0b44f6d3b87d/scratchpad/wfstudy/audio-post/fftest/`（会话临时目录，可能被清理；关键逻辑已内联进 §4）。
 - 研究笔记：`/tmp/claude-0/-home-user/d049cf81-589a-59f7-bbcd-0b44f6d3b87d/scratchpad/wfstudy/audio-post/notes/NOTES.md`（同为临时目录）。

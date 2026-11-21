@@ -444,3 +444,258 @@ NarratoAI 反过来：原片抽帧 → VLM 逐帧理解 → 解说词 → TTS �
 - ArcReel `partials/shared/*.md`（AGPL）：避开「增加 / 删除 / 去掉 / 修改 / 替换 / 改成 / 延长 / 续写」这类祈使词，否则部分模型把参考生视频误判成视频编辑或延长；5 秒级 = 一个连贯动作 + 一个细节互动，8 秒级可承载一次动作过渡。
 - 火宝 `workspace/prompts/*.md`（CC BY‑NC‑SA 4.0）：信息头 + 每 3 秒一行的视频提示词；agent「输出只允许工具调用」。
 - MiniMax 官方提示词指南（MiniMax H3 Community License）：artokun 的 H3 skill 明写 "Cite that guide by URL. Do not copy it into this repo."——我们的 `fetch_official_guides.sh` 只拉取不入库的做法是对的。
+
+## 4. 逐项目
+
+格式：定位 / 机制（源码或文档级）/ 关键参数 / 硬件与速度 / 许可 / 对 4090 本地 H3 短剧的价值 / 评级（采用｜试用｜观望｜跳过）。「采用」指把它的做法或工具纳入我们的默认流程，不等于部署整个系统。配音与口型细节见同目录 04，分镜生图细节见 05。
+
+### 4.1 短剧 / 漫剧制片平台
+
+#### zenstory-ai/drama-skills（★4 588，MIT，head 7107864 · 2026‑11‑19）
+- **定位**：12 个 agent skill（Claude Code / Codex），覆盖原著分析 → 剧本 → 视觉设定 → 图片提示词 / 分镜 → 视频提示词 → 确认后生产 → 剪辑 → 审查。自述出自「2025 年以来上千个 AI 短剧 / 漫剧项目」的工作室，放弃了 8 万行图形工具改用纯文本 + Agent CLI（自报，未验证）。
+- **机制**：状态 = 五份 Markdown + `剪辑单.md`，编号体系 SHOT / MOTION / GROUP / IMG / REF / PLAN / LOCK / CUT；`creator_markdown_check.py`（118 KB）做跨文档对账；规则分四级 `structural_invariant / reviewed_invariant / craft_default / taste_option`，对应 blocker·major / minor·note / 只记录。
+- **关键参数**：生产走 `prepare-batch → CONFIRM BATCH <id> <code> → run-batch --batch-id`，确认码随条目 / 参考 / 参数 / 输出路径变化自动失效；异步任务先写 `handle_path` 再轮询，中断后 `audit → collect` 不重复扣费。剪辑数值见 §3.5。H3 专页（`references/minimax-h3.md`，官方依据 2026‑09‑07 核对）：挂 `reference_audio` 即进 full‑reference 并失去首帧硬锁；中文常速约 4.1 实读字 / 秒；`first_frame` 模式常有 1.3–2.4 s 起音延迟；单喊两字人名易漂（均为其云 API 经验，未在本地开源权重上验证）。
+- **硬件与速度**：无本地 GPU 需求；内置 provider 全是云 API（GPT Image 2、Seedance、MiniMax H3 / Speech / music‑3.0）。剪辑脚本只要 ffmpeg / ffprobe，画面文字层用 Remotion。
+- **价值**：本簇里与我们形态最接近、且唯一同时覆盖「H3 方言 + 投产协议 + 剪辑单 + 审片分流 + 评估方法」的仓库。可直接搬：连戏锁、六档分流、剪辑单字段、确认码协议、规则四级制、`evaluations/` 的 holdout 盲评纪律（16 题材、每 arm 3 次等权、双模型交换 A/B 位置）。
+- **评级**：**采用**（方法、字段、数值）；其 `edit_tool.py` 与供应商无关，可**试用**来剪 H3 产物。
+
+#### eternityspring/shuohao-skills（★6 899，Apache‑2.0，head 8af10e0 · 2026‑11‑09）
+- **定位**：7 个 skill，把小说做到「可投产材料」：outline（14 门）→ characters ↔ art（10 门）↔ script（10 门）→ staging（8 门）→ storyboard（18 门）→ H3 / Seedance 投产包；`character-refs` 真正出图。docs/13 未收。
+- **机制**：每个 skill 都是 `seed（脚本确定性展开）→ 模型填空 → validate（全是代码的质量门）→ render（单页 HTML 报告，可导出改后的 JSON）`；Node ≥ 18 零依赖；selftest 336 断言、每道门都有击穿用例；门失败写 `.gates.jsonl`，`stats` 看哪道门最常响。
+- **关键参数**：段 ≤ 15 s（按剧情单元 9–15 s，不跨场）→ 切 2–5 s 硬门（围着 3 s 打，一段 3–5 切）→ 每切一张分镜图（主图钉 0.00 s，子图钉切点）；每集总时长在目标 ±15%；同框 ≤ 3 人；镜头「认领」剧本节拍 `beats:[起,止]` 恰好一次；H3 多图对齐首行与 `[Shot k] At 00:0X.000` 由秒数推导、validate 逐字对账；视频正文禁角色名、用通用身份。
+- **staging**：每地点认 4–20 件人会站旁 / 坐上的东西（图上框 + 俯视平面位置）→ 每场每人 `{present, item, side, along, posture, facing}` + 群演数 → 程序生成开场走位句；可拖拽俯视图报告。动机写得很准：「各段自己决定谁坐哪……第一段桌边多出五个没名字的宾客」。
+- **硬件与速度**：skill 本身不花算力；`character-refs` 支持 Qwen Image（ComfyUI）/ GPT Image 2 / 自定义命令。
+- **价值**：H3 的 I2VA 多图对齐（每切一张分镜图）是我们目前只在类型包里零散出现的用法；「节拍认领」让剧本 ↔ 分镜可机械对账；staging 直接补我们「空间锚点卡」只有一句话的缺口。
+- **评级**：**采用**（staging 台账、节拍认领、门日志）；storyboard 脚本可**试用**（它的 H3 默认是 I2VA 多图对齐，不是我们常用的 Ref2VA 六段式）。
+
+#### ArcReel/ArcReel（★6 694，AGPL‑3.0，`skills/` 目录 MIT，head bf715a2 · 2026‑11‑21）
+- **定位**：自托管 AI 视频工作台（FastAPI + React，Docker 起），小说 / 剧本 / 商品素材 → 资产 → 分镜或视频单元 → 视频 → 时间线 → 成片或剪映草稿；支持旁白、剧情、广告三种内容模式 × 分镜图生视频 / 参考生视频两种生成模式。
+- **机制**：MCP 是项目状态的唯一来源；外部 agent 只装 3 KB 的 `video-workflow` skill，每步 `get_workflow_plan` 取 `next_action / next_alternatives / blockers / status.operations`。剧本规划的确认只存「确认指纹」，读时与当前内容指纹比对派生 pending / confirmed。
+- **关键参数**：审片信号 `blackdetect=d=0.1`、`freezedetect=n=-60dB:d=0.5`、`scene>0.4`；联络表每张 ≤ 12 帧、长边 ≤ 2000 px；时间线整数微秒、BGM 默认音量 0.25、淡入淡出 1 s、旁白下原声 0.3；19 项转场词表双映射；参考图上传副本统一 JPEG q92 4:4:4，首尾帧只在超字节时重编码、**永不缩尺寸**。
+- **设计取舍**（`.out-of-scope/`）：拒绝自动抽上一段尾帧接下一段——"会使后续镜头强依赖上一段是否生成成功，失去预先审核首帧的机会，且上一段重生成时还可能改变后续镜头的输入依据"；不做逐帧字幕对齐（进剪映调）；不强制单镜人数；不全局强制英文提示词。
+- **硬件与速度**：视频全走云 API（赞助商含秘塔 H3，768P 0.09 元 / 秒，转售方自报）；本机只跑 ffmpeg。
+- **价值**：时间线模型、审片信号 + 信号加密联络表、确认指纹、重启自愈这四样是本簇工程质量最高的实现，但代码是 AGPL，只能照设计重写。`model_review` 字段预留恒 null——它也没做 VLM 自动评分。
+- **评级**：**采用**（设计）/ **观望**（部署：没有本地 ComfyUI 后端）。
+
+#### dramaclaw/dramaclaw（★7 149，Elastic License 2.0，head d00aad5 · 2026‑11‑20）
+- **定位**：自托管「小说 → 成片」产线，单机无需 PG / Redis；三件套 Xia Director（内置 agent，自带 Codex runtime）/ XiaHua 无限画布 / Series 流水线；Agent Kit 用 MCP 暴露给外部 agent。
+- **机制**：长篇先进 cognee 图谱供多轮分集规划检索；角色拆成 Identity（角色 × 造型）；**草图先行**——线稿分镜里角色用纯色标身份，`global_video_optimizer` 看整集草图网格一次性写所有 beat 的运动提示词；3D Previz（360 全景 → 3GS → PlayCanvas 人偶与机位）导出 control frame 再转草图。
+- **验证系统**（`src/novelvideo/verification/`，41 文件 7.7k 行）：四级级联 T1 颜色预筛（面积阈值 0.008）→ T2 VLM 事实核查 → T3 评分（script_match + identity_clarity）→ 分差小才 T4 两两对比；低于 7.0 列入待重生成；另有相邻 beat 连贯性、整集分镜网格总评、pHash 重复构图、失败模式登记表、每次尝试的可回放 trace 与内容寻址产物库。
+- **空间契约**：由正向 + 反向两张场景参考生成四面墙的 must_preserve 清单（每墙 ≤ 8 项，带数量、尺度锁、禁变形），看不清的放 `coverage_gaps`，不编造。
+- **硬件与速度**：生成走 OpenAI 兼容网关（云）；本机跑服务与 3GS 查看器。
+- **价值**：QC rubric 与「只查事实矛盾、不确定就放行」的立场可直接指导我们的 `judge-take-prompt.md` 重写；空间契约是「正反打背景对不上」的系统解。ELv2 禁托管服务、要求 UI 标 Powered by——只借做法。
+- **评级**：**观望**（部署）/ **采用**（rubric 思路，转述不照抄）。
+
+#### chatfire-AI/huobao-drama 火宝短剧（★17 782，CC BY‑NC‑SA 4.0，head 24d4c17 · 2026‑11‑21）
+- **定位**：全 TypeScript 栈一站式短剧工具（Hono + Drizzle + Mastra，Nuxt 3，Electron 桌面版）。
+- **机制**：4 个 Mastra agent（script_rewriter / extractor / storyboard_breaker / prompt_generator），指令 = `workspace/prompts/*.md` + `workspace/skills/**/SKILL.md`（设置页可在线改）；任务统一进 `sys_task` 表；批量视频提示词按落库判成败。
+- **关键参数**：段落 8–15 s、2–4 子镜头、不跨场；总时长 = 字数 ÷ 500 字 / 分；段数 ≈ 总时长 ÷ 12 s ±20%；段长 ≥ 台词字数 ÷ 4.5 + 2 s；视频提示词每 3 s 一行。原生 MiniMax H3 适配器（官方 v2 接口，≤ 9 图 / 3 视频 / 3 音频 / 总 12，prompt ≤ 7000 字符，有首帧时省略 ratio）。
+- **硬件与速度**：云 API；拼接用内置 ffmpeg（libx264 + aac 直接 concat）。
+- **价值**：我们的段落口径本来就来自它，这次复核数值未变；新增的只有道具绑定规则与 H3 适配器。无 QC、无字幕、无配乐；非商用许可。
+- **评级**：**观望**。
+
+#### waooAI/waoowaoo（★14 959，Elastic License 2.0，head dfec20e · 2026‑09‑21）
+- **定位**：2026 年重构为「画布 + 右侧 Assistant」的预览版（Next.js + Temporal + Codex runtime），经 OpenRouter 用 GPT Image 2 / Nano Banana / Seedance / MiniMax H3 / H3 Max。
+- **机制**：6 个 creative skill，每种专业结果只用唯一对应的 skill；架构文档把计费审批（PlanSnapshot → quote → 逐次批准或预算授权 → Task）、失败治理（原生证据、操作 registry 是唯一重放裁判）、持久执行写成带编号的不变量。
+- **关键参数**：`video-direction/SKILL.md`（15 KB）——分段数最少优先；状态表入口 = 上一镜出口 + 本镜新变化；跨段接缝两侧必须有可见的景别变化；一个镜头最多一次情绪变化；同一人物在 ≥ 2 个独立生成镜头说话就先建稳定音色；时长口径中文 4–5 字 / 秒、并行内容取最长项不相加。
+- **硬件与速度**：云；预览版不含音乐与配音控件。
+- **价值**：导演 skill 的规则密度高、与模型无关，适合转述进我们的 `02-storyboard.md`；「受理结果未知禁止重提」「批量是一次计划，失败项续跑不重收费」适合写进提交脚本的设计原则。
+- **评级**：**观望**（产品）/ **采用**（规则，转述）。
+
+#### HBAI-Ltd/Toonflow-app（更新；★22 423，MIT，head eecf515 · 2026‑11‑20；docs/09 写于 10‑31 的 v2.0.9）
+- **变化 1**：`packages/providers/` 只剩 `index.ts` + `types.d.ts`，docs/09 引用的 `src/media/metaso.ts`、`compshare.ts` 已不在仓库；供应商接口多了可选钩子 `getPrice` / `getBalance` / `saveTaskData` + `resumeTask`（报价、余额、异步任务恢复）。docs/09 §3–4 的文件路径需按此更正，「复制 metaso.ts 改 baseUrl」的做法要改成从已安装供应商或接入助手生成。
+- **变化 2**：`packages/skills/workflow` 元数据仍是 v2.7.0（主 SKILL.md 1 406 行，仍是 Seedance 路由，全文无 H3），references 重排为 assets / canvasExecution / sourceAndScript / stateAndDelivery + methods/×4。
+- **docs/09 没展开、这次值得记的两块**：A5「世界坐标 + 画面坐标」双层站位与 A8「先判定相邻段关系再校验」（§3.3）；`stateAndDelivery.md` 的状态四表与三条纪律——确认绑定历史快照、提示词版本与结果版本分开、不用计划末态冒充实际末态。
+- **仍然没有**：内置 ComfyUI 供应商、H3 提示词方法、拼接 / 字幕 / QC。
+- **评级**：维持 docs/09 的结论——**试用**（当有人值守的画布前端）。
+
+#### 其余平台（各取一条可用的东西）
+- **ChrisChen667788/wind-comic**（★722，MIT，head d6fe509 · 2026‑11‑21）：8 角色 agent + 7 引擎（云）。可用：**Segment retake**（8 s 里只重拍坏的 2 s，精确帧拼回、crf 17 只重编码一次、时长不变所以时间线不用重算）；节奏审计 v2 是纯函数（冲突曲线斜率 + 峰位 + 突出度 → escalating / flat / front‑loaded / no‑climax，定位拖沓段，前三分之一单独审）；失败镜头降级为**带标签的** animatic 而不是冒充视频的静图。评级：**观望**（借做法）。
+- **MemeCalculate/moyin-creator 魔因漫创**（★4 865，AGPL‑3.0 + 商业，head 7e5c565 · 2026‑08‑27）：Electron，五板块到 Seedance 2.0 多镜头合并叙事。可用：6 层身份锚点（辨识标记必填 2–3 个且精确到位置、Hex 色彩锚）；场景多视角库 + `viewpoint-matcher`（先关键词后 AI，把每个镜头配到 dining / sofa / window / entrance…视角变体）。评级：**观望**。
+- **alibaba/lumenx**（★1 500，MIT，head f2a02e2 · 2026‑08‑11）：全链路漫剧，模型走 DashScope / MuleRun。可用：声明式模型目录 `config/model_catalog/families/*.yaml`；系列级设计文档（Series 优先、Inherit + Override、persona、跨集 Reconcile、「上回书说到」面板）。评级：**观望**。
+- **Forget-C/Jellyfish**（★7 282，Apache‑2.0，head a967819 · 2026‑04‑20）：LangChain 多 agent 做剧本理解与镜头准备，「候选 → 人工 accept / ignore → shot ready」；`entity_merger` 重试时带上次结果与冲突解法并保持 ID 稳定，`variant_analyzer` 出服装时间线。7 月后未更新。评级：**跳过**。
+- **xuanyustudio/LocalMiniDrama**（★2 506，MIT，head fa5f199 · 2026‑11‑20）：exe 一键的 8 步流水线，「本地」指数据本地，模型全是云；ComfyUI 只能经 OpenAI 兼容代理出图。评级：**跳过**。
+- **storytold/artcraft（★41 844）、yi1108/printfilm（★7 208）、BigBanana‑AI‑Director、ai‑fusion‑video** 等：只进目录，未读源码。
+
+### 4.2 Agent skill 套件
+
+#### Emily2040/seedance-2.0（★8 266，MIT，head 4668457 · 2026‑09‑27，seedance‑sequence 子 skill v6.7.0）
+- **定位**：Seedance 专用的 1 主 + 28 子 skill，但 v6 的「序列编译器」部分与模型无关：5 个 JSON Schema（project‑state / clip‑contract / take‑review / prompt‑spec / generation‑run）+ lint / 连续性链检查脚本 + 126 个 eval。
+- **机制**：先规划整片再一次只编译下一条未决 clip；每条 clip 有契约（已发生 / 本条只做 / 留给后面、计划起止状态、连戏锁、允许变化）；生成后必须拿到成片或末帧，记录**实际**起止状态并裁决 accept / accept_with_deviation / repair / reject，才编译下一条。
+- **关键参数**：场 = 重锚单位；`max_chain_depth` 默认 2、硬顶 3；负载分 S = 时长 ÷（节拍数 + 负载），≥ 3.0 安全、< 2.0 建议拆（作者自定启发式，自注未经渲染校准）；给了末帧时 agent 自己读状态，最多追问三件静帧看不到的事（未完成的运动、运镜相位、音频相位）；没从像素读到的东西不得以中 / 高置信写进 observed 状态。
+- **硬件与速度**：纯文本 skill。
+- **价值**：我们的 `end_state` / `continuity` 只有计划值，这套「计划 vs 实拍」双字段 + 观测诚信规则是补它的现成蓝本；链深度上限比我们写的「≤ 4 段」更保守（它面向 Seedance，H3 上取 2–3 还是 4 需自测）。
+- **评级**：**采用**（schema 与流程）。
+
+#### OpenMontageInc/OpenMontage（更新；★82 034，AGPL‑3.0，head 2e003e6 · 2026‑11‑15；docs/12 §9 写于 11‑02）
+- **变化**：仓库迁到 OpenMontageInc 组织；新增 `backlot/`（只读本地看板：监听 `projects/<id>/`，阶段点亮、剧本页、分镜胶片条随资产生成填充、花费与决策，只绑 127.0.0.1）；`tools/video/h3_max_video.py`（fal 的 H3 Max，注明与 MiniMax H3 是两回事）。本地 H3 仍是 `comfyui_video.py` 的 `minimax_h3_local`，要自带导出的 API 工作流。
+- **docs/12 没展开的 schema**：`checkpoint`（status 含 `awaiting_human`，`checkpoint_policy: guided / manual_all / auto_noncreative`，`cost_snapshot`）、`review`（findings 带 severity 与 disposition）、`final_review`（必须证明看过渲染结果：technical_probe / visual_spotcheck / audio_spotcheck / promise_preservation / subtitle_check / transcript_comparison，`recommended_action` 六选一）。`pipeline_defs/cinematic.yaml` 每阶段声明 `human_approval_default` 与 `success_criteria`，`budget_default_usd: 2.00`。
+- **lib**：`slideshow_risk.py`（6 维 0–5，< 2.0 strong）、`variation_checker.py`（出资产前查分镜计划的重复模式）、`delivery_promise.py`（承诺在 proposal 锁定，兑现不了就停下来问）。
+- **评级**：维持 docs/12——对白短剧**观望**；`final_review` 的结构值得照着做一份我们自己的终审工件。
+
+#### openfilm/openfilm（★8 788，MIT + 商标条款，head a1b8d75 · 2026‑11‑19）
+- **定位**：把编程 agent 变成视频 agent，并配四个人机共改的编辑器（Screening / Edit / Canvas / Color）；偏素材与网页动效，不是生成式短剧。
+- **机制**：一部片 = 文件夹 + `film.html`；每个镜头是网页，唯一函数 `frame(t)` 对同一 t 恒出同一画面（确定性 → agent 可逐帧检查）；手改存 overrides。SKILL.md 只有 10 行，其余由 `npx -y openfilm@latest` 动态下发。
+- **关键参数**：NLE 导出 xmeml v4 + FCPXML 1.10；帧 = `round(t×fps)`；带 alpha 的图层渲染成 ProRes 4444；声音四个 stem。需 Node 22.2+ 与 ffmpeg。
+- **价值**：`nle.mjs` 是本簇唯一认真做 Premiere / DaVinci 出口的实现，规则可直接照着写一个最小 xmeml 导出器（我们只有一条视频轨 + 对白 + 配乐，比它简单得多）。
+- **评级**：**试用**（后期包装与 NLE 导出）。
+
+#### smixs/visual-skills（★726，CC BY 4.0，head 61a60d3 · 2026‑11‑06）
+- **定位**：两个 skill（video / image），卖点是「先戏剧后语法」。
+- **机制 / 参数**：场景公式（欲望 + 阻碍 + 空间几何 + 受控视线 + 剪辑节奏）；三细节律；三职责律；Murch 六律权重 51 / 23 / 10 / 7 / 5 / 4；14 栏镜头卡（含 Movement reason、Eye trace、Cut type）；节奏阶梯（例：Anxiety build 2, 1, 1, 0.5, 0.5, 0.3, pause, 1）；发稿前 6 问。
+- **价值**：给 `03-rhythm-audit.md` 和分镜 agent 增加「每镜为什么存在」的检查项；CC BY 可带署名引用。
+- **评级**：**采用**（规则）。
+
+### 4.3 学术多智能体
+
+#### HKUDS/ViMax（★12 983，MIT，克隆于 2026‑11‑21，最后推送 2026‑09‑30）
+- **定位**：idea2video / script2video / novel2video 的 agentic 框架，带 Agent Loop / TUI / Web UI。
+- **机制**：13 个 agent 类 + 显式 DAG；机位树、参考图选择、候选择优三件套（§2 链路 C、§3.3）；小说线先压缩、抽事件、RAG 取相关块（bge reranker）、再分场与全局角色。
+- **关键参数**：参考图 ≤ 8；idea 模式默认 1 场 3–5 镜；`variation_type` 决定只出首帧还是首尾帧；产物权威是会话工作目录，记忆文件只存用户偏好。
+- **硬件与速度**：全云（Veo / Seedance / Omni、Nano Banana / Seedream）。
+- **价值**：「借视频模型切机位」对 H3 尤其合适——H3 一次生成本来就能切镜，从母版首帧出一条 2 镜短片再收割第二镜首帧，就得到同空间的反打 / 特写首帧。
+- **评级**：**采用**（机位树与两段提示词，MIT 可引用）；系统本身**观望**。
+
+#### HITsz-TMG/Anim-Director · AniMaker（★267，无许可文件，head acb1212 · 2026‑01‑07）
+- **定位**：SIGGRAPH Asia 2025 论文代码，Director / Photography / Reviewer / Post‑Production 四 agent 出长篇叙事动画。
+- **机制**：MCTS‑Gen（每 clip 3 条初始候选 + 3 轮 UCT，用末帧预生成下一 clip，UCT = 2.0/(rank+1) + √(1/(child_count+1))·α，按配对分选路并复用预生成）；AniEval 14 项加权（动作完成 2.0 最高）。
+- **硬件与速度**：Vidu API / Wan2.1，评测栈含 DOVER、RAFT、DreamSim、人脸模型——重。
+- **价值**：证明「多候选 + 看下一段」比「多候选 + 只看本段」更对；但每 clip 约 6 次生成，在 4090 的 H3 上只适合续接链的关键节点做缩水版（top‑2 × 草稿档）。无许可，不能抄代码。
+- **评级**：**观望**（方法入规则）。
+
+#### ziplab/ATAS（★277，MIT，head 2a68274 · 2026‑11‑03）
+- **定位**：「整部片背后只保留一个持久世界」——每个镜头从世界状态投影出来，生成后重建、配准、校验通过才更新世界。
+- **机制**：World‑State Compiler + Scene Memory（静态几何）+ Event Memory（动态观测）+ Validated Updates；审片提示词对照原始剧本六项并返回每个角色的镜尾位置。
+- **硬件与速度**：几何服务（Pi3X + SAM3）要约 20 GB 空闲显存；视频走 DashScope。
+- **价值**：几何记忆对单卡 4090 不现实（H3 自己就占满），但审片提示词（MIT）和「已采纳观测不可变、修复有预算」可直接用。
+- **评级**：**观望**。
+
+#### HITsz-TMG/VideoClaw（原 FilmAgent 仓库，★1 915，MIT，head 16c1ce0 · 2026‑08‑26）
+- **定位**：FilmAgent（Unity 3D 里的导演 / 编剧 / 演员 / 摄影互评，SIGGRAPH Asia 2024）已归档；现役是 VideoClaw——OpenClaw skill 包一层本地 FastAPI + Next.js。
+- **机制**：6 阶段状态机，阶段 agent 统一接口 `process(input_data, intervention) → {payload, requires_intervention, completed}`；SKILL.md 规定 7 个停点，「每个阶段的产物都必须展示给用户」。
+- **价值**：阶段接口与停点表是「有人值守」模式的最小实现；模型全云（Wan / Kling / Seedream）。
+- **评级**：**观望**。
+
+#### 其余学术仓库
+- **showlab/MovieAgent**（★380，无许可，2025‑03 后未更新）：分层 CoT + 每角色 bounding box + ROICtrl / ED‑LoRA。「LoRA + 布局框」路线的代表，已停更。**跳过**。
+- **lichao-sun/Mora**（★1 589，2024‑10 后未更新）、**HVision‑NKU/StoryDiffusion**（★6 501，2024‑09 后未更新）：2024 年方案，被多参考编辑模型与原生多镜头视频模型取代。**跳过**。
+- **HKUDS/VideoAgent**（★2 059，MIT，head f207987 · 2026‑07‑22）：理解 + 剪辑 + 二创，Agentic Graph Router 要求 Claude。对我们只有工具清单有用（seed‑vc 做音色转换，见 04）。**跳过**。
+
+### 4.4 库存素材 / 解说 / 图文流
+
+#### harry0703/MoneyPrinterTurbo（★144 903，MIT，head 92f6258 · 2026‑11‑21）
+- **定位**：主题 → 脚本 → 配音 → 素材 → 字幕 → 配乐 → 剪辑 → 发布的事实标准；四个入口（AI Agent 读 Skill 文档 / WebUI / API / CLI）。
+- **机制**：`task.py` 六步 `generate_script → generate_terms → generate_audio → generate_subtitle → get_video_materials → generate_final_videos`；音频决定时长，素材循环或裁剪去配；素材既可库存（Pexels / Pixabay / Coverr），也可 AI 视频（秘塔 MiniMax H3 文生 768P / 2K 4–15 s、Seedance、Veo 3.1 等）。
+- **关键参数**：字幕来自 TTS 时间戳或本地 Whisper；Edge TTS 支持 `[pause: 2s]`；竖 / 横 / 方三种画幅。`docs/video-projects.md` 的本地工程 CLI（`revise / plan / render / status`）：不可变 revision，产物只在「依赖 + SHA‑256 都匹配」时复用，输出按时间线排序的 `scene_clips`。
+- **硬件与速度**：默认无 GPU 需求；可接本地 SDXL 图片服务。
+- **价值**：对白短剧不对口（没有身份 / 空间一致性与口型问题）。可借的是「改一场不重渲整集」的依赖哈希复用。
+- **评级**：**跳过**（短剧）；做解说 / 口播类内容时**采用**。
+
+#### ATH-MaaS/Pixelle-Video（★30 402，Apache‑2.0，head 848b054 · 2026‑06‑14）
+- **定位**：阿里系「AI 全自动短视频引擎」：文案 → 配图规划 → 逐帧处理（TTS + 配图 / 视频 + HTML 模板合成）→ 合成。
+- **机制 / 参数**：能力原子化，默认走**本地 ComfyUI**（`http://127.0.0.1:8188`）：`workflows/selfhost/` 里是 API 格式工作流（`image_flux` / `image_qwen` / `tts_index2` / `video_wan2.1_fusionx` / `analyse_image`…），参数用节点标题 DSL（`$prompt.value!`、`$width.value`、`$ref_audio.audio`）标注，`comfykit ≥ 0.1.12` 执行；同一套 JSON 可切到云。
+- **硬件与速度**：取决于所挂工作流；Windows 一键包。6 月后未推送。
+- **价值**：标题 DSL 是「换工作流不改代码」的轻量约定；内容形态是图文解说，不是对白剧。
+- **评级**：**观望**。
+
+#### linyqh/NarratoAI（★11 898，MIT，head 29a11b6 · 2026‑10‑25）
+- **定位**：影视 / 短剧**解说**与混剪：抽帧 → VLM 理解 → 解说词 → TTS → 剪原片 → 字幕 → 可选 AI 配乐。
+- **机制 / 参数**：TTS 支持 IndexTTS‑1.5 / 2（克隆、情感控制）、OmniVoice；`jianying_draft_builder.py` 手写剪映草稿 JSON，素材拷进草稿并用剪映内置路径占位符；待办里「主角人脸匹配」未做。
+- **价值**：手写草稿是不依赖第三方库出剪映工程的参考实现。
+- **评级**：**跳过**（生成式短剧）。
+
+`alecm20/story-flicks`（★2 555，2025‑03 后停更）与 `FujiwaraChoki/MoneyPrinter`（★14 230）是这条线的早期形态，**跳过**。
+
+### 4.5 拉片 / 复刻
+
+#### JuneYaooo/rea-video（★11 555，Apache‑2.0，head 4d98dd8 · 2026‑11‑20）
+- **定位**：把任意视频逐镜头逆向成「怎么做出来的 + 怎么复刻」。
+- **机制**：切镜 + 分轨 → 取证（帧节奏、传感器噪声、整幅是否平面运动、AIGC 元数据标签；看手 / 文字 / 物理；听 BPM / 调性）→ 硬证据压过「看起来像」→ 按目标模型能力规划复刻批次。自报判定准确率 98–99.6%（调优集 15 条、holdout 16 条；平台二压视频降到 88.6%，加视觉复核回到 99%+）。
+- **关键参数**：能力矩阵 `rea_video/capabilities/`（原语 × 模型，每条带置信度与核对日期）；动作 / 舞蹈镜单列「动作驱动」，在动作停顿且靠近拍点处切成约 10 s 驱动段；选型：单人全身一镜到底 → Kling 动作控制，多人 / 有运镜 → Seedance 2.5 全能参考，**想本地跑 → Wan Animate**，Q 版 / 动物 → DWPose 骨骼 + Wan VACE，神态是看点就直接参考原片。
+- **与 H3**：README 称三条复刻样片用**自托管 MiniMax H3**——原镜头作动作参考、换了元素的关键帧（gpt‑image‑2）管外观（经姊妹仓库 capsule‑cinema，未读）。
+- **价值**：补我们「拉片复刻」环节（docs/12 提到 OpenMontage 的参考视频拆解），而且能力矩阵是「H3 做不好时换什么」的现成查表。
+- **评级**：**试用**。
+
+`hypit-ai/hypit`（★30 919，改版 Apache‑2.0 禁多租户）：SVML 工作流语言，时间锚在字词上，面向投放广告 / UGC / 口播。**跳过**。
+
+### 4.6 剪辑 agent 与工程导出
+
+#### browser-use/video-use（★31 387，MIT，head 43cfc56 · 2026‑10‑08）
+- **定位**：一个 26 KB 的 SKILL.md + 6 个 helper，让编程 agent 用对话剪实拍素材。
+- **机制**：LLM 只读「短语级打包转写」`takes_packed.md` 选区，需要时才用 `timeline_view.py` 出胶片条 + 波形图看画面；产出 `edl.json`，`render.py` 逐段抽取 → 拼接 → 叠加 → 字幕。
+- **关键参数**：12 条硬规则（§3.7 第 11 条）；静音 ≥ 400 ms 是最干净的切点、< 150 ms 不安全；自检对**渲染结果**每个切点 ±1.5 s 看图、ebur128 量响度，最多 3 轮；要发布的片子另起一个只挑毛病的 critic 子 agent。
+- **硬件与速度**：无 GPU；ASR 默认 ElevenLabs Scribe（云，可换本地逐词 ASR）。
+- **价值**：H3 的每个 take 就是一条带对白的「实拍素材」——多 take 择优（"pick the best take of each beat"）与切点规则原样适用。
+- **评级**：**采用**（规则与 EDL 形态）。
+
+#### kajisho5/ffmpeg-skill（★9 073，MIT，head 636e749 · 2026‑11‑21）
+- **定位**：给编程 agent 的本地剪辑工具箱：42 个 FFmpeg 工具 + 机器可读契约 + 契约派生的 MCP。
+- **机制 / 参数**：十条设计原则（先 probe、能无损就无损、先 plan 再 render、`doctor` 探测 ffmpeg 能力、Unknown ≠ missing、改了画面必须 `look.py` 看图、不覆盖输入）；`--plan FILE` 把 dry‑run 存成带输入指纹的计划，输入变了就拒绝执行；`render.py --cache DIR` 只重跑变了的阶段；`loudness.py` 默认 −14 LUFS / −1 dBTP；`cut.py --smart` 只在切点到下一关键帧之间重编码；`waveform.py --at` 出切点波形图。
+- **硬件与速度**：纯 CPU，Python 3.10+ 标准库。
+- **价值**：我们缺的响度、联络表、切点波形、安全区、节拍网格它都有且带测试——与其自己写一堆 ffmpeg 包装，不如把它当后期依赖。
+- **评级**：**采用**（作可选后期工具箱）。
+
+#### GuanYixuan/pyJianYingDraft（★4 958，Apache‑2.0，head 1e22847 · 2026‑10‑14）与 pyCapCut（★779）
+- **定位**：用 Python 生成剪映 / CapCut 草稿。
+- **机制 / 参数**：`DraftFolder` + 轨道 + `VideoSegment / AudioSegment / TextSegment`，支持关键帧、转场、导入 `.srt`；剪映 5.9 与 10.8 可用；模板模式在新版需 `fallback_loader`；自动导出仅剪映 ≤ 6 且仅 Windows（uiautomation 控窗口）。pyCapCut 验证版本 8.2.0 / 9.5.0.4050，无自动导出。
+- **实战套路**（konlu/story‑studio，用 `pyJianYingDraft==0.3.1`）：先建暂存工程 → 素材拷进 materials 并按内容哈希命名 → 同时写 `draft_content.json` 与内容一致的 `draft_info.json` → 再提交到草稿目录；默认拒绝同名草稿；"结构检查不等于已经播放"。
+- **价值**：把 H3 成片交给人做最后 10% 的手工精修（配乐、花字、调色）的最短路径；澳洲用户用 CapCut 应选 pyCapCut。库本身的更多细节见 04。
+- **评级**：**试用**。
+
+#### appariciojunior/video-editor-skills（★468，许可未识别，head 6709678 · 2026‑10‑23）
+- **定位**：12 个纯文本 skill，教 Claude Code 在 DaVinci Resolve **Studio** 21 里做初剪（免费版没有外部脚本）。
+- **关键参数**：只增不改；每次写入读回验证（"Many setters return True and do nothing"）；`AppendToTimeline` 的 endFrame 开区间；`Timeline.ApplyGradeFromDRX` 在 21 失效要改走 `item.GetNodeGraph()`；外部脚本渲染只有 `StartRendering([job], False)` 才启动、目录不能带空格；脚本导入 SRT 会被追加到时间线末尾，带起止帧会让 21.1 崩溃。
+- **价值**：如果成片在 Resolve 里收尾，这份踩坑表能省一天。
+- **评级**：**试用**（仅当用 Resolve Studio）。
+
+#### 其余
+- **FireRedTeam/FireRed-OpenStoryline**（★3 723，Apache‑2.0，head c9e9452 · 2026‑07‑31）：素材驱动的剪辑 agent（搜素材、分组理解、文风迁移文案、BGM 卡点）。可用：2026‑04 加的「AI 转场」= 前段末帧 + 后段首帧 + 一句描述做首尾帧生成（自注成本高、不可预测）；「把一次剪辑流程存成 Skill 复用」。**观望**。
+- **Hommy-master/capcut-mate**（★2 191，Apache‑2.0）：FastAPI 的剪映草稿自动化 + Coze 插件 + 云渲染，是 Coze / n8n 工作流里「最后一步出剪映草稿」的常用后端。**跳过**（我们直接用库）。
+- **Huanshere/VideoLingo**（★19 339，Apache‑2.0，head d2d5a04 · 2026‑11‑13）：逐词 ASR（Qwen3‑ASR + ForcedAligner）→ NLP + 语义断句 → 术语表 + 直译 / 反思 / 意译 → 字幕切分 → 配音（先估读时长，超了让 LLM 缩句，再在速度区间内变速）→ 合成；每步可暂停续跑、LLM 响应缓存。README 自列局限：不自动按说话人分配音色。出海做多语言版时用。**观望**。
+
+### 4.7 ComfyUI agent / MCP / 本地制片台
+
+#### benjiyaya/Calliope（★310，MIT，head 32bcd92 · 2026‑11‑15）
+- **定位**：local‑first 的 story‑to‑video 工作室（FastAPI + Svelte + SQLite，带 Windows `.bat`），**本簇唯一原生支持「本地 ComfyUI + MiniMax H3」的制片台**；docs/13 只收过作者的两个 H3 提示词仓库，没收它。
+- **机制**：§2 链路 D。六角色 agent 可各配 LLM（主 agent 与 planner 用强云模型、子 agent 用本地快模型）；纯 HTTP 驱动 ComfyUI，从不读写其本地目录；工作流按节点标题角色标签登记；H3 六段式由场景数据确定性编译，LLM 改写是可选的显式动作。
+- **关键参数**：clip 约 5–10 s；轮询超时默认 1 800 s；Motion‑Context 续接：latent 存固定槽、重渲某 clip 会把续接它的 clip 标 stale、分辨率必须一致、续接工作流关 Spectrum；视频输入续接（kat3ri Extend）起步 `context_frames 2 / ref_spacing 1–2 / ref_decay 0.3 / ref_ramp 3–4`；成片 0.5 s 交叉淡化、续接处硬切。附 20 份示例工作流（H3 R2V 1–5 参考、Turbo I2V / T2V、Krea2 角色板）与 7 个内置 skill。
+- **硬件与速度**：用你自己的 ComfyUI；仓库没给基准。
+- **注意**：它用的 Motion‑Context 与 kat3ri Extend 两个续接包，docs/13‑01 第 24 条记过「不要同时安装两个会替换 `PackedLayout.__init__` 的包」——照它的示例装之前先按那条核对。
+- **价值**：可直接试跑的参照实现；`h3-continuation-prompt`（MIT）与连续性台账可搬。星数少、项目新（2026‑07 建）。
+- **评级**：**试用**。
+
+#### Comfy-Org/comfy-mcp（★364，AGPL‑3.0+ / 商业双许可，head 105dca2 · 2026‑11‑19，v0.11.0）
+- **定位**：官方本地 MCP（前身 comfy‑local‑mcp），comfy‑cli 的薄封装，42 个工具。
+- **机制 / 参数**：§3.6。参数命名统一（`workflow_path / out_dir / media_path / prompt_id`）；`server_info` 的 hardware 块用于分档——独显 ≥ 24 GB 本地生成是好默认；Windows 便携包默认 8188、ComfyUI Desktop 默认 8000；ComfyUI 无鉴权，`--listen` 到非回环地址前必须先问用户。
+- **价值**：`validate_workflow`、`vary_workflow`、`preview_media`、`free_memory` 四件正好是我们 `comfy_submit.py` 没有的；作为工具使用不受 AGPL 传染。
+- **评级**：**采用**（装了 comfy‑cli 的环境优先用；否则回落到我们的零依赖脚本）。
+
+#### artokun/comfyui-mcp（★944，MIT，head f4c4077 · 2026‑11‑19）
+- **定位**：第三方「agent 原生的 ComfyUI 控制面」：38 工具 + 42 skill + 11 斜杠命令 + 4 子 agent + 3 钩子 + 侧边栏 Agent Panel（任意 LLM，含 Ollama）。
+- **机制 / 参数**：入队前 VRAM watchdog（空闲 < 1 GB 告警）；WebSocket 进度监视脚本；`save_workflow lock / verify_lock` 记录每个模型的 SHA‑256 与每个节点包的 git commit 并报告漂移；自带 `minimax-h3-video` skill（强调本地节点与付费 Partner 节点不可混用、官方模板包在 subgraph 里只改外露 widget、官方提示词指南只链接不抄）。
+- **价值**：出处锁是「可复现」铁律的落地工具；H3 skill 可作第二意见。
+- **评级**：**试用**。
+
+#### Blizaine/Maestro（★990，WanGP 非商用评估许可 1.1，head ae94a2d · 2026‑11‑10，v4.1.1）
+- **定位**：基于 Wan2GP 的一体化本地工作室（Pinokio 安装，Windows / Linux，仅 NVIDIA），**不经 ComfyUI** 跑 H3 / LTX / Wan / Flux / Qwen；Studio / Director / Editor 三件套。
+- **机制 / 参数**：Director 用本地 Gemma 4 规划镜头；内置 MCP 的 `inspect_take`（全软解 + 5 帧联络表，明说不证明动作连续与台词）→ `record_take_review` → `polish_take`（须先建 polish budget，先扣后发）；`finish_film` 默认 music −18 dB / effects −9 dB / narration 0 dB；H3 参考音频分六种角色（忽略 / 音频参考 / 精确保留时间线 / 音色参考 / 风格 / 音效）。
+- **硬件与速度**：最低 6 GB，推荐 3090 / 4090 / 5090 + 32 GB 内存 + 150–500 GB 磁盘；自报 24 GB 卡「缓存后短片约 1–3 分钟」（模型、分辨率、时长口径未给，未验证）。
+- **价值**：不想维护 ComfyUI 节点图时的备选；软件本身非商用（产出可商用需署名）。
+- **评级**：**试用**（备选栈）。
+
+#### 其余
+- **ATH-MaaS/ComfyUI-Copilot**（★5 587，MIT，2026‑09‑11）：README 置顶公告官方 API 已停、节点查询 / 推荐 / 工作流生成将下线，需自带 Key。**观望**。
+- **ATH-MaaS/Pixelle-MCP**（★1 131，MIT，2025‑12 后未推送）：Workflow‑as‑MCP‑Tool。**观望**。
+- **joenorton/comfyui-mcp-server**（★412，Apache‑2.0）：图像 / 音频为主，有 `regenerate(asset_id)` 与资产出处。**跳过**。
+- **ConstantineB6/comfy-pilot**（★232，MIT）：让 Claude Code 直接改浏览器里的图，适合搭工作流而不是批量出片。**观望**。
+
+### 4.8 n8n / Dify / Coze 模板与商业制片台（只读公开资料）
+
+- **n8n**：`lucaswalter/n8n-ai-automations`（★1 696）里的视频模板是「LLM 写多场景脚本 → 人工批准 → Veo 3 / Sora 2 → 拼接」，另有「把任意 Reel / TikTok 逆向成逐镜头提示词」（Apify + Gemini）；`poptechstudio/ai-cinema-studio-engine`（★18）把它做成五层（编排 + RAG 摄影预设 → 生成 → 虚拟制片 → 音频 → 后期 → 分发）。
+- **Coze**：`tianfeng66/coze-anime-biography-workflow`——`人物输入 → 分镜脚本 → 人物参考图 → 逐镜头首帧图 → 10 秒视频 → 旁白 → 音画合并 → 字幕 → 拼接`，批处理最多 6 镜、并发 2，README 自注「草稿 / 未实跑验证」。
+- **Dify**：`svcvit/Awesome-Dify-Workflow`（★10 802）是通用 DSL 合集，视频类寥寥。
+- 结论：这三类平台上的模板都是链路 E 的低代码版，**没有跨镜一致性与审片环节**，对本地 H3 短剧没有可搬的东西；`capcut-mate` 是它们常用的出草稿后端。**跳过**。
+- **Higgsfield**（官方博客 2026‑07‑29《How to Make a Short Film With AI》与帮助中心 2026‑09‑12）：脚本与镜头表（2 分钟短片 15–25 镜）→ Soul ID（每个常驻角色 20+ 张多角度照片先训练）→ Popcorn 分镜（≤ 4 张参考图、4 / 6 / 8 帧序列）→ Cinema Studio 逐镜显式设 genre / lighting / lens / focal length / aperture → 分场景做音频 → 组装。经验法则：**先生成最难的那一镜**，它立得住整场基本都立得住；类型 / 灯光 / 镜头每场只锁一次；走位在分镜阶段改，生成后再改就得重拍；一致性在 30 s 以后明显下降所以短片段首尾帧相接。5 分钟短片估价约 150–160 美元（官方文章自报）。
+- **LTX Studio**（官网与帮助中心，访问日 2026‑11‑21；部分页面抓取失败）：脚本自动抽取角色 / 物件 / 地点存成 **Elements**，之后在镜头提示词里用 `@名字` 引用；Storyboard → 视频 → 时间线一条龙；**Retake** 选中已有镜头的一段只重生成该段；导出 MP4 / PDF pitch deck / XML。
+- **Flova**（PRNewswire 2026‑08‑24 通稿，公司自述未验证）：agent 承接脚本（最长 30 万字符）、分镜、资产管理、修订与粗剪，Seedance 2.5 出片；Skill Hub 号称 100+ 可复用「制作手册」。
+- 三家共同点与开源侧一致：**资产一次定义处处 `@` 引用 + 分镜先行 + 局部重拍**。局部重拍（LTX Retake、wind‑comic Segment retake）是开源流水线里普遍缺的一环。

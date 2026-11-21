@@ -77,6 +77,7 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 | `scripts/comfy_submit.py <wf.api.json> --set … --batch N --poll 20 --free-every 3 --out takes/…` | 向本地 ComfyUI 提交 API 格式工作流、上传媒体、按 seed 抽卡、下载产物、写 `run.json`；轮询 ≥ 20 s，可定期 `/free` 释放显存 |
 | `scripts/qc_probe.py <mp4…> --expect-seconds 10 --expect-size 1344x768 --freeze-tail 1.0` | ffprobe 技术 QC：分辨率/时长/帧率/音轨/峰值 > −1 dB/冻结 > 1 s/黑场 > 0.25 s（排除声明的 1 s 定格尾） |
 | `scripts/contact_sheet.sh <mp4…>` | 4×3 联络表，供视觉 QC |
+| `scripts/identity_gate.py --episode ep.json --targets "takes/**/*.mp4" --out qc/identity` | 真人脸身份门禁（YuNet + SFace，CPU 可跑，首次自动从 HuggingFace 下模型）：逐帧把脸指派给本段应出现的角色，报换人 / 克隆脸 / 多出的人，并先自检角色之间是否撞脸；默认只警告，`--strict` 才拦截。动漫脸检测不到，改用 `assets/judge-take-prompt.md` |
 | `scripts/extract_tail_frame.py <mp4> --out tail.png --trim-freeze 1.0` | 截末帧（duration−0.2 s）作下一段首帧/参考，并剪掉声明的 1 s 定格 |
 | `scripts/lint_prompt.py <prompt.txt> --seconds 10 --images 4 --audios 1` | 提示词机检：字段顺序、时码递增与 1.2 s 下限、17k+5 有效时长、`<d>` 配对、标签先定义后引用、retention 关键词、否定句、静止句、全角符号、字数 |
 | `scripts/fetch_official_guides.sh` | 拉取 MiniMax 官方提示词指南原文作对照 |
