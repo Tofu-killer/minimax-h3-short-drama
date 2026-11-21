@@ -87,6 +87,12 @@ class Segment:
     end_state: str = ""             # named end state for the next segment
     hook_type: str = ""             # hook / setup / turn / cliffhanger
     negatives: str = ""             # "no other people, no signage"
+    # -- written back after generation (observe_take.py); optional ------------------------------------
+    status: str = "planned"         # planned | generated | accepted | accepted_with_deviation | rejected
+    observed_end_state: str = ""    # where the ACCEPTED take really ends, read from its frames - never copied from the plan
+    observation_confidence: str = ""   # low | medium | high
+    accepted_take: Optional[dict] = None   # {"path", "sha256"}
+    accepted_deviations: list[str] = field(default_factory=list)   # what differs from the plan and was accepted anyway
 
 
 @dataclass
@@ -158,6 +164,104 @@ def dump_episode(ep: Episode) -> str:
     return json.dumps(asdict(ep), ensure_ascii=False, indent=2)
 
 
+# ---------------------------------------------------------------- hand-off between segments
+
+OBSERVED = "@observed"
+
+
+def effective_continuity(ep: "Episode", seg: "Segment", allow_planned: bool = False) -> tuple[str, str]:
+    """The text that opens a segment, and where it came from.
+
+    A `continuity` that starts with "@observed" means: open from where the previous segment's ACCEPTED take
+    really ended (its observed_end_state), not from where the plan said it would end. Anything after
+    "@observed" is appended (wardrobe / light notes). Returns (text, "authored" | "observed:<id>" | "planned:<id>").
+    Raises ValueError when the previous take has not been observed yet (unless allow_planned, for drafts).
+    """
+    raw = (seg.continuity or "").strip()
+    if not raw.startswith(OBSERVED):
+        return raw, "authored"
+    extra = raw[len(OBSERVED):].strip()
+    i = next(k for k, x in enumerate(ep.segments) if x is seg)
+    if i == 0:
+        raise ValueError(f"segment {seg.id}: '{OBSERVED}' needs a previous segment")
+    prev = ep.segments[i - 1]
+    if prev.observed_end_state.strip() and prev.status.startswith("accepted"):
+        base, src = prev.observed_end_state.strip(), f"observed:{prev.id}"
+    elif allow_planned and prev.end_state.strip():
+        base, src = prev.end_state.strip(), f"planned:{prev.id}"
+    else:
+        raise ValueError(f"segment {seg.id} opens from the observed end of {prev.id}, which has no accepted take with an "
+                         f"observed_end_state yet - accept a take of {prev.id} and run observe_take.py "
+                         f"(or build with --allow-planned for drafts)")
+    text = f"The clip opens from this state: {base.rstrip('.')}."
+    return (text + " " + extra).strip(), src
+
+
+def shot_spans(seg: "Segment") -> list[tuple["Shot", float, float]]:
+    """[(shot, start, end)] with ends taken from the next shot's start / the segment duration."""
+    out = []
+    for i, sh in enumerate(seg.shots):
+        end = seg.shots[i + 1].start if i + 1 < len(seg.shots) else float(seg.duration)
+        out.append((sh, float(sh.start), float(end)))
+    return out
+
+
+def _framing_class(framing: str) -> str:
+    f = framing.lower()
+    for key, cls in (("extreme close", "extreme close-up"), ("medium close", "medium close-up"), ("insert", "insert"),
+                     ("close-up", "close-up"), ("close up", "close-up"), ("closeup", "close-up"),
+                     ("medium wide", "medium wide"), ("medium long", "medium wide"), ("cowboy", "medium wide"),
+                     ("medium", "medium"), ("mid shot", "medium"), ("two-shot", "medium"),
+                     ("full shot", "wide"), ("wide", "wide"), ("long shot", "wide"), ("establishing", "wide"), ("aerial", "wide")):
+        if key in f:
+            return cls
+    return "other"
+
+
+def rhythm_warnings(ep: "Episode") -> list[str]:
+    """Pure arithmetic on the storyboard - no model involved. Every item is advice, not an error."""
+    out: list[str] = []
+    all_shots, events_by_t = [], []
+    offset = 0.0
+    for seg in ep.segments:
+        spans = shot_spans(seg)
+        durs = [e - s for _sh, s, e in spans]
+        n_lines = sum(len(sh.dialogue) for sh in seg.shots)
+        events = len(seg.shots) + n_lines
+        load = seg.duration / events if events else seg.duration
+        if load < 2.0:
+            out.append(f"segment {seg.id}: {events} shots + lines in {seg.duration}s ({load:.1f}s each) - overloaded; "
+                       f"split the segment or drop a beat")
+        if len(durs) >= 3 and max(durs) - min(durs) <= 0.5:
+            out.append(f"segment {seg.id}: all {len(durs)} shots last about {sum(durs) / len(durs):.1f}s - even pacing reads "
+                       f"as mechanical; give the key shot more time and shorten a reaction")
+        for sh, s0, e0 in spans:
+            chars = sum(len(re.sub(r"\s", "", d.text)) for d in sh.dialogue)
+            if chars and chars > 3 * (e0 - s0) + 1:
+                out.append(f"segment {seg.id} shot {sh.index}: {chars} characters in a {e0 - s0:.1f}s shot "
+                           f"(about {3 * (e0 - s0):.0f} fit) - the line will be rushed or cut off")
+            all_shots.append((seg.id, sh.index, _framing_class(sh.framing)))
+            events_by_t.append(offset + s0)
+            events_by_t += [offset + s0] * len(sh.dialogue)
+        offset += seg.duration
+    run = 1
+    for (a, b) in zip(all_shots, all_shots[1:]):
+        run = run + 1 if (a[2] == b[2] and a[2] != "other") else 1
+        if run == 3:
+            out.append(f"segment {b[0]} shot {b[1]}: third {b[2]} shot in a row - change the shot size")
+    total = offset
+    if total >= 24 and events_by_t:
+        first = sum(1 for t in events_by_t if t < total / 3) / (total / 3)
+        rest = sum(1 for t in events_by_t if t >= total / 3) / (total * 2 / 3)
+        if rest > 0 and first < 0.8 * rest:
+            out.append(f"the first third has {first * 10:.1f} shots + lines per 10s, the rest {rest * 10:.1f} - the opening is "
+                       f"slower than what follows; tighten the first {total / 3:.0f}s")
+    segd = [seg.duration for seg in ep.segments]
+    if len(segd) >= 4 and len(set(segd)) == 1:
+        out.append(f"all {len(segd)} segments are {segd[0]}s long - vary segment length with the content")
+    return out
+
+
 # ---------------------------------------------------------------- validation
 
 def validate_episode(ep: Episode) -> list[str]:
@@ -226,6 +330,22 @@ def validate_episode(ep: Episode) -> list[str]:
             problems.append(f"segment {seg.id}: end_state is empty; the next segment cannot pick up positions")
         if i > 0 and not seg.continuity.strip():
             problems.append(f"segment {seg.id}: continuity is empty; positions/wardrobe will drift from the previous segment")
+        if seg.continuity.strip().startswith(OBSERVED):
+            if i == 0:
+                problems.append(f"segment {seg.id}: '{OBSERVED}' needs a previous segment")
+            elif ep.segments[i - 1].scene_id != seg.scene_id:
+                problems.append(f"segment {seg.id}: WARN '{OBSERVED}' points at {ep.segments[i - 1].id}, which is a different scene")
+        if seg.status not in ("planned", "generated", "accepted", "accepted_with_deviation", "rejected"):
+            problems.append(f"segment {seg.id}: unknown status {seg.status!r}")
+        if seg.status.startswith("accepted") and not seg.observed_end_state.strip() and i + 1 < len(ep.segments) \
+                and ep.segments[i + 1].scene_id == seg.scene_id:
+            problems.append(f"segment {seg.id}: WARN accepted but not observed - the next segment plays in the same scene; "
+                            f"run observe_take.py so it opens from where this take really ends")
+        if seg.status == "accepted_with_deviation" and not seg.accepted_deviations:
+            problems.append(f"segment {seg.id}: status accepted_with_deviation but accepted_deviations is empty")
+        if seg.observed_end_state.strip() and seg.observation_confidence == "low":
+            problems.append(f"segment {seg.id}: WARN observed_end_state has low confidence - look at the frames again before "
+                            f"the next segment relies on it")
         for sh in seg.shots:
             if len(sh.action.split()) < 8:
                 problems.append(f"segment {seg.id} shot {sh.index}: action is too short to be a start→change→end description")

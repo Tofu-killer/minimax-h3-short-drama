@@ -12,8 +12,9 @@ import re
 from dataclasses import dataclass
 
 from media import audio_item, image_item, text_item
-from storyboard import Dialogue, Episode, Segment, Shot
+from storyboard import Dialogue, Episode, Segment, Shot, effective_continuity
 
+ALLOW_PLANNED = False       # build_prompts.py --allow-planned: "@observed" may fall back to the PLANNED end state (drafts only)
 MAX_REF_IMAGES = 9
 MAX_REF_AUDIO = 3
 
@@ -192,7 +193,7 @@ def build_ref2va(ep: Episode, seg: Segment) -> BuiltPrompt:
     shots_txt = " ".join(_shot_sentences(ep, seg, sh, i == 0, subj_label, labels) for i, sh in enumerate(seg.shots))
     scene_lead = f"{seg.style}. {sc.description.rstrip('.')}." if not labels[sc.id].startswith("<") \
         else f"{seg.style}. The setting is {labels[sc.id]}."
-    continuity = fill(seg.continuity, labels).strip()
+    continuity = fill(effective_continuity(ep, seg, ALLOW_PLANNED)[0], labels).strip()
     if continuity and not continuity.endswith((".", "!", "?")):
         continuity += "."
     body = f"{scene_lead} {continuity + ' ' if continuity else ''}{shots_txt}"
@@ -246,7 +247,7 @@ def build_three_part(ep: Episode, seg: Segment) -> BuiltPrompt:
     if seg.mode in ("i2va", "fl2va"):
         anchor = (" The opening frame shown in <Picture 1> is preserved: appearance, clothing, position and set "
                   "layout stay as established.")
-    continuity = fill(seg.continuity, labels)
+    continuity = fill(effective_continuity(ep, seg, ALLOW_PLANNED)[0], labels)
     body = f"{seg.style}, {sc.description.rstrip('.')}.{anchor} {continuity + ' ' if continuity else ''}{shots_txt}"
     if seg.mode == "fl2va":
         body += " The shot settles into the pose, spacing and composition established by Picture 2 at the end."

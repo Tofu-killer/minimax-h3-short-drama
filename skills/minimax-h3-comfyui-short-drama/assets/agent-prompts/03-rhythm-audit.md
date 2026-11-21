@@ -1,6 +1,6 @@
 # 节奏与可行性审计 Agent
 
-在 `validate_episode.py` 通过之后、花 GPU 之前跑一次，拦截「尿点」和 H3 做不到的写法。
+在 `validate_episode.py` 通过之后、花 GPU 之前跑一次，拦截「尿点」和 H3 做不到的写法。先跑 `scripts/validate_episode.py <ep.json> --rhythm`：它用纯算术查出段内超载（每个镜头 / 台词不到 2 s）、各镜等长、连续三镜同景别、台词塞不进所在镜头、开场比后文慢——这些不需要 LLM；下面的提示词只负责算术查不了的东西（有没有新信息、钩子、H3 可行性）。
 
 ```
 你是爆款短剧的节奏审计师，也熟悉 MiniMax H3 的能力边界。审查下面的分镜 JSON：

@@ -28,7 +28,7 @@
 
 【段字段】
 - id、duration、mode（默认 "ref2va"；中文真人对白段与关键道具特写用 "i2va" 并给 first_frame_prompt）、scene_id、character_ids、prop_ids、hook_type（hook/setup/turn/cliffhanger）。
-- continuity：逐字复述上一段的 end_state（位置、朝向、持物、光线）。
+- continuity：逐字复述上一段的 end_state（位置、朝向、持物、光线）。与上一段**同一场景且动作接续**的段写 `"@observed"`（后面可再加一句服装 / 光线说明）：生成提示词时会自动换成上一段已采纳片段的实拍末态，而不是计划的 end_state。
 - end_state：本段结束时每个人的位置（frame left/right）、朝向、手里拿着什么、道具在哪、光线。不以句号结尾。
 - soundscape：1–4 句具体声源（物体 + 动作），不用情绪形容词；生成阶段统一「安静房间底噪 + 动作声 + 干净人声」，环境声与配乐后期铺。
 - music："N/A"（全集后期统一配乐）。

@@ -28,7 +28,7 @@
 | 9 | **声音分层 + 锁定文本 + 时间线混音** | VideoLingo、TTS-Audio-Suite、OpenMontage（04） | `retime_subtitles.py`、`mix_episode.py`；`references/audio-and-post.md` | **实测**（混音、字幕）；模型部分文献 |
 | 10 | **一份剪辑单 + 可编辑工程出口** | zenstory、ArcReel、video-use、OpenFilm（02、04） | `make_edl.py`、`export_capcut_draft.py`、`export_otio.py`、`h3lib/edl.py`；铁律 19 | **实测**（草稿 JSON 与 XML 往返；未在剪映 / Resolve 里打开） |
 | 11 | **批次协议**：预览 → 绑定指纹的确认 → 先落 `prompt_id` 再轮询 → 断点续跑，受理结果不明不重提 | zenstory、ArcReel、waoowaoo（02） | `comfy_submit.py`；铁律 20 | 模拟服务器实测；未对真实 ComfyUI 跑过 |
-| 12 | **实拍状态回写**：下一段从已采纳 take 的实际末态写起，而不是计划的 `end_state` | Emily2040、Toonflow、Calliope（02） | — | **未做**，见 §5 |
+| 12 | **实拍状态回写**：下一段从已采纳 take 的实际末态写起，而不是计划的 `end_state` | Emily2040、Toonflow、Calliope（02） | `observe_take.py`；`continuity: "@observed"`；铁律 11 | 流程实测（观测 → 写回 → 只重建下一段）；观测文字由 agent 看图填写，质量取决于它 |
 
 ## 3. 各模型分工表
 
@@ -66,6 +66,8 @@
 | `mix_episode.py` | 帧精确拼接、按台词区间对齐电平、环境声、配乐按台词时间压低、成片响度、烧字幕、自动验收 | 音画偏移 0 ms；−14.2 LUFS / −1.6 dBTP；配乐压低恰为 9.0 dB；48 fps 与 4:3 素材能正确并入 |
 | `export_capcut_draft.py` / `export_otio.py` | 剪映 / CapCut 草稿与 OTIO、FCP7 XML、CMX3600 | 草稿 JSON 片段首尾相接、XML 往返 910 帧；**未在剪映 / Resolve 里打开** |
 | `extract_tail_frame.py --after-cut` | 取第 N 个硬切后的首帧 | 取帧位置正确；无切点时回退并提示 |
+| `observe_take.py` + `build_prompts.py` 的 `@observed` | 实拍末态写回分镜，下一段自动从它开场；没观测过就不出该段提示词 | 示例分镜上走通：写回、校验警告、`--only` 只重建下一段 |
+| `validate_episode.py --rhythm` | 纯算术的节奏审计 | 在故意写坏的分镜上报出 14 条（超载、等长、连续同景别、台词超镜头、段长全等） |
 | `comfy_submit.py`（重写） | 提交前预检、批次预览与确认号、take 指纹与幂等跳过、`prompt_id` 落盘与中断续取、旧结果归档 | 对着一个模拟 ComfyUI HTTP 接口的本地服务测过：6 类预检错误全部拦下；中断后重跑接回原任务（提交次数不变）；服务重启后才重提。**没有对真实 ComfyUI 跑过** |
 
 **过程中发现并改掉的四个问题**（都来自实测，不是文献）
@@ -87,7 +89,6 @@
 
 | 项 | 为什么重要 | 现状 |
 |----|-----------|------|
-| 实拍末态回写（02 的 G2） | `end_state` 现在只有计划值；采纳的 take 实际停在哪没人核对，偏差会一路传下去 | 只有规则（铁律 11），没有 `observed_end_state` 字段与脚本 |
 | 结构化站位与反向母版（G5）、连戏锁与节拍认领（G6）、系列级状态（G12） | 多人戏的站位与跨集复用 | 只有文字规则 |
 | 局部重拍（G10） | 一段里坏 2 秒只能整段重抽 | 未做；H3 上补丁最短时长与对白段可行性未知 |
 | 动漫脸身份门禁（DINOv2 / CCIP 轨） | 漫剧现在只能靠 VLM 评审 + 人审 | 规格在 05 §7，未实现 |

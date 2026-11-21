@@ -225,11 +225,59 @@
      },
      "continuity": {
       "type": "string",
-      "description": "State inherited from the previous segment (positions, props held, light); must not be empty after segment 1"
+      "description": "State inherited from the previous segment (positions, props held, light); must not be empty after segment 1. Write \"@observed\" (optionally followed by wardrobe / light notes) to open from where the previous segment's ACCEPTED take really ended: build_prompts.py then inserts that segment's observed_end_state, and refuses to build until it exists (--allow-planned for drafts)"
      },
      "end_state": {
       "type": "string",
       "description": "Named end state for the next segment; no trailing period needed"
+     },
+     "status": {
+      "type": "string",
+      "enum": [
+       "planned",
+       "generated",
+       "accepted",
+       "accepted_with_deviation",
+       "rejected"
+      ],
+      "default": "planned",
+      "description": "Production state; written by observe_take.py"
+     },
+     "accepted_take": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "properties": {
+       "path": {
+        "type": "string"
+       },
+       "sha256": {
+        "type": "string"
+       }
+      },
+      "description": "The take that was accepted for this segment; written by observe_take.py"
+     },
+     "observed_end_state": {
+      "type": "string",
+      "description": "Where the accepted take really ends, read from its last frames (never copied from end_state). Same style as end_state, {asset_id} placeholders"
+     },
+     "observation_confidence": {
+      "type": "string",
+      "enum": [
+       "",
+       "low",
+       "medium",
+       "high"
+      ],
+      "description": "How sure the frames make the observer; low triggers a validator warning"
+     },
+     "accepted_deviations": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "What differs from the planned end_state and was accepted anyway"
      },
      "negatives": {
       "type": "string",

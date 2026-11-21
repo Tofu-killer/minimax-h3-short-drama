@@ -44,7 +44,7 @@
 ## 4. 一致性三层
 
 1. **片段内**：每个参考文件一个职责（脸 / 服装 / 环境 / 道具 / 音色），职责不重叠；`Never transfer facial traits from <Picture 3>`。
-2. **片段间**：命名终态（`end_state`）→ 下一段开场；用 `scripts/extract_tail_frame.py`（ffprobe duration − 0.2 s）截末帧作下一段首帧 / 参考，**同时**带长期母版（角色参考 / 场景母版）与短期状态（末帧），只用末帧会传播漂移；下一段首镜以同档景别起手；上一段失败则回溯更早成功段的末帧，再不行降级 T2V，链不断。latent 续接见 `continuity-long-video.md`。场景描述写一遍后原样粘贴；一次性事件写明次数（`the door opens exactly once`）。
+2. **片段间**：命名终态（`end_state`）→ 下一段开场。**计划末态用来写分镜，实拍末态用来写下一段**：take 被采纳后跑 `scripts/observe_take.py`（出首帧 / 中段 / 末帧的观测表，把从末帧上读到的每人位置、朝向、姿态、持物、道具位置写回分镜的 `observed_end_state`，与计划不同处记进 `accepted_deviations`）；下一段的 `continuity` 写 `"@observed"` 就会自动从它开场，没观测过则 `build_prompts.py` 拒绝出这一段的提示词（草稿阶段加 `--allow-planned` 先用计划值）。帧上读不到的东西（动作有没有做完、运镜到哪一相位、声音）不写进去。硬切到别的场景的段不需要这一步。另外：用 `scripts/extract_tail_frame.py`（ffprobe duration − 0.2 s）截末帧作下一段首帧 / 参考，**同时**带长期母版（角色参考 / 场景母版）与短期状态（末帧），只用末帧会传播漂移；下一段首镜以同档景别起手；上一段失败则回溯更早成功段的末帧，再不行降级 T2V，链不断。latent 续接见 `continuity-long-video.md`。场景描述写一遍后原样粘贴；一次性事件写明次数（`the door opens exactly once`）。
 3. **集间**：同一组定妆图 + 同一组识别短语/声音短语逐字复用，存进「系列圣经」。
 
 ## 5. 镜头设计规避风险

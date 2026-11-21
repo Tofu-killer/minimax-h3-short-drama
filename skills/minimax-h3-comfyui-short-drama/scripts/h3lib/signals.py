@@ -178,3 +178,51 @@ def grab_frame(path: Path, t: float, dest: Path, width: int | None = None) -> bo
     r = subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{max(0.0, t):.3f}", "-i", str(path), "-frames:v", "1",
                         *vf, str(dest)], capture_output=True, text=True)
     return r.returncode == 0 and Path(dest).exists()
+
+
+FONTS = ["C:/Windows/Fonts/arial.ttf", "C:/Windows/Fonts/segoeui.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+         "/usr/share/fonts/dejavu/DejaVuSans.ttf", "/usr/share/fonts/TTF/DejaVuSans.ttf",
+         "/System/Library/Fonts/Supplemental/Arial.ttf", "/Library/Fonts/Arial.ttf"]
+
+
+def find_font() -> Path | None:
+    """A TrueType font for frame stamps: H3_QC_FONT, then Arial / DejaVu, then any .ttf under the system font folders."""
+    import glob
+    import os
+    for c in [os.environ.get("H3_QC_FONT")] + FONTS:
+        if c and Path(c).is_file():
+            return Path(c)
+    for root in ("/usr/share/fonts", "/usr/local/share/fonts"):
+        hits = sorted(glob.glob(root + "/**/*.ttf", recursive=True))
+        if hits:
+            return Path(hits[0])
+    return None
+
+
+def stamped_sheet(path: Path, samples: list[tuple[float, str]], sheet: Path, width: int = 480, cols: int = 4,
+                  font: Path | None = None) -> None:
+    """Tile the frames at the given (seconds, tag) into one image, each stamped "<seconds>s <tag>".
+    Tags must be plain words (letters, digits, spaces). Raises RuntimeError when ffmpeg fails."""
+    import tempfile
+    font = font if font is not None else find_font()
+    path, sheet = Path(path).resolve(), Path(sheet).resolve()
+    sheet.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        for i, (t, tag) in enumerate(samples):
+            vf = f"scale={width}:-2"
+            if font:                                 # run inside the font folder so the filter needs no path escaping
+                vf += (f",drawtext=fontfile={font.name}:text='{t:.2f}s {tag}':x=8:y=h-th-10:fontsize={max(14, width // 22)}"
+                       f":fontcolor=white:box=1:boxcolor=black@0.65:boxborderw=6")
+            r = subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{max(0.0, t):.3f}", "-i", str(path), "-frames:v", "1",
+                                "-vf", vf, str(tmp / f"f_{i:03d}.png")], capture_output=True, text=True,
+                               cwd=str(font.parent) if font else None)
+            if r.returncode != 0 or not (tmp / f"f_{i:03d}.png").exists():
+                raise RuntimeError(f"ffmpeg could not extract a frame at {t:.2f}s from {path}: {r.stderr.strip()[-300:]}")
+        cols = max(1, min(cols, len(samples)))
+        rows = -(-len(samples) // cols)
+        r = subprocess.run(["ffmpeg", "-v", "error", "-y", "-framerate", "1", "-i", str(tmp / "f_%03d.png"),
+                            "-vf", f"tile={cols}x{rows}:padding=4:color=black", "-frames:v", "1", "-update", "1", str(sheet)],
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            raise RuntimeError(f"ffmpeg could not build the sheet: {r.stderr.strip()[-300:]}")

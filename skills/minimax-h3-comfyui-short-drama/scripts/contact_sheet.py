@@ -19,30 +19,13 @@ from __future__ import annotations
 
 import argparse
 import glob
-import os
-import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent / "h3lib"))
 import signals  # noqa: E402
 
 VIDEO_EXT = {".mp4", ".mov", ".mkv", ".webm"}
-FONTS = ["C:/Windows/Fonts/arial.ttf", "C:/Windows/Fonts/segoeui.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-         "/usr/share/fonts/dejavu/DejaVuSans.ttf", "/usr/share/fonts/TTF/DejaVuSans.ttf",
-         "/System/Library/Fonts/Supplemental/Arial.ttf", "/Library/Fonts/Arial.ttf"]
-
-
-def find_font() -> Path | None:
-    for c in [os.environ.get("H3_QC_FONT")] + FONTS:
-        if c and Path(c).is_file():
-            return Path(c)
-    for root in ("/usr/share/fonts", "/usr/local/share/fonts"):
-        hits = sorted(glob.glob(root + "/**/*.ttf", recursive=True))
-        if hits:
-            return Path(hits[0])
-    return None
 
 
 def plan_samples(dur: float, usable: float, fps: float, cuts: list[float], black: list, freeze: list, limit: int) -> list[tuple[float, str]]:
@@ -88,7 +71,7 @@ def main():
         paths += [Path(h) for h in hits if Path(h).suffix.lower() in VIDEO_EXT]
     if not paths:
         sys.exit("no clips matched")
-    font = find_font()
+    font = signals.find_font()
     if not font:
         print("NOTE: no TrueType font found (set H3_QC_FONT) - sheets are unstamped, use the legend below")
     for p in paths:
@@ -102,27 +85,11 @@ def main():
         bf = signals.black_and_freeze(p, usable if a.freeze_tail else None)
         samples = plan_samples(dur, usable, info["fps"], [c["t"] for c in det["cuts"]], bf["black"], bf["freeze"], a.max)
         dest_dir = Path(a.out_dir) if a.out_dir else p.parent
-        dest_dir.mkdir(parents=True, exist_ok=True)
         sheet = (dest_dir / f"{p.stem}_sheet.png").resolve()
-        with tempfile.TemporaryDirectory() as td:
-            tmp = Path(td)
-            for i, (t, tag) in enumerate(samples):
-                vf = f"scale={a.width}:-2"
-                if font:                             # run inside the font folder so the filter needs no path escaping
-                    vf += (f",drawtext=fontfile={font.name}:text='{t:.2f}s {tag}':x=8:y=h-th-10:fontsize={max(14, a.width // 22)}"
-                           f":fontcolor=white:box=1:boxcolor=black@0.65:boxborderw=6")
-                r = subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{t:.3f}", "-i", str(p.resolve()), "-frames:v", "1",
-                                    "-vf", vf, str(tmp / f"f_{i:03d}.png")], capture_output=True, text=True,
-                                   cwd=str(font.parent) if font else None)
-                if r.returncode != 0 or not (tmp / f"f_{i:03d}.png").exists():
-                    sys.exit(f"ffmpeg could not extract a frame at {t:.2f}s from {p}: {r.stderr.strip()[-300:]}")
-            cols = min(a.cols, len(samples))
-            rows = -(-len(samples) // cols)
-            r = subprocess.run(["ffmpeg", "-v", "error", "-y", "-framerate", "1", "-i", str(tmp / "f_%03d.png"),
-                                "-vf", f"tile={cols}x{rows}:padding=4:color=black", "-frames:v", "1", "-update", "1", str(sheet)],
-                               capture_output=True, text=True)
-            if r.returncode != 0:
-                sys.exit(f"ffmpeg could not build the sheet: {r.stderr.strip()[-300:]}")
+        try:
+            signals.stamped_sheet(p, samples, sheet, a.width, a.cols, font)
+        except RuntimeError as e:
+            sys.exit(str(e))
         print(f"{sheet}")
         print(f"  {dur:.2f}s, {len(det['cuts']) + 1} shot(s), cuts at {[c['t'] for c in det['cuts']] or 'none'}"
               + (f", black {bf['black']}" if bf["black"] else "") + (f", frozen {bf['freeze']}" if bf["freeze"] else ""))

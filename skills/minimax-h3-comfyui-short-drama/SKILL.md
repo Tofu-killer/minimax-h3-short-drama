@@ -24,7 +24,7 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 | 0 | 列出 GPU / ComfyUI 版本 / 已有模型与 LoRA / 自定义节点 / 现有工作流；用 `assets/local-inventory-checklist.md` 的清单 | `references/local-stack-and-acceleration.md` |
 | 1 | 确认类型（`assets/genres/README.md` 选一个类型包，看 H3 适配度与绕法）与风格（电影质感 / 漫剧）、画幅（16:9：训练格点 1344×768 其实是 7:4，真 16:9 用 1536×864 或生成后 lanczos 到 1920×1080）、单集时长、每段时长 | `assets/genres/`、`assets/style-*.md`、`references/model-and-modes.md` 分辨率格点 |
 | 2 | 生图：定妆照（锚点，选定后冻结）→ 正面全身 + `face.png` 等单人单视图（拼成的 16:9 角色板只给人审）→ 场景无人母版 + 九宫格 → 道具白底图；再备 2–15 s 干净音色；写识别短语 + 声音短语 | `references/image-stage.md`、`assets/image-prompts.md`、`references/storyboard-and-assets.md` §3 |
-| 3 | 用 `assets/agent-prompts/01-outline.md` → `02-storyboard.md` 让 LLM 把剧本切成 4–15 s 段（对白段 8–12 s，动作 / 硬切镜头 5–8 s），每段 2–4 子镜头，每镜写景别 / 焦段 / 运镜 / 动作 / 表演 / 光线 / 台词 / 声音；跑 `scripts/validate_episode.py`，再用 `scripts/render_storyboard.py` 出分镜表给用户审，`03-rhythm-audit.md` 做节奏审计 | `references/storyboard-and-assets.md` §1–2 |
+| 3 | 用 `assets/agent-prompts/01-outline.md` → `02-storyboard.md` 让 LLM 把剧本切成 4–15 s 段（对白段 8–12 s，动作 / 硬切镜头 5–8 s），每段 2–4 子镜头，每镜写景别 / 焦段 / 运镜 / 动作 / 表演 / 光线 / 台词 / 声音；跑 `scripts/validate_episode.py --rhythm`，再用 `scripts/render_storyboard.py` 出分镜表给用户审，`03-rhythm-audit.md` 做节奏审计 | `references/storyboard-and-assets.md` §1–2 |
 | 4 | 需要首帧的段（中文真人对白、关键道具特写）用编辑模型 + face.png + 场景裁切出字面首帧（`image-stage.md` §⑤）；`scripts/build_prompts.py` 生成每段提示词与媒体顺序；`scripts/lint_prompt.py` 机检，FAIL 不提交；本地 Ollama 改写只用于三段式，六段式手写 | `references/prompt-format.md` |
 | 5 | 草稿档（Turbo 8 步 + Sage + 768P）每段 2–4 个 seed；先 `scripts/comfy_submit.py … --dry-run` 出批次预览给用户确认，再带 `--confirm <批次号>` 提交；中断了原样重跑即可续取 | `references/local-stack-and-acceleration.md`、`references/comfyui-nodes.md` |
 | 6 | 中选段**同 seed** 精修：LBH latent 放大 + σ 0.45 二采（音频钉死）→ 1920×1088；小脸先修再放大；只有单镜 > 15 s 才续接 | `references/quality-pipeline.md`、`references/continuity-long-video.md` |
@@ -44,7 +44,7 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 8. **加速只叠「无损 + 一个蒸馏」**：SageAttention（或 Sol-Attn 稠密核）+ 一个 Turbo/PDD LoRA；不叠加两个蒸馏 LoRA，不把 SageAttention 与 `MiniMaxLowVRAMAttention` 同开，不在精修档开 Spectrum / BlockSparse 等有损方案。
 9. **先关掉所有加速跑一次基线**，再逐个打开，记录每段「步数 / LoRA / 分辨率 / 耗时 / 显存 / 评分」。
 10. **抽卡有上限**：同一提示词 3 次同样问题 = 改提示词或分镜，不是换 seed。
-11. **每段写 `end_state` 与 `continuity`**，下一段从上一段终态开场；跨段衔接优先「尾帧→首帧」或 latent 续接节点，不写「continue the previous video」。
+11. **每段写 `end_state` 与 `continuity`**，下一段从上一段终态开场——同场景接续的段从**已采纳片段的实拍末态**开场（`observe_take.py` 写回，`continuity` 写 `"@observed"`），不是从计划的 `end_state`；跨段衔接优先「尾帧→首帧」或 latent 续接节点，不写「continue the previous video」。
 12. **可复现**：任何一段都能从 `prompts/ + bible/ + project.yaml` 重生成；参数写进 `logs/takes.csv`。
 13. **短剧默认硬切，不续接**：每段 5–12 s 独立 Ref2VA + 同一组参考图 + 音色锚；一条续接链 ≤ 4 段，链上关 Spectrum、不改分辨率 / LoRA / shift。
 14. **段尾写 0.5 s 收束 + 1 s 定格，拼接时剪掉**；下一段同时投喂母版（角色参考 / 场景母版）与截取的末帧，首镜同档景别起手。
@@ -73,9 +73,10 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 
 | 脚本 | 作用 |
 |------|------|
-| `scripts/validate_episode.py <ep.json> [--catalog props.json]` | 分镜校验：时长、台词预算、一镜一说话人、未知资产、道具无图、空终态 |
+| `scripts/validate_episode.py <ep.json> [--rhythm] [--catalog props.json]` | 分镜校验：时长、台词预算、一镜一说话人、未知资产、道具无图、空终态、已采纳但没观测末态的段；`--rhythm` 加纯算术的节奏审计（超载、各镜等长、连续三镜同景别、台词塞不进镜头、开场偏慢）。警告以 `~` 打印，不影响退出码 |
 | `scripts/render_storyboard.py <ep.json> --out ep01_storyboard.md` | 把分镜 JSON 渲染成人能审的分镜表（每镜时间、景别 / 焦段、运镜、动作、表演、光线、台词与语速、声音） |
-| `scripts/build_prompts.py <ep.json> --out prompts/ep01` | 生成每段最终提示词 `.txt` + 媒体顺序 `.media.json` + `cues.srt` |
+| `scripts/build_prompts.py <ep.json> --out prompts/ep01 [--only s03] [--allow-planned]` | 生成每段最终提示词 `.txt` + 媒体顺序 `.media.json` + `cues.srt`；`continuity` 为 `"@observed"` 的段从上一段实拍末态开场，尚未观测时不出这一段 |
+| `scripts/observe_take.py <take.mp4> --episode ep.json --segment s02 [--write "…" --confidence high --deviation "…"]` | 出已采纳片段的观测表（首帧 / 中段 / 末帧），再把实拍末态、置信度、与计划的偏差写回分镜 |
 | `scripts/comfy_submit.py <wf.api.json> --set … --batch N --out takes/ep01/s03 --tag s03 [--dry-run \| --confirm <批次号>] [--free-every 3] [--log logs/takes.csv]` | 向本地 ComfyUI 提交 API 格式工作流、上传媒体、按 seed 抽卡、下载产物。提交前**预检**（节点是否安装、模型 / LoRA 文件名是否在服务器列表里并给出最接近的名字、必填输入、H3 帧数 17k+5、宽高 32 倍数、参考图接线格式）；每个 take 按「最终工作流 + 上传文件内容」算指纹，**相同的已完成 take 自动跳过**；任务被受理就把 `prompt_id` 落盘，脚本中断后原样重跑会**接回原任务**而不是重复提交；同一目录里旧结果移到 `_prev_*` 不覆盖。轮询 ≥ 20 s |
 | `scripts/qc_probe.py "takes/ep01/**/*.mp4" --episode ep.json --freeze-tail 1.0 --out qc/probe` | 技术 QC：分辨率 / 时长 / 帧率 / 音轨 / 峰值 > −1 dB / 冻结 > 1 s / 黑场 > 0.25 s（排除声明的定格尾）；**镜头数与分镜对账**（少切、多切、切点偏移）、首尾跳帧、动作量。没有分镜时用 `--expect-seconds / --expect-size / --shots 0,3.5` |
 | `scripts/qc_dialogue.py --episode ep.json --targets "takes/ep01/**/*.mp4" --out qc/dialogue` | 台词质检：每句是否说了、说全、只说一次、何时说；无台词段是否擅自说话；输出首 / 末字时间与语速（需 `faster-whisper`） |

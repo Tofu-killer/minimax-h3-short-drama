@@ -6,19 +6,23 @@
 Checks: segment duration 4-15 s, dialogue budget (chars/4.5 + 2 s), one speaker
 per shot, unknown asset ids, props without reference images, empty
 end_state/continuity, action sentences shorter than 8 words, consecutive static
-dialogue segments, and (with --catalog) items mentioned in text but not bound.
-Exit code 1 when any error is found.
+dialogue segments, hand-off state ("@observed" continuity, accepted takes that were never observed),
+and (with --catalog) items mentioned in text but not bound. --rhythm adds a pacing audit done by
+arithmetic. Warnings are printed with "~" and do not fail the run; exit code 1 only on errors.
 """
 import argparse, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent / "h3lib"))
-from storyboard import load_episode, validate_episode  # noqa: E402
+from storyboard import load_episode, validate_episode, rhythm_warnings  # noqa: E402
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("episode")
     ap.add_argument("--catalog", help="prop catalog JSON from catalog.py build")
+    ap.add_argument("--rhythm", action="store_true",
+                    help="also audit pacing by arithmetic (overloaded segments, even shot lengths, three shots of one size "
+                         "in a row, lines too long for their shot, a slow opening) - advice, never an error")
     a = ap.parse_args()
     ep = load_episode(a.episode)
     problems = validate_episode(ep)
@@ -45,9 +49,17 @@ def main():
         n += 1 if (seg.mode == "ref2va" and seg.first_frame) else 0
         if n > 9: problems.append(f"segment {seg.id}: {n} reference images exceed the 9-slot limit (drop a character detail image or a prop)")
         elif n > 6: problems.append(f"segment {seg.id}: WARN {n} reference images; >6 is less stable")
-    if problems:
-        print(f"{len(problems)} problem(s):")
-        for p in problems:
+    warnings = [p.replace(": WARN ", ": ", 1) for p in problems if ": WARN " in p]
+    errors = [p for p in problems if ": WARN " not in p]
+    if a.rhythm:
+        warnings += ["rhythm - " + w for w in rhythm_warnings(ep)]
+    if warnings:
+        print(f"{len(warnings)} warning(s):")
+        for w in warnings:
+            print(" ~", w)
+    if errors:
+        print(f"{len(errors)} problem(s):")
+        for p in errors:
             print(" -", p)
         sys.exit(1)
     print(f"OK: {ep.title} — {len(ep.segments)} segments, "
