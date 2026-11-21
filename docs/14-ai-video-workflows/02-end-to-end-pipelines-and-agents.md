@@ -9,7 +9,7 @@
 1. **主流做法已经收敛**：`源文本 → 资产圣经（角色 / 场景 / 道具 + 参考图）→ 以「一次生成」为单位的分段分镜 → 关键帧 / 首帧 → 视频（带原生音频）→ 逐段审片 → 时间线 → 成片 / 剪辑工程`。2026 年的分歧只剩两处：状态放在哪（数据库平台 vs 纯文本 + 脚本门禁），以及谁来编排（平台内置 agent vs Claude Code / Codex 读 skill）。
 2. **做得最好的不是星最多的**：流程纪律最强的是 `zenstory-ai/drama-skills`（MIT，12 skill，五份 Markdown + 118 KB 交叉校验脚本 + 确认码投产 + 剪辑单 + 六档审片分流，还带一页 H3 专章）和 `eternityspring/shuohao-skills`（Apache‑2.0，18 道脚本门的 H3 分镜 + 开场站位台账）；工程最扎实的是 `ArcReel`（AGPL，时间线 / 剪映草稿 / 审片信号 / 续跑）；QC 最深的是 `DramaClaw`（ELv2，四级草图择优 + 失败模式登记表 + 空间契约）；唯一原生跑**本地 ComfyUI + H3** 的制片台是 `benjiyaya/Calliope`（MIT，★310）。
 3. **学术线给了三个可搬的点子**：ViMax 的「机位树 + 让视频模型自己切过去再收割新机位首帧」、AniMaker 的「择优要看它能不能接好下一段」（MCTS‑Gen）、ATAS 的「对照**原始剧本**而不是 AI 写的 brief 审片」。
-4. 对我们最有用的 5 件事：① **实拍状态回写**——`end_state` 现在只有计划值，下一段必须从「已采纳 take 的实际末态」写起（Emily2040 clip‑contract、Toonflow、Calliope 都这么做）；② **把 QC 从文字变成脚本**——一次解码出 BLACK / FREEZE / CUT 信号 + 带时间戳的信号加密联络表 + Whisper 对台词 + 本地 VLM 按「只查事实矛盾」的 rubric 打分；③ **剪辑单（cut list）+ 组装脚本 + 工程导出**——skill 里目前没有任何组装脚本，更没有 CapCut / Premiere / DaVinci 出口；④ **确认即花 GPU 的批次协议**——预览 → 绑定指纹的确认 → 断点续跑 → 先落 prompt_id 再轮询；⑤ **开场站位台账**——每场一份结构化站位，由程序生成走位句一字不差抄进该场第一段。
+4. 对我们最有用的 5 件事：① **把 QC 从文字变成脚本**——一次解码出 BLACK / FREEZE / CUT 信号 + 带时间戳的信号加密联络表 + Whisper 对台词 + 本地 VLM 按「只查事实矛盾」的 rubric 打分；② **实拍状态回写**——`end_state` 现在只有计划值，下一段必须从「已采纳 take 的实际末态」写起（Emily2040 clip‑contract、Toonflow、Calliope 都这么做）；③ **剪辑单（cut list）+ 组装脚本 + 工程导出**——skill 里目前没有任何组装脚本，更没有 CapCut / Premiere / DaVinci 出口；④ **确认即花 GPU 的批次协议**——预览 → 绑定指纹的确认 → 断点续跑 → 先落 prompt_id 再轮询；⑤ **开场站位台账**——每场一份结构化站位，由程序生成走位句一字不差抄进该场第一段。
 5. 全簇仍然**没有**一个系统把「本地 ComfyUI 抽卡 → 自动评分择优 → 自动返工」完整开源跑通：ArcReel 的 `model_review` 恒为 null，Maestro 的 `inspect_take` 明说不证明动作与台词，DramaClaw 的 VLM 门只管草图 / 首帧，AniMaker 的 AniEval 是研究代码（无许可）。docs/13 的这条判断在走出 H3 之后依然成立。
 
 ## 1. 候选全景（112 个，按类型）
@@ -422,7 +422,7 @@ NarratoAI 反过来：原片抽帧 → VLM 逐帧理解 → 解说词 → TTS �
    > Plan globally, generate locally … Seamless continuation is legal only inside a scene. A scene boundary is an intentional cut that opens from canonical references and resets `extension_depth` to 0. … Cuts are the cheapest continuity tool.
    观测诚信（同仓库 `references/continuation-handoff.md`）：
    > Never write a description you did not read off the pixels into `observed_end_state` at `medium` or `high` confidence; that is the one move that puts a fabricated state into canon.
-7. H3 反应镜公式与说话人绑定（zenstory `references/performance-action-timing.md`、`minimax-h3.md`，MIT）：
+7. H3 反应镜公式与说话人绑定（zenstory `references/performance-action-timing.md`、`minimax-h3.md`，MIT，节选）：
    > 按「触发动静 → 用一个准确情绪词点名（如"他瞬间怔住"）→ 给两处在当前景别清晰可见的外露破绽（如眼神定死、拇指悬停半空）→ 1.5 秒内落定保持」组织。光写抽象情绪词容易五官乱飞，只列零碎动作不点情绪词又容易力度发软。
    > `<Subject 1> (<提示词名称>, S1), the boy on-screen with a clear voice, opens his mouth and says: <d>[Chinese] ...</d>`
 8. 切镜常见病与声景纪律（shuohao `references/storyboard-pass.md`，Apache‑2.0）：
@@ -449,7 +449,7 @@ NarratoAI 反过来：原片抽帧 → VLM 逐帧理解 → 解说词 → TTS �
 
 格式：定位 / 机制（源码或文档级）/ 关键参数 / 硬件与速度 / 许可 / 对 4090 本地 H3 短剧的价值 / 评级（采用｜试用｜观望｜跳过）。「采用」指把它的做法或工具纳入我们的默认流程，不等于部署整个系统。配音与口型细节见同目录 04，分镜生图细节见 05。
 
-### 4.1 短剧 / 漫剧制片平台
+### 4.1 短剧 / 漫剧全链路：skill 套件与制片平台
 
 #### zenstory-ai/drama-skills（★4 588，MIT，head 7107864 · 2026‑11‑19）
 - **定位**：12 个 agent skill（Claude Code / Codex），覆盖原著分析 → 剧本 → 视觉设定 → 图片提示词 / 分镜 → 视频提示词 → 确认后生产 → 剪辑 → 审查。自述出自「2025 年以来上千个 AI 短剧 / 漫剧项目」的工作室，放弃了 8 万行图形工具改用纯文本 + Agent CLI（自报，未验证）。
@@ -480,7 +480,7 @@ NarratoAI 反过来：原片抽帧 → VLM 逐帧理解 → 解说词 → TTS �
 #### dramaclaw/dramaclaw（★7 149，Elastic License 2.0，head d00aad5 · 2026‑11‑20）
 - **定位**：自托管「小说 → 成片」产线，单机无需 PG / Redis；三件套 Xia Director（内置 agent，自带 Codex runtime）/ XiaHua 无限画布 / Series 流水线；Agent Kit 用 MCP 暴露给外部 agent。
 - **机制**：长篇先进 cognee 图谱供多轮分集规划检索；角色拆成 Identity（角色 × 造型）；**草图先行**——线稿分镜里角色用纯色标身份，`global_video_optimizer` 看整集草图网格一次性写所有 beat 的运动提示词；3D Previz（360 全景 → 3GS → PlayCanvas 人偶与机位）导出 control frame 再转草图。
-- **验证系统**（`src/novelvideo/verification/`，41 文件 7.7k 行）：四级级联 T1 颜色预筛（面积阈值 0.008）→ T2 VLM 事实核查 → T3 评分（script_match + identity_clarity）→ 分差小才 T4 两两对比；低于 7.0 列入待重生成；另有相邻 beat 连贯性、整集分镜网格总评、pHash 重复构图、失败模式登记表、每次尝试的可回放 trace 与内容寻址产物库。
+- **验证系统**（`src/novelvideo/verification/`，41 文件 7.7k 行）：四级级联 T1 颜色预筛（`detect_colors` 阈值 0.008）→ T2 VLM 事实核查 → T3 评分（script_match + identity_clarity）→ 分差小才 T4 两两对比；低于 7.0 列入待重生成；另有相邻 beat 连贯性、整集分镜网格总评、pHash 重复构图、失败模式登记表、每次尝试的可回放 trace 与内容寻址产物库。
 - **空间契约**：由正向 + 反向两张场景参考生成四面墙的 must_preserve 清单（每墙 ≤ 8 项，带数量、尺度锁、禁变形），看不清的放 `coverage_gaps`，不编造。
 - **硬件与速度**：生成走 OpenAI 兼容网关（云）；本机跑服务与 3GS 查看器。
 - **价值**：QC rubric 与「只查事实矛盾、不确定就放行」的立场可直接指导我们的 `judge-take-prompt.md` 重写；空间契约是「正反打背景对不上」的系统解。ELv2 禁托管服务、要求 UI 标 Powered by——只借做法。
@@ -517,7 +517,7 @@ NarratoAI 反过来：原片抽帧 → VLM 逐帧理解 → 解说词 → TTS �
 - **xuanyustudio/LocalMiniDrama**（★2 506，MIT，head fa5f199 · 2026‑11‑20）：exe 一键的 8 步流水线，「本地」指数据本地，模型全是云；ComfyUI 只能经 OpenAI 兼容代理出图。评级：**跳过**。
 - **storytold/artcraft（★41 844）、yi1108/printfilm（★7 208）、BigBanana‑AI‑Director、ai‑fusion‑video** 等：只进目录，未读源码。
 
-### 4.2 Agent skill 套件
+### 4.2 通用 agent skill 套件与制片框架
 
 #### Emily2040/seedance-2.0（★8 266，MIT，head 4668457 · 2026‑09‑27，seedance‑sequence 子 skill v6.7.0）
 - **定位**：Seedance 专用的 1 主 + 28 子 skill，但 v6 的「序列编译器」部分与模型无关：5 个 JSON Schema（project‑state / clip‑contract / take‑review / prompt‑spec / generation‑run）+ lint / 连续性链检查脚本 + 126 个 eval。
@@ -696,7 +696,7 @@ NarratoAI 反过来：原片抽帧 → VLM 逐帧理解 → 解说词 → TTS �
 - **Dify**：`svcvit/Awesome-Dify-Workflow`（★10 802）是通用 DSL 合集，视频类寥寥。
 - 结论：这三类平台上的模板都是链路 E 的低代码版，**没有跨镜一致性与审片环节**，对本地 H3 短剧没有可搬的东西；`capcut-mate` 是它们常用的出草稿后端。**跳过**。
 - **Higgsfield**（官方博客 2026‑07‑29《How to Make a Short Film With AI》与帮助中心 2026‑09‑12）：脚本与镜头表（2 分钟短片 15–25 镜）→ Soul ID（每个常驻角色 20+ 张多角度照片先训练）→ Popcorn 分镜（≤ 4 张参考图、4 / 6 / 8 帧序列）→ Cinema Studio 逐镜显式设 genre / lighting / lens / focal length / aperture → 分场景做音频 → 组装。经验法则：**先生成最难的那一镜**，它立得住整场基本都立得住；类型 / 灯光 / 镜头每场只锁一次；走位在分镜阶段改，生成后再改就得重拍；一致性在 30 s 以后明显下降所以短片段首尾帧相接。5 分钟短片估价约 150–160 美元（官方文章自报）。
-- **LTX Studio**（官网与帮助中心，访问日 2026‑11‑21；部分页面抓取失败）：脚本自动抽取角色 / 物件 / 地点存成 **Elements**，之后在镜头提示词里用 `@名字` 引用；Storyboard → 视频 → 时间线一条龙；**Retake** 选中已有镜头的一段只重生成该段；导出 MP4 / PDF pitch deck / XML。
+- **LTX Studio**（官网博客、产品页与帮助中心的搜索摘要，访问日 2026‑11‑21；正文页抓取失败，以下均为摘要转述、未逐页核对）：脚本自动抽取角色 / 物件 / 地点存成 **Elements**，之后在镜头提示词里用 `@名字` 引用；Storyboard → 视频 → 时间线一条龙；**Retake** 选中已有镜头的一段只重生成该段；导出 MP4 / PDF pitch deck / XML。
 - **Flova**（PRNewswire 2026‑08‑24 通稿，公司自述未验证）：agent 承接脚本（最长 30 万字符）、分镜、资产管理、修订与粗剪，Seedance 2.5 出片；Skill Hub 号称 100+ 可复用「制作手册」。
 - 三家共同点与开源侧一致：**资产一次定义处处 `@` 引用 + 分镜先行 + 局部重拍**。局部重拍（LTX Retake、wind‑comic Segment retake）是开源流水线里普遍缺的一环。
 
