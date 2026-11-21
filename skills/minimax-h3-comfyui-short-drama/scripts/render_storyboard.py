@@ -11,7 +11,7 @@ Review this BEFORE spending GPU time.
 import argparse, re, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent / "h3lib"))
-from storyboard import load_episode  # noqa: E402
+from storyboard import load_episode, blocking_sentence  # noqa: E402
 
 
 def frames_for(sec: float) -> int:
@@ -49,8 +49,11 @@ def main():
         out += [f"## {seg.id} · {seg.mode} · {seg.duration} s（{fr} 帧 = {fr / 24:.3f} s）{' · ' + seg.hook_type if seg.hook_type else ''}", "",
                 f"- 参考：{'、'.join(refs)}" + (f"；首帧：{Path(seg.first_frame).name}" if seg.first_frame else ""),
                 f"- 台词 {chars} 字 / 上限 {int((seg.duration - 2) * 4.5)} 字",
+                *([f"- 开场站位：{esc(blocking_sentence(ep, seg))}"] if blocking_sentence(ep, seg) else []),
                 f"- 承接：{esc(seg.continuity) or '（首段）'}",
-                f"- 结束状态：{esc(seg.end_state)}", "",
+                f"- 结束状态：{esc(seg.end_state)}",
+                *([f"- 实拍末态（{seg.status}，置信 {seg.observation_confidence or '?'}）：{esc(seg.observed_end_state)}"]
+                  if seg.observed_end_state else []), "",
                 "| 镜 | 时间 | 景别 / 镜头 | 运镜 | 动作 | 表演 | 光线 | 台词 | 声音 |",
                 "|---|---|---|---|---|---|---|---|---|"]
         bounds = [sh.start for sh in seg.shots] + [fr / 24]

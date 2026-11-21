@@ -30,6 +30,7 @@
 - id、duration、mode（默认 "ref2va"；中文真人对白段与关键道具特写用 "i2va" 并给 first_frame_prompt）、scene_id、character_ids、prop_ids、hook_type（hook/setup/turn/cliffhanger）。
 - continuity：逐字复述上一段的 end_state（位置、朝向、持物、光线）。与上一段**同一场景且动作接续**的段写 `"@observed"`（后面可再加一句服装 / 光线说明）：生成提示词时会自动换成上一段已采纳片段的实拍末态，而不是计划的 end_state。
 - end_state：本段结束时每个人的位置（frame left/right）、朝向、手里拿着什么、道具在哪、光线。不以句号结尾。
+- stagings（顶层数组，多人场景必写）：每进入一个场景，给它的第一段写一条开场站位——`{"scene_id", "segment", "places": [{"character", "at", "side": left|centre|right, "posture", "facing"}], "others"}`。`at` 只用场景描述 / 母版里真实存在的东西（门、沙发、护士站）；只列开场时在场的人，后进场的不列；`others` 用正向句写其余空间（`the other seats stay empty`）。提示词里的走位句由脚本从这条数据生成，不要在 action 里再写一遍站位。
 - soundscape：1–4 句具体声源（物体 + 动作），不用情绪形容词；生成阶段统一「安静房间底噪 + 动作声 + 干净人声」，环境声与配乐后期铺。
 - music："N/A"（全集后期统一配乐）。
 - first_frame_prompt：仅 i2va / fl2va，按 assets/image-prompts.md 的「分镜首帧」模板写英文静帧描述。

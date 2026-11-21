@@ -383,6 +383,71 @@
      }
     }
    }
+  },
+  "stagings": {
+   "type": "array",
+   "description": "Optional. Opening positions for a scene: one entry per scene visit, bound to the first segment of that visit. build_prompts.py turns it into one fixed blocking sentence at the start of that segment, so positions are stated the same way every time. Later segments in the scene inherit through continuity / \"@observed\".",
+   "items": {
+    "type": "object",
+    "required": [
+     "scene_id",
+     "segment",
+     "places"
+    ],
+    "properties": {
+     "scene_id": {
+      "type": "string"
+     },
+     "segment": {
+      "type": "string",
+      "description": "id of the first segment of this scene visit"
+     },
+     "places": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+       "type": "object",
+       "required": [
+        "character",
+        "at"
+       ],
+       "properties": {
+        "character": {
+         "type": "string",
+         "description": "character id; only people present when the scene opens (who enters later is not listed)"
+        },
+        "at": {
+         "type": "string",
+         "description": "what they are next to, as a phrase that follows the verb: \"at the left end of the grey sofa\", \"by the door\". Use things the scene master actually shows"
+        },
+        "side": {
+         "type": "string",
+         "enum": [
+          "left",
+          "centre",
+          "center",
+          "right"
+         ],
+         "description": "side of the frame in the scene's main camera axis"
+        },
+        "posture": {
+         "type": "string",
+         "default": "stands",
+         "description": "a verb in the third person: stands / sits / kneels / leans / crouches / lies"
+        },
+        "facing": {
+         "type": "string",
+         "description": "\"frame right\", \"the camera\", \"{other_character_id}\""
+        }
+       }
+      }
+     },
+     "others": {
+      "type": "string",
+      "description": "a positive statement about the rest of the space: \"the other seats stay empty\""
+     }
+    }
+   }
   }
  }
 }

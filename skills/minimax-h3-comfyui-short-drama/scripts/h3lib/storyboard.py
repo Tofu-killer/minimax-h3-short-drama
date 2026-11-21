@@ -105,6 +105,7 @@ class Episode:
     segments: list[Segment]
     props: list[Prop] = field(default_factory=list)
     synopsis: str = ""
+    stagings: list[dict] = field(default_factory=list)   # opening positions per scene visit, see blocking_sentence()
 
     # -- helpers ------------------------------------------------------------
     def char(self, cid: str) -> Character:
@@ -157,7 +158,7 @@ def load_episode(path: str | Path) -> Episode:
         segments.append(_from_dict(Segment, {**s, "shots": shots}))
     return Episode(title=raw["title"], ratio=raw["ratio"], style=raw.get("style", "Live-action, cinematic"),
                    characters=characters, scenes=scenes, props=props, segments=segments,
-                   synopsis=raw.get("synopsis", ""))
+                   synopsis=raw.get("synopsis", ""), stagings=raw.get("stagings", []) or [])
 
 
 def dump_episode(ep: Episode) -> str:
@@ -195,6 +196,89 @@ def effective_continuity(ep: "Episode", seg: "Segment", allow_planned: bool = Fa
                          f"(or build with --allow-planned for drafts)")
     text = f"The clip opens from this state: {base.rstrip('.')}."
     return (text + " " + extra).strip(), src
+
+
+SIDES = {"left": "on the left side of the frame", "centre": "at the centre of the frame", "center": "at the centre of the frame",
+         "right": "on the right side of the frame"}
+NUMBER_WORDS = ["zero", "one", "two", "three", "four", "five", "six"]
+
+
+def staging_for(ep: "Episode", seg: "Segment") -> Optional[dict]:
+    return next((st for st in ep.stagings if st.get("segment") == seg.id), None)
+
+
+def blocking_sentence(ep: "Episode", seg: "Segment") -> str:
+    """One sentence, generated from data, that pins who is where when a scene opens. Written by code so that the
+    same positions are stated the same way every time: "{a} sits at the left end of the sofa on the left side of
+    the frame, facing frame right; {b} stands by the door on the right side of the frame, facing {a}. Exactly two
+    people are in the scene; the other seats stay empty." Returns "" when the segment has no staging entry."""
+    st = staging_for(ep, seg)
+    if not st or not st.get("places"):
+        return ""
+    parts = []
+    for pl in st["places"]:
+        bits = [f"{{{pl['character']}}} {pl.get('posture', 'stands')} {pl['at'].strip()}"]
+        if pl.get("side"):
+            bits.append(SIDES.get(pl["side"].lower(), pl["side"]))
+        text = " ".join(bits)
+        if pl.get("facing"):
+            text += f", facing {pl['facing'].strip()}"
+        parts.append(text)
+    n = len(st["places"])
+    count = NUMBER_WORDS[n] if n < len(NUMBER_WORDS) else str(n)
+    tail = f" Exactly {count} {'person is' if n == 1 else 'people are'} in the scene"
+    tail += f"; {st['others'].strip().rstrip('.')}." if st.get("others") else "."
+    return "; ".join(parts) + "." + tail
+
+
+def staging_problems(ep: "Episode") -> list[str]:
+    out = []
+    seg_by_id = {s.id: s for s in ep.segments}
+    for k, st in enumerate(ep.stagings):
+        tag = f"staging {k + 1} ({st.get('scene_id')}/{st.get('segment')})"
+        seg = seg_by_id.get(st.get("segment"))
+        if seg is None:
+            out.append(f"{tag}: unknown segment {st.get('segment')!r}")
+            continue
+        if st.get("scene_id") != seg.scene_id:
+            out.append(f"{tag}: segment {seg.id} plays in {seg.scene_id}, not {st.get('scene_id')}")
+        places = st.get("places") or []
+        if not places:
+            out.append(f"{tag}: no places")
+        seen = set()
+        for pl in places:
+            cid = pl.get("character")
+            if cid not in seg.character_ids:
+                out.append(f"{tag}: {cid} is placed but is not in segment {seg.id}'s character_ids "
+                           f"(someone who enters later is not part of the opening positions)")
+            if not (pl.get("at") or "").strip():
+                out.append(f"{tag}: {cid} has no 'at' (what they stand / sit next to)")
+            if pl.get("side") and pl["side"].lower() not in SIDES:
+                out.append(f"{tag}: side {pl['side']!r} for {cid} - use left / centre / right")
+            key = ((pl.get("at") or "").strip().lower(), (pl.get("side") or "").lower())
+            if key in seen:
+                out.append(f"{tag}: two characters share {pl.get('at')!r} on the {pl.get('side')} - give each their own spot")
+            seen.add(key)
+            try:
+                desc = ep.scene(seg.scene_id).description.lower()
+                words = [w for w in re.findall(r"[a-z]{4,}", (pl.get("at") or "").lower()) if w not in
+                         ("the", "left", "right", "side", "near", "next", "from", "with", "behind", "front", "centre", "center", "edge", "end")]
+                if words and not any(w in desc for w in words):
+                    out.append(f"{tag}: WARN {pl.get('at')!r} is not mentioned in the scene description - anchor positions to "
+                               f"things the scene master actually shows")
+            except StopIteration:
+                pass
+        missing = [c for c in seg.character_ids if c not in {pl.get("character") for pl in places}]
+        if missing:
+            out.append(f"{tag}: WARN {', '.join(missing)} appear in segment {seg.id} but have no opening position")
+    # a scene with two or more people that opens without positions is where left/right mix-ups start
+    opened = set()
+    for seg in ep.segments:
+        first_visit = seg.scene_id not in opened
+        opened = {seg.scene_id}
+        if first_visit and len(seg.character_ids) >= 2 and not staging_for(ep, seg) and ep.stagings:
+            out.append(f"segment {seg.id}: WARN opens scene {seg.scene_id} with {len(seg.character_ids)} people but has no staging entry")
+    return out
 
 
 def shot_spans(seg: "Segment") -> list[tuple["Shot", float, float]]:
@@ -349,6 +433,7 @@ def validate_episode(ep: Episode) -> list[str]:
         for sh in seg.shots:
             if len(sh.action.split()) < 8:
                 problems.append(f"segment {seg.id} shot {sh.index}: action is too short to be a start→change→end description")
+    problems += staging_problems(ep)
     # consecutive static dialogue segments (Short-Drama-Studio rule)
     static_run = 0
     for seg in ep.segments:

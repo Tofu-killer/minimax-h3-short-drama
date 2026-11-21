@@ -12,7 +12,7 @@ import re
 from dataclasses import dataclass
 
 from media import audio_item, image_item, text_item
-from storyboard import Dialogue, Episode, Segment, Shot, effective_continuity
+from storyboard import Dialogue, Episode, Segment, Shot, blocking_sentence, effective_continuity
 
 ALLOW_PLANNED = False       # build_prompts.py --allow-planned: "@observed" may fall back to the PLANNED end state (drafts only)
 MAX_REF_IMAGES = 9
@@ -196,7 +196,8 @@ def build_ref2va(ep: Episode, seg: Segment) -> BuiltPrompt:
     continuity = fill(effective_continuity(ep, seg, ALLOW_PLANNED)[0], labels).strip()
     if continuity and not continuity.endswith((".", "!", "?")):
         continuity += "."
-    body = f"{scene_lead} {continuity + ' ' if continuity else ''}{shots_txt}"
+    blocking = fill(blocking_sentence(ep, seg), labels)
+    body = f"{scene_lead} {blocking + ' ' if blocking else ''}{continuity + ' ' if continuity else ''}{shots_txt}"
     if seg.end_state:
         body += f" The segment ends with {fill(seg.end_state, labels).strip().rstrip('.')}."
     if seg.negatives:
@@ -248,7 +249,9 @@ def build_three_part(ep: Episode, seg: Segment) -> BuiltPrompt:
         anchor = (" The opening frame shown in <Picture 1> is preserved: appearance, clothing, position and set "
                   "layout stay as established.")
     continuity = fill(effective_continuity(ep, seg, ALLOW_PLANNED)[0], labels)
-    body = f"{seg.style}, {sc.description.rstrip('.')}.{anchor} {continuity + ' ' if continuity else ''}{shots_txt}"
+    blocking = fill(blocking_sentence(ep, seg), labels)
+    body = (f"{seg.style}, {sc.description.rstrip('.')}.{anchor} {blocking + ' ' if blocking else ''}"
+            f"{continuity + ' ' if continuity else ''}{shots_txt}")
     if seg.mode == "fl2va":
         body += " The shot settles into the pose, spacing and composition established by Picture 2 at the end."
     elif seg.end_state:
