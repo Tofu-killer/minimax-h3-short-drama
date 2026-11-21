@@ -118,6 +118,11 @@ def main():
         if not ok:
             sys.exit(1)
 
+        cjk = signals.cjk_fonts()
+        record("font with Chinese glyphs for burned subtitles", "PASS" if cjk else "FAIL",
+               cjk[0] if cjk else "none found: burned subtitles would be empty boxes - install one (Linux: fonts-noto-cjk; "
+                                   "Windows and macOS ship one) or pass --font to retime_subtitles.py")
+
         # three scripts turn "seconds asked for" into "frames H3 really makes" (17k+5): they have to agree, or a
         # correctly generated take is reported as the wrong length
         try:

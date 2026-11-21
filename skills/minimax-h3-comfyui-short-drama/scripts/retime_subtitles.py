@@ -40,6 +40,7 @@ from pathlib import Path
 sys.dont_write_bytecode = True      # keep the skill folder free of __pycache__
 sys.path.insert(0, str(Path(__file__).parent / "h3lib"))
 import edl as edl_lib  # noqa: E402
+import signals  # noqa: E402
 import speech  # noqa: E402
 
 
@@ -77,11 +78,14 @@ def ass_time(t: float) -> str:
 
 
 def default_font() -> str:
+    """Microsoft YaHei on Windows, PingFang SC on macOS, otherwise the first installed family that can draw Chinese
+    (Noto Sans CJK SC when nothing can be detected)."""
     if sys.platform.startswith("win"):
         return "Microsoft YaHei"
     if sys.platform == "darwin":
         return "PingFang SC"
-    return "Noto Sans CJK SC"
+    have = signals.cjk_fonts()
+    return have[0] if have else "Noto Sans CJK SC"
 
 
 def wrap(text: str, limit: int = 18) -> str:
@@ -186,6 +190,7 @@ def main():
                             first, last, shift = speech.refine_span(env, hop, first, last)
                         s = max(0.0, first - LEAD)
                         e = max(last + TAIL, s + MIN_DUR, s + chars / MAX_CPS)
+                        e = min(e, p["dur_s"] + float(seg.get("l_cut", 0.0) or 0.0))      # a cue does not outlive its picture
                         flag = None if m["coverage"] >= 0.6 else "low_coverage"
                         conf = m.get("confidence")
                         if flag is None and conf is not None and conf < 0.65:
@@ -194,6 +199,11 @@ def main():
                             flag = "timing_suspect"               # far too slow for speech: the span includes something else
                         if flag is None and last > p["dur_s"] - 0.10:
                             flag = "ends_at_cut"                  # the last word touches the out point: listen to it
+                        before = ln.get("start")                  # where the last run put this line, from the same in-point
+                        if (flag is None and before is not None and seg.get("subtitles_in_frame") == seg.get("in_frame")
+                                and abs(s - float(before)) > 0.3):
+                            flag = "moved"                        # same in-point, different answer: the recogniser is not sure
+                            extra["previous_start"] = float(before)
                         if shift > 0.3:
                             extra["adjusted_s"] = shift           # how far the recogniser's times were pulled to the voice
                         if conf is not None:
@@ -234,11 +244,14 @@ def main():
                     ln["start"] = round(c["start"] - seg_start[seg["id"]], 3)
                     ln["end"] = round(c["end"] - seg_start[seg["id"]], 3)
                     ln["coverage"] = c["coverage"]
-                    for key in ("needs_review", "confidence", "adjusted_s"):
+                    for key in ("needs_review", "confidence", "adjusted_s", "previous_start"):
                         if c.get(key) is not None:
                             ln[key] = c[key]
                         else:
                             ln.pop(key, None)
+        for seg in edl["segments"]:
+            if seg.get("lines"):
+                seg["subtitles_in_frame"] = seg.get("in_frame")          # so the next run can tell "moved" from "re-cut"
         edl["subtitles"] = {"cut_signature": edl_lib.cut_signature(edl), "files": [str(out) + ".srt", str(out) + ".ass"],
                             "aligner": a.aligner if a.aligner != "faster-whisper" else f"faster-whisper {a.model}"}
         edl_path.write_text(json.dumps(edl, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -246,7 +259,11 @@ def main():
         mark = f"  <-- {c['needs_review']}" if c.get("needs_review") else ""
         mark += "  (locked)" if c.get("locked") else ""
         mark += f"  (start / end pulled {c['adjusted_s']:.2f}s to the voice)" if c.get("adjusted_s") else ""
+        mark += f"  (the last run started this line at {c['previous_start']:.2f}s of its segment)" if c.get("previous_start") is not None else ""
         print(f"{srt_time(c['start'])} --> {srt_time(c['end'])}  [{c['segment']}] {c['text']}  (coverage {c['coverage']}){mark}")
+    note = signals.subtitle_font_note(a.font, any("\u4e00" <= ch <= "\u9fff" for c in cues for ch in c["text"]))
+    if note:
+        print("WARN ", note)
     print(f"{len(cues)} cue(s), {review} need review -> {out}.srt / .ass / .cues.json"
           f"{'' if a.no_write_back else ' ; times written back to ' + str(edl_path)}"
           f"  [matching: {'pinyin' if speech.PHONETIC else 'exact characters - pip install pypinyin for homophone-proof matching'}]")

@@ -203,6 +203,9 @@ def apply_media(wf: dict, media_json: Path, server: str, media: dict, do_upload:
         lines.append(f"length = {frames} frames ({frames / 24:.3f} s)")
     for key in [k for k in inputs if k.startswith(REF_GROUPS) or k in ("ref_images", "ref_videos", "ref_video_audios", "ref_audios")]:
         del inputs[key]
+    if want == H3_I2V:                                  # frames the exported workflow carried: this segment brings its own or none
+        for key in ("first_frame", "last_frame"):
+            inputs.pop(key, None)
     next_id = max([int(k) for k in wf if str(k).isdigit()] + [0]) + 1000        # ids well clear of the exported ones
 
     def load_node(kind: str, path: Path, title: str) -> str:

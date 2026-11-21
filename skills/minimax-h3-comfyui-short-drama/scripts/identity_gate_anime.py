@@ -223,6 +223,10 @@ def main():
     for pat in a.targets:
         hits = sorted(glob.glob(pat, recursive=True)) or ([pat] if Path(pat).exists() else [])
         paths += [Path(h) for h in hits if Path(h).suffix.lower() in IMAGE_EXT | VIDEO_EXT]
+    live = [p for p in paths if not any(part.startswith("_prev_") for part in p.parts)]      # superseded takes kept by comfy_submit.py
+    if len(live) != len(paths):
+        print(f"note: {len(paths) - len(live)} file(s) in _prev_* folders skipped")
+    paths = live
     if not paths:
         sys.exit("no image / video targets matched")
     override = [a.expect.strip()] if a.expect else None

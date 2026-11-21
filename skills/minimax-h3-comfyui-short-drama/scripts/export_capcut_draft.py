@@ -243,6 +243,9 @@ def main():
         print("  NOTE " + n_)
     if edl_lib.subtitles_stale(edl):
         print("  WARN the cuts changed after the subtitles were timed: run retime_subtitles.py again, then export once more")
+    stale = edl_lib.mix_is_stale(edl, report_path=a.report, mix_path=a.mix)
+    if stale:
+        print("  WARN " + stale)
     print("  open 剪映 and re-enter the draft list to see it; missing fonts / effects load on the second open")
 
 

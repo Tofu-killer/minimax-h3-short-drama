@@ -96,6 +96,9 @@ def main():
     for pat in a.files:
         hits = sorted(glob.glob(pat, recursive=True)) or ([pat] if Path(pat).exists() else [])
         paths += [Path(h) for h in hits if Path(h).suffix.lower() in VIDEO_EXT]
+    paths, skipped = signals.live_takes(paths)
+    if skipped:
+        print(f"note: {skipped} file(s) in _prev_* folders skipped (superseded takes kept by comfy_submit.py)")
     if not paths:
         sys.exit("no clips matched")
     segs, ep, ep_ratio = {}, {}, None
@@ -112,7 +115,7 @@ def main():
                "duration": round(info["duration"], 3), "audio": info["has_audio"]}
         problems, warns = [], []
         if not info["width"]:
-            print(f"FAIL {p.name}: no video stream")
+            print(f"FAIL {signals.take_label(p)}: no video stream")
             rows.append({**row, "verdict": "fail", "problems": ["no video stream"]})
             bad += 1
             continue
@@ -193,7 +196,7 @@ def main():
         row.update({"segment": sid, "verdict": verdict, "problems": problems, "warnings": warns})
         rows.append(row)
         cuts_txt = ("" if a.no_cuts else f" cuts={row['cuts']}") + (f" (last {a.freeze_tail:g}s = declared freeze, not checked)" if hold else "")
-        print(f"{verdict.upper():4s} {p.name}: {row['size']} {info['fps']:.0f}fps {dur:.2f}s audio={'yes' if info['has_audio'] else 'no'} "
+        print(f"{verdict.upper():4s} {signals.take_label(p)}: {row['size']} {info['fps']:.0f}fps {dur:.2f}s audio={'yes' if info['has_audio'] else 'no'} "
               f"peak={peak} motion={row['motion']}{cuts_txt}" + ("  " + "; ".join(problems + warns) if problems or warns else ""))
     if a.out:
         out = Path(a.out)

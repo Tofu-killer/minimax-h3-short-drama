@@ -58,6 +58,15 @@
       "type": "string",
       "description": "How prompts call this person: \"the grey-haired doctor in the white coat\". Default: \"the\" + the head of identity_phrase (\"the man in his fifties\"). People are never called by name in a prompt."
      },
+     "pronoun": {
+      "type": "string",
+      "enum": [
+       "he",
+       "she",
+       "they"
+      ],
+      "description": "For sentences the builder writes itself (\"closes his lips\"). Default: read from the head of identity_phrase (man / woman ...), else \"they\"."
+     },
      "sheet_phrase": {
       "type": "string",
       "description": "The full look used only to GENERATE the reference pictures (face structure, build, height ...). Never written into a video prompt."
@@ -370,7 +379,8 @@
            },
            "offscreen": {
             "type": "boolean",
-            "default": false
+            "default": false,
+            "description": "Voice-over or a voice from someone who is not seen: written as an off-screen voiceover with every mouth on screen closed. The speaker then need not be in the segment's character_ids."
            },
            "after_line": {
             "type": "string",

@@ -132,6 +132,12 @@ def main():
     if conformed:
         print(f"NOTE: {', '.join(conformed)} are not {fps:g} fps clips; the editor will conform them - check their length there")
     print("levels are not exported: use the master mix track or apply the gains from the mix report by hand")
+    if edl_lib.subtitles_stale(edl):
+        print("WARN the cuts changed after the subtitles were timed: run retime_subtitles.py again before using the .srt / .ass")
+    stale = edl_lib.mix_is_stale(edl, mix_path=a.mix) if a.mix else None
+    if stale:
+        print("WARN " + stale)
+    print("media paths in the exported files are absolute: export on the machine that holds the clips")
 
 
 if __name__ == "__main__":

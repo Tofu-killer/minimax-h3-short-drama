@@ -397,6 +397,11 @@ def main():
     ap.add_argument("--strict", action="store_true", help="exit 1 when any target fails")
     a = ap.parse_args()
 
+    if a.episode and not a.ref:           # look before downloading models: no pictures means there is nothing to compare with
+        ep_chars = json.loads(Path(a.episode).read_text(encoding="utf-8")).get("characters", [])
+        if not any(c.get("reference_images") for c in ep_chars):
+            sys.exit("no character in this episode has a reference picture: this gate has nothing to compare with - skip it "
+                     "(identity then rests on the eye check of the contact sheets)")
     engine = FaceEngine(ensure_models(Path(a.models_dir), a.offline), a.det_score, a.min_face)
     bible, seg_expect, seg_cuts, notes = load_bible(a, engine)
     if not bible:
@@ -414,6 +419,10 @@ def main():
     for pat in a.targets:
         hits = sorted(glob.glob(pat, recursive=True)) or ([pat] if Path(pat).exists() else [])
         paths.extend(Path(h) for h in hits if Path(h).suffix.lower() in IMAGE_EXT | VIDEO_EXT)
+    live = [p for p in paths if not any(part.startswith("_prev_") for part in p.parts)]      # superseded takes kept by comfy_submit.py
+    if len(live) != len(paths):
+        print(f"note: {len(paths) - len(live)} file(s) in _prev_* folders skipped")
+    paths = live
     if not paths:
         sys.exit("no image / video targets matched")
 

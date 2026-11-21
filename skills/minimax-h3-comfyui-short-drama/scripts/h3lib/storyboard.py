@@ -29,6 +29,8 @@ class Character:
     name_en: str = ""               # English name for people reading the files (prompts never use a person's name)
     sheet_phrase: str = ""          # the long look used only to GENERATE the reference pictures (face structure, build,
                                     # height ...). Never written into a video prompt.
+    pronoun: str = ""               # "he" | "she" | "they": for the builder's own sentences ("closes his lips"); default: read
+                                    # from the head of identity_phrase (man / woman ...), else "they"
     short_phrase: str = ""          # how prompts call this person after the first mention, e.g. "the grey-haired doctor in the
                                     # white coat"; default: "the" + the head of identity_phrase ("the man in his fifties")
 
@@ -354,7 +356,7 @@ def placeholder_problems(ep: "Episode") -> list[str]:
     everything = {c.id for c in ep.characters} | {p.id for p in ep.props} | {s.id for s in ep.scenes}
     for seg in ep.segments:
         bound = set(seg.character_ids) | set(seg.prop_ids) | {seg.scene_id}
-        texts = [("summary", seg.summary), ("negatives", seg.negatives), ("soundscape", seg.soundscape)]
+        texts = [("negatives", seg.negatives), ("soundscape", seg.soundscape)]
         for sh in seg.shots:
             for name in ("framing", "camera", "action", "lighting", "performance", "sound_cue"):
                 texts.append((f"shot {sh.index} {name}", getattr(sh, name, "")))
@@ -369,7 +371,8 @@ def placeholder_problems(ep: "Episode") -> list[str]:
                 if key not in bound:
                     out.append(f"segment {seg.id} {where}: {{{key}}} is not an asset bound to this segment "
                                f"(bound: {', '.join(sorted(bound))})")
-        for where, text in (("continuity", seg.continuity), ("end_state", seg.end_state), ("observed_end_state", seg.observed_end_state)):
+        for where, text in (("continuity", seg.continuity), ("end_state", seg.end_state), ("observed_end_state", seg.observed_end_state),
+                            ("summary", seg.summary)):          # a summary may name someone who is only heard
             for key in PLACEHOLDER_RE.findall(text or ""):
                 if key not in everything:
                     out.append(f"segment {seg.id} {where}: {{{key}}} is not an asset of this episode")
@@ -517,6 +520,13 @@ def reference_count(ep: "Episode", seg: "Segment") -> tuple[int, int]:
 
 def reference_problems(ep: "Episode") -> list[str]:
     out = []
+    bare = [seg.id for seg in ep.segments if seg.mode == "ref2va" and reference_count(ep, seg) == (0, 0)]
+    if bare:
+        which = "every segment" if len(bare) == len(ep.segments) else "segment " + ", ".join(bare)
+        out.append(f"{which}: WARN mode is ref2va but nothing bound has a reference picture or a voice sample - the prompt is "
+                   f"built as plain text-to-video (three-part layout; run it on the FL2VA weights) and nothing holds faces, "
+                   f"set or voices the same from one segment to the next. Fine for a one-off shot; for a story, make the "
+                   f"reference pictures first (references/image-stage.md)")
     for seg in ep.segments:
         pics, audio = reference_count(ep, seg)
         if seg.mode == "ref2va" and pics + audio > 6:
@@ -645,7 +655,9 @@ def validate_episode(ep: Episode) -> list[str]:
             if p not in pids:
                 problems.append(f"{tag}: unknown prop_id {p}")
             elif not ep.prop(p).reference_images:
-                problems.append(f"{tag}: prop {p} bound without a reference image; the model will invent its look")
+                problems.append(f"{tag}: WARN prop {p} has no reference picture: the prompt describes it in words and the model "
+                                f"invents its look, differently in every segment - give it a white-background picture if it has "
+                                f"to stay the same")
         if seg.mode not in ("ref2va", "i2va", "fl2va", "t2va"):
             problems.append(f"{tag}: unknown mode {seg.mode}")
         if seg.mode in ("i2va", "fl2va") and not seg.first_frame:
@@ -676,9 +688,10 @@ def validate_episode(ep: Episode) -> list[str]:
             for d in sh.dialogue:
                 if d.speaker != "narrator" and d.speaker not in cids:
                     problems.append(f"{tag} shot {sh.index}: unknown speaker {d.speaker}")
-                elif d.speaker != "narrator" and d.speaker not in seg.character_ids:
+                elif d.speaker != "narrator" and d.speaker not in seg.character_ids and not d.offscreen:
                     problems.append(f"{tag} shot {sh.index}: speaker {d.speaker} is not in this segment's character_ids "
-                                    f"(add the character to the segment, or use narrator for a voice with no body)")
+                                    f"(add the character to the segment; a voice from someone who is not seen takes "
+                                    f"\"offscreen\": true and needs no binding)")
                 total_chars += spoken_chars(d.text)
         need = total_chars / CHARS_PER_SECOND + ACTING_MARGIN if total_chars else 0
         if need > seg.duration:
@@ -691,8 +704,9 @@ def validate_episode(ep: Episode) -> list[str]:
     for i, seg in enumerate(ep.segments):
         if not seg.end_state.strip():
             problems.append(f"segment {seg.id}: end_state is empty; the next segment cannot pick up positions")
-        if i > 0 and not seg.continuity.strip():
-            problems.append(f"segment {seg.id}: continuity is empty; positions/wardrobe will drift from the previous segment")
+        if i > 0 and not seg.continuity.strip() and not staging_for(ep, seg):
+            problems.append(f"segment {seg.id}: continuity is empty; positions/wardrobe will drift from the previous segment "
+                            f"(a segment that opens a new scene may give a `stagings` entry instead)")
         if seg.continuity.strip().startswith(OBSERVED):
             if i == 0:
                 problems.append(f"segment {seg.id}: '{OBSERVED}' needs a previous segment")

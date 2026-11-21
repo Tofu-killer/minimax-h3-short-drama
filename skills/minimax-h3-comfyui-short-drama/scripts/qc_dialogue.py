@@ -13,8 +13,9 @@ Checks (thresholds from the production notes collected in references/qc-and-asse
   head_missing / tail_missing   none of the first / last 3 characters of a line was heard
   inserted_words    recognised length > locked length x 1.15 + 2 characters (repeats, improvised words)
   unexpected_speech a segment with no dialogue contains >= 2 recognised words with no_speech_prob < 0.5
-  late_start (warn) first word later than --late-start seconds (default 2.5): dead air to trim with in_frame in
-                    the EDL, unless the acting before the line is wanted
+  late_start (warn) the first word comes more than --late-start seconds (default 2.5) after the start of the shot
+                    that carries the line: dead air to trim with in_frame in the EDL, unless the acting before the
+                    line is wanted
   ends_..._before_the_end / ..._into_the_declared_freeze (warn)
                     the last word stops less than 0.2 s before the usable end of the clip (the clip end, or the
                     start of the freeze tail on segments that declare end_hold): the line may be cut off
@@ -91,8 +92,9 @@ def main():
 
     ep = json.loads(Path(a.episode).read_text(encoding="utf-8"))
     names = {c["id"]: c.get("name", c["id"]) for c in ep.get("characters", [])}
-    seg_lines, seg_hold = {}, {}
+    seg_lines, seg_hold, seg_shot_start = {}, {}, {}
     for s in ep["segments"]:
+        seg_shot_start[s["id"]] = {sh["index"]: float(sh.get("start", 0) or 0) for sh in s["shots"]}
         seg_lines[s["id"]] = [{"speaker": d["speaker"], "name": names.get(d["speaker"], d["speaker"]), "text": d["text"],
                                "shot": sh["index"]} for sh in s["shots"] for d in sh.get("dialogue", [])]
         seg_hold[s["id"]] = bool(s["shots"] and s["shots"][-1].get("end_hold"))
@@ -100,6 +102,10 @@ def main():
     for pat in a.targets:
         hits = sorted(glob.glob(pat, recursive=True)) or ([pat] if Path(pat).exists() else [])
         paths.extend(Path(h) for h in hits if Path(h).suffix.lower() in VIDEO_EXT)
+    live = [p for p in paths if not any(part.startswith("_prev_") for part in p.parts)]      # superseded takes kept by comfy_submit.py
+    if len(live) != len(paths):
+        print(f"note: {len(paths) - len(live)} file(s) in _prev_* folders skipped")
+    paths = live
     if not paths:
         sys.exit("no targets matched")
 
@@ -157,7 +163,7 @@ def main():
                         warns.append(f"low_confidence:{ln['text'][:8]}")
                     elif ln["first_s"] is not None and n <= 2:
                         warns.append(f"short_line:{ln['text'][:8]}")
-                    per.append({"speaker": ln["name"], "text": ln["text"], "coverage": ln["coverage"], "confidence": conf,
+                    per.append({"speaker": ln["name"], "text": ln["text"], "shot": ln.get("shot"), "coverage": ln["coverage"], "confidence": conf,
                                 "first_word_s": ln["first_s"], "last_word_s": ln["last_s"],
                                 "chars_per_s": round(n / span, 2) if span and span > 0.2 else None,
                                 "head_missing": ln["head_missing"], "tail_missing": ln["tail_missing"]})
@@ -174,8 +180,12 @@ def main():
                     flags.append("inserted_words")
                 firsts = [x["first_word_s"] for x in per if x["first_word_s"] is not None]
                 lasts = [x["last_word_s"] for x in per if x["last_word_s"] is not None]
-                if firsts and firsts[0] > a.late_start:
-                    warns.append(f"late_start:{firsts[0]:.2f}s")
+                opener = next((x for x in per if x["first_word_s"] is not None), None)
+                if opener is not None:
+                    planned = seg_shot_start[sid].get(opener.get("shot"), 0.0)        # the shot that carries this line starts here
+                    if opener["first_word_s"] - planned > a.late_start:
+                        warns.append(f"late_start:{opener['first_word_s']:.2f}s"
+                                     + (f"_({opener['first_word_s'] - planned:.1f}s_into_its_shot)" if planned else ""))
                 if lasts and usable and usable - lasts[-1] < 0.2:
                     gap = usable - lasts[-1]
                     warns.append(f"ends_{abs(gap):.2f}s_{'into_the_declared_freeze' if hold and gap < 0 else 'before_the_end' if gap >= 0 else 'past_the_end'}")

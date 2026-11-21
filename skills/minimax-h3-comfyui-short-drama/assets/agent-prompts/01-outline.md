@@ -13,6 +13,7 @@
 4. 角色（每人）：
    - identity_phrase（英文，进每一段视频提示词，写成 "a <who> with <features>"）：只写一眼能把这个人和别人分开的东西——年龄段 + 发型发色 + 主服装与主色 + 一个标志物，上限约 25 词。用户或参考图只给了「短发、黄雨衣」就只写这两样，不为凑数编标志物；没有参考图的路人只写用户说过的（a ticket clerk in a dark uniform）。例：a woman in her early thirties with short black hair tucked behind her ears, a fitted black suit jacket over a white shirt, and a thin silver watch
    - short_phrase（英文）：提示词里称呼这个人的短称，the 开头、带一个看得见的特征：the grey-haired doctor in the white coat。同一集里任何两个人的短称不能相同，也不能一个是另一个的开头。
+   - pronoun（he / she / they，可选）：脚本自己造的句子里用它（closes his lips）；不填时从 identity_phrase 开头的词判断（man / woman …），判断不出用 they。蒙面人、机器人这类写不出性别词的角色记得填。
    - sheet_phrase（英文，只给生图用，不进视频提示词）：完整外貌——年龄段、族裔、height_cm + build、3–5 处骨相特征、发型发色、固定服装与主色、标志物。同项目内禁止复用「鼻梁挺直 / 黑发束髻 / 高挑修长」这类通用词。
    - voice_phrase（英文，写成 "a <who> with a <音高 / 音质> voice and a <语速> pace"）：性别、年龄、音高、音质、语速、口音。同性别角色的声学画像要反着写。
 5. 场景：英文描述（地点、时间、光源方向与色温、门窗与主要家具的位置），不含人物；写一次，之后原样粘贴。

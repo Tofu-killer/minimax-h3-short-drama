@@ -240,6 +240,8 @@ def main():
         print(f"  {p['id']:>6}  t={p['start_s']:8.3f}s  {p['frames']:4d}f  clip[{s['in_frame']},{s['out_frame']})  "
               f"audio={s.get('audio') or '-'}  l_cut={s.get('l_cut', 0) or 0}  scene={s.get('scene') or '-'}{conform}")
     if a.dry_run:
+        if edl_lib.subtitles_stale(edl):
+            print("WARN  the cuts changed after the subtitles were timed: run retime_subtitles.py before mixing with --ass")
         return
 
     keep = Path(a.keep_temp) if a.keep_temp else None
@@ -564,6 +566,7 @@ def main():
                                "true_peak_dbfs": peak, "pre_master_lufs": pre_meas[0] if pre_meas else None,
                                "normalization": norm},
                   "music_duck_db": duck_db, "music_duck_method": duck_how, "subtitles_burned": bool(a.ass),
+                  "cut_signature": edl_lib.cut_signature(edl),
                   "checks": checks, "warnings": warnings}
         out.with_suffix(".mix.report.json").write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
         for e in seg_report:
@@ -572,12 +575,24 @@ def main():
         if a.ass and edl_lib.subtitles_stale(edl):
             warnings.append("the cuts changed after the subtitles were timed (in / out frames differ from when "
                             "retime_subtitles.py ran): the burned subtitles may be off - run retime_subtitles.py and mix again")
+        if a.ass:                                   # will the renderer find the font the subtitles ask for?
+            try:
+                ass_text = Path(a.ass).read_text(encoding="utf-8", errors="replace")
+                style = next((ln for ln in ass_text.splitlines() if ln.startswith("Style:")), "")
+                asked = style.split(",")[1].strip() if style.count(",") > 1 else ""
+                note = signals.subtitle_font_note(asked, any("\u4e00" <= ch <= "\u9fff" for ch in ass_text)) if asked else None
+                if note:
+                    warnings.append(note)
+            except OSError:
+                pass
         for w_ in warnings:
             print("WARN ", w_)
         print(f"picture {vdur:.3f}s / sound {adur:.3f}s / plan {total:.3f}s ; loudness {integ} LUFS (target {tgt_i:g}), "
               f"peak {peak} dBTP ; {norm}" + (f" ; music ducked {duck_db} dB ({duck_how})" if duck_db is not None else ""))
         ok = all(checks.values())
-        print(("OK  " if ok else "FAIL ") + f"{out}  " + " ".join(f"{k}={'ok' if v else 'FAIL'}" for k, v in checks.items()))
+        print(("OK  " if ok else "FAIL ") + f"{out}  " + " ".join(f"{k}={'ok' if v else 'FAIL'}" for k, v in checks.items())
+              + (f"  ({len(warnings)} warning(s) above - the checks cover length, frame count and loudness, not what the "
+                 f"warnings are about)" if warnings else ""))
         sys.exit(0 if ok else 1)
 
 

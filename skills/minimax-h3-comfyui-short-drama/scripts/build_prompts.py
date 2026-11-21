@@ -7,8 +7,11 @@ Writes <out>/<segment_id>.txt (the final H3 prompt with <Subject N>/<Picture N>
 labels filled in) and <out>/<segment_id>.media.json: the frame count on the model's
 17k+5 grid and the ordered list of {"type","path","role"} - this order IS the
 <Picture N> / <Audio N> numbering. comfy_submit.py --media <that file> puts the prompt,
-the frame count and the references into the workflow in exactly this order.  Also writes <out>/cues.srt with
-the planned dialogue timings (the real subtitles come from retime_subtitles.py after assembly).
+the frame count and the references into the workflow in exactly this order.  Also writes <out>/planned_cues.srt:
+the PLANNED dialogue timings, for previews only (the real subtitles come from retime_subtitles.py after assembly).
+
+A storyboard with validation errors is not built; --force builds it anyway (warnings never block).
+A ref2va segment in which nothing has a reference picture or a voice sample is built as plain text-to-video.
 
 A segment whose `continuity` starts with "@observed" opens from where the previous segment's ACCEPTED take
 really ended (observe_take.py writes that back into the episode). Until that exists the segment is not
@@ -80,14 +83,17 @@ def main():
         frames = frames_for_seconds(seg.duration)
         (out / f"{seg.id}.txt").write_text(text, encoding="utf-8")
         (out / f"{seg.id}.media.json").write_text(json.dumps(
-            {"segment": seg.id, "mode": seg.mode, "ratio": ep.ratio, "duration": seg.duration, "frames": frames,
+            {"segment": seg.id, "mode": bp.mode or seg.mode, "ratio": ep.ratio, "duration": seg.duration, "frames": frames,
              "effective_seconds": round(frames / 24, 3),
              "prompt_file": f"{seg.id}.txt", "labels": bp.labels, "media": media},
             ensure_ascii=False, indent=1), encoding="utf-8")
         note = {"authored": ""}.get(source, f"  [opens from {source.replace(':', ' end of ')}]")
         if len(text) > 7000:
             note += f"  [{len(text)} characters: over the hosted API's 7000 limit - fine for the local node, but trim if it can be]"
-        print(f"{seg.id}: {seg.mode} {seg.duration}s = {frames} frames, {len(text.split())} words, {len(media)} media{note}")
+        built_as = bp.mode or seg.mode
+        if built_as != seg.mode:
+            note += f"  [built as {built_as}: nothing bound to this segment has a reference picture or voice sample]"
+        print(f"{seg.id}: {built_as} {seg.duration}s = {frames} frames, {len(text.split())} words, {len(media)} media{note}")
     # planned subtitle cues for the whole episode (they depend on the storyboard only, not on which prompts were built)
     srt, idx, offset = [], 1, 0.0
     for seg in ep.segments:
@@ -95,7 +101,10 @@ def main():
             srt.append(f"{idx}\n{srt_time(start)} --> {srt_time(end)}\n{line}\n")
             idx += 1
         offset += frames_for_seconds(seg.duration) / 24.0
-    (out / "cues.srt").write_text("\n".join(srt), encoding="utf-8")
+    (out / "planned_cues.srt").write_text("\n".join(srt), encoding="utf-8")       # a preview of the PLAN, not the subtitles
+    stale = out / "cues.srt"                                                       # name used by earlier versions
+    if stale.exists():
+        stale.unlink()
     if waiting:
         print("WAITING for a take to be accepted (expected at this stage, the other segments were written):")
         for w in waiting:

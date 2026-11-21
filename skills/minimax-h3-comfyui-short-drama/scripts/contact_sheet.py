@@ -11,7 +11,8 @@ at a glance), one or two frames from the middle of every shot, and the first fra
 span. Frames are in time order; the stamp reads "<seconds>s <tag>".
 Use the sheet to choose in / out points and to check identity, props and staging shot by shot.
 
-Writes <clip>_sheet.png next to the clip (or into --out-dir) and prints the legend.
+Writes <clip>_sheet.png next to the clip, or <take folder>_<clip>_sheet.png into --out-dir, and prints the legend.
+Files inside _prev_* folders (superseded takes) are skipped.
 Needs ffmpeg / ffprobe; standard library only. Stamps need a TrueType font: Arial / DejaVu are found
 automatically, or set H3_QC_FONT=<path to .ttf>; without a font the sheet is unstamped and the printed
 legend gives the times.
@@ -100,8 +101,13 @@ def main():
     for pat in a.files:
         hits = sorted(glob.glob(pat, recursive=True)) or ([pat] if Path(pat).exists() else [])
         paths += [Path(h) for h in hits if Path(h).suffix.lower() in VIDEO_EXT]
+    paths, skipped = signals.live_takes(paths)
+    if skipped:
+        print(f"note: {skipped} file(s) in _prev_* folders skipped (superseded takes kept by comfy_submit.py)")
     if not paths:
         sys.exit("no clips matched")
+    used: set[str] = set()
+    stems = [x.stem for x in paths]
     segs = {}
     if a.episode:
         segs = {x["id"]: x for x in json.loads(Path(a.episode).read_text(encoding="utf-8"))["segments"]}
@@ -123,7 +129,15 @@ def main():
         samples = plan_samples(dur, usable, info["fps"], [c["t"] for c in det["cuts"]], bf["black"], bf["freeze"], a.max,
                                [e["frame"] for e in det["edge_jumps"]], det["frames"])
         dest_dir = Path(a.out_dir) if a.out_dir else p.parent
-        sheet = (dest_dir / f"{p.stem}_sheet.png").resolve()
+        name = p.stem
+        take_folder = re.fullmatch(r".+_\d+", p.parent.name)             # "<tag>_<seed>": the folder comfy_submit.py makes per take
+        if a.out_dir and p.parent.name not in name and (take_folder or stems.count(p.stem) > 1):
+            name = f"{p.parent.name}_{name}"                              # "s03_101/ComfyUI_00001_.mp4" -> s03_101_ComfyUI_00001_
+        base, k = name, 2
+        while name in used:                                               # never overwrite a sheet made in this run
+            name, k = f"{base}_{k}", k + 1
+        used.add(name)
+        sheet = (dest_dir / f"{name}_sheet.png").resolve()
         try:
             signals.stamped_sheet(p, samples, sheet, a.width, a.cols, font)
         except RuntimeError as e:

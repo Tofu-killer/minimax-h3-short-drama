@@ -24,6 +24,21 @@ W, H, K = 32, 18, 4
 MIN_STEP, MIN_RATIO, MIN_PERSIST, NEIGHBOURHOOD, FLOOR = 0.05, 4.0, 0.5, 24, 0.004
 
 
+def live_takes(paths: list) -> tuple[list, int]:
+    """comfy_submit.py moves a superseded take into a `_prev_*` folder inside the take folder. A recursive glob
+    finds those too; QC only looks at the live ones. -> (live paths, number skipped)."""
+    from pathlib import Path as _P
+    live = [p for p in paths if not any(part.startswith("_prev_") for part in _P(p).parts)]
+    return live, len(paths) - len(live)
+
+
+def take_label(path) -> str:
+    """Name a take by its last two path parts when the file name alone says nothing ("s03_101/ComfyUI_00001_")."""
+    from pathlib import Path as _P
+    p = _P(path)
+    return p.stem if not p.parent.name or p.parent.name in (".", "") else f"{p.parent.name}/{p.name}"
+
+
 def probe(path: Path) -> dict:
     """{duration, fps, width, height, frames (estimate), has_audio}"""
     r = subprocess.run(["ffprobe", "-v", "error", "-show_entries",
@@ -300,6 +315,42 @@ def find_font() -> Path | None:
         if hits:
             return Path(hits[0])
     return None
+
+
+CJK_FAMILIES = ["Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", "Source Han Sans SC", "Noto Sans SC", "WenQuanYi Zen Hei",
+                "WenQuanYi Micro Hei", "SimHei", "Heiti SC"]
+CJK_FILES = {"Microsoft YaHei": ["C:/Windows/Fonts/msyh.ttc", "C:/Windows/Fonts/msyh.ttf"], "SimHei": ["C:/Windows/Fonts/simhei.ttf"],
+             "PingFang SC": ["/System/Library/Fonts/PingFang.ttc"], "Heiti SC": ["/System/Library/Fonts/STHeiti Medium.ttc"]}
+
+
+def cjk_fonts() -> list[str]:
+    """Installed font families that can draw Chinese, best guess first. Uses fontconfig when it is there (Linux,
+    Homebrew ffmpeg), otherwise the well-known system font files (Windows, macOS). [] = none found."""
+    import shutil
+    import subprocess
+    found: list[str] = []
+    if shutil.which("fc-list"):
+        r = subprocess.run(["fc-list", ":lang=zh", "family"], capture_output=True, text=True, encoding="utf-8", errors="replace")
+        have = {name.strip().replace("\\", "") for line in r.stdout.splitlines() for name in line.split(",") if name.strip()}
+        found = [f for f in CJK_FAMILIES if f in have] + sorted(have - set(CJK_FAMILIES))
+    for family, files in CJK_FILES.items():
+        if family not in found and any(Path(f).is_file() for f in files):
+            found.append(family)
+    return found
+
+
+def subtitle_font_note(requested: str, text_has_cjk: bool = True) -> str | None:
+    """None when the font the subtitles ask for is installed (or nothing can be checked). Otherwise one sentence
+    saying what the renderer will do instead - before a file full of empty boxes is rendered and accepted."""
+    if not text_has_cjk:
+        return None
+    have = cjk_fonts()
+    if requested in have:
+        return None
+    if not have:
+        return (f"no font with Chinese glyphs was found on this machine (asked for \"{requested}\"): burned subtitles would show "
+                f"empty boxes. Install one (Linux: fonts-noto-cjk) or pass --font with an installed family")
+    return f"subtitle font \"{requested}\" is not installed: the renderer falls back to another font - use --font \"{have[0]}\" to choose it yourself"
 
 
 def stamped_sheet(path: Path, samples: list[tuple[float, str]], sheet: Path, width: int = 480, cols: int = 4,

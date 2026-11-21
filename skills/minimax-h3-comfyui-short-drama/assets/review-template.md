@@ -14,7 +14,7 @@
 | 段 | 时间码 | 门 | 现象（照抄脚本输出或描述画面） | 失败码 | 证据 | 根因层（资产 / 分镜 / 提示词 / 生成 / 后期） | 处置 | 复验 |
 |----|--------|----|------------------------------|--------|------|--------------------------------------------|------|------|
 | s03 | 1.3–3.2 s | qc_dialogue | inserted_words：听到「这保险归我了归我了」 | F-DIALOGUE-TEXT | qc/dialogue/dialogue_report.json | 生成 | 换 seed 重抽（第 1 次） | 待 |
-| s01 | 8.04 s | qc_probe | 末帧是下一镜的画面 | F-SEAM | qc/sheets/s01_sheet.png「edge jump」 | 后期 | EDL `out_frame` −1 | 已过 |
+| s01 | 8.04 s | qc_probe | 末帧是下一镜的画面 | F-SEAM | qc/sheets/s01_100_<文件名>_sheet.png「edge jump」 | 后期 | EDL `out_frame` −1 | 已过 |
 
 豁免：
 - s05 峰值 −0.8 dB（未削波）——混音会重新定电平，保留。

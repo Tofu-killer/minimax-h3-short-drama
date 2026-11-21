@@ -35,7 +35,7 @@ from dataclasses import dataclass
 
 from media import audio_item, image_item, text_item
 from storyboard import (Dialogue, Episode, Segment, Shot, blocking_sentence, effective_continuity,
-                        frames_for_seconds, _framing_class)
+                        frames_for_seconds, reference_count, _framing_class)
 
 ROOM_SHOTS = ("medium", "medium wide", "wide")      # framings that show the room: everyone on screen is seen properly
 
@@ -126,6 +126,9 @@ def unpictured_look(c) -> dict:
 
 
 def possessive(c) -> str:
+    stated = {"he": "his", "she": "her", "they": "their"}.get((getattr(c, "pronoun", "") or "").strip().lower())
+    if stated:
+        return stated
     head = split_identity(c.identity_phrase)[0]
     if _FEMALE.search(head):
         return "her"
@@ -205,6 +208,7 @@ def style_sentence(style: str) -> str:
     st = style.strip().rstrip(".")
     if st.lower().startswith("the target video"):
         return st + "."
+    st = style_list(st)
     return f"The target video is in the following style: {st[0].lower() + st[1:]}."
 
 
@@ -216,7 +220,14 @@ def _sentence(text: str, labels: dict[str, str]) -> str:
     if not t:
         return ""
     t = t[0].upper() + t[1:]
+    t = re.sub(r"(?<=[.!?] )([a-z])", lambda m: m.group(1).upper(), t)      # "... flame. the masked man pulls" -> "The masked man"
     return t if t[-1] in ".!?" else t + "."
+
+
+def style_list(style: str) -> str:
+    """A style written as several sentences becomes one comma list, so that it can open [Shot 1] or follow a colon."""
+    parts = [x.strip() for x in re.split(r"\.\s+", style.strip().rstrip(".")) if x.strip()]
+    return ", ".join([parts[0]] + [x[0].lower() + x[1:] for x in parts[1:]]) if parts else ""
 
 
 def _state(text: str, labels: dict[str, str]) -> str:
@@ -232,6 +243,7 @@ class BuiltPrompt:
     text: str
     content: list[dict]
     labels: dict[str, str]          # e.g. {"char_a": "<Subject 1>", "scene_cafe": "<Subject 3>"}
+    mode: str = ""                  # the layout really built: a ref2va segment without any reference media becomes "t2va"
 
 
 # ---------------------------------------------------------------- shared shot body
@@ -548,13 +560,14 @@ def build_ref2va(ep: Episode, seg: Segment) -> BuiltPrompt:
         first = d.speaker not in voiced
         voiced.add(d.speaker)
         voice = ""
+        tag = labels.get(d.speaker) or designation(c)         # heard but not bound to this segment: called in words
         if d.speaker in audio_of:                           # cited wherever the audio relationship is active (ref guide 5.3)
             described = f" {voice_tail(c)}," if voice_tail(c).startswith("with ") else ""
             voice = (f", using the voice timbre referenced from <Audio {audio_of[d.speaker]}>,{described}" if first else
                      f", in the same voice referenced from <Audio {audio_of[d.speaker]}>,")
         elif first and voice_tail(c):                       # no reference: the voice is described where it is first heard
             voice = f", {voice_tail(c)},"
-        who = f"{labels[d.speaker][0].upper() + labels[d.speaker][1:]} ({sid}){voice}"
+        who = f"{tag[0].upper() + tag[1:]} ({sid}){voice}"
         if d.offscreen:
             return (f"{who} says in an off-screen voiceover{delivery_phrase(d)}: {line} "
                     f"while the lips of everyone on screen remain completely closed.")
@@ -586,7 +599,7 @@ def build_ref2va(ep: Episode, seg: Segment) -> BuiltPrompt:
     people = [labels[c] for c in seg.character_ids]
     n = len(seg.shots)
     if seg.summary.strip():
-        gist = _sentence(seg.summary, labels)
+        gist = _sentence(seg.summary, room_labels(ep, labels))
     else:
         gist = (f"The target video shows {_join(people)} in {labels[sc.id]}" if people else f"The target video shows {labels[sc.id]}") \
             + f" across {n} shot{'s' if n > 1 else ''}."
@@ -607,7 +620,7 @@ def build_ref2va(ep: Episode, seg: Segment) -> BuiltPrompt:
         "non_diegetic_music:\n" + (seg.music.strip() or "N/A")
     )
     content.insert(0, text_item(text))
-    return BuiltPrompt(text=text, content=content, labels=labels)
+    return BuiltPrompt(text=text, content=content, labels=labels, mode="ref2va")
 
 
 # ---------------------------------------------------------------- three-part (T2VA / I2VA / FL2VA)
@@ -643,7 +656,8 @@ def build_three_part(ep: Episode, seg: Segment) -> BuiltPrompt:
             return (f"The narrator ({sid}) says in an off-screen voiceover{delivery_phrase(d)}: {line} "
                     f"while the lips of everyone on screen remain completely closed.")
         c = ep.char(d.speaker)
-        who = labels[d.speaker][0].upper() + labels[d.speaker][1:]
+        tag = labels.get(d.speaker) or designation(c)         # heard but not bound to this segment
+        who = tag[0].upper() + tag[1:]
         if d.speaker not in voiced and voice_tail(c):          # official: identify the voice where it is first heard
             who += f" {voice_tail(c)}" if voice_tail(c).startswith("with ") else f", {voice_tail(c)},"
         voiced.add(d.speaker)
@@ -670,7 +684,7 @@ def build_three_part(ep: Episode, seg: Segment) -> BuiltPrompt:
             subjects.append({"label": labels[cid], "person": True, **unpictured_look(ep.char(cid))})
     for pid in seg.prop_ids:
         subjects.append({"label": labels[pid], "look": ep.prop(pid).description.strip().rstrip(". ")})
-    style = seg.style.strip().rstrip(".")
+    style = style_list(seg.style)
     heads, parts = [], []
     for i, sh in enumerate(seg.shots):
         h, b = _shot_parts(seg, sh, i == 0, labels, speak, closure, lead=f"{style}, " if i == 0 else "", speakers=speakers)
@@ -693,14 +707,14 @@ def build_three_part(ep: Episode, seg: Segment) -> BuiltPrompt:
         "non_diegetic_music: " + (seg.music.strip() or "N/A")
     )
     content.insert(0, text_item(text))
-    return BuiltPrompt(text=text, content=content, labels=labels)
+    return BuiltPrompt(text=text, content=content, labels=labels, mode=seg.mode if seg.mode in ("i2va", "fl2va", "t2va") else "t2va")
 
 
 def build(ep: Episode, seg: Segment) -> BuiltPrompt:
     try:
-        if seg.mode == "ref2va":
+        if seg.mode == "ref2va" and reference_count(ep, seg) != (0, 0):
             return build_ref2va(ep, seg)
-        return build_three_part(ep, seg)
+        return build_three_part(ep, seg)          # also a ref2va segment with nothing to reference: plain text-to-video
     except KeyError as e:
         raise ValueError(f"segment {seg.id}: placeholder {{{e.args[0]}}} is not an asset bound to this segment "
                          f"(bound: {', '.join(seg.character_ids + [seg.scene_id] + seg.prop_ids)})") from None

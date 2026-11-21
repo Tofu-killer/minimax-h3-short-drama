@@ -35,7 +35,8 @@ non_diegetic_music: <乐器/速度/情绪/动态，或 N/A>
 - 一颗生成内的切点整体后移约 1.2 s 但段内节拍准，引子多留 1.5 s；跨切点曝光会跳 ~45%，后期逐段调色，不在提示词里写「曝光一致」。
 - 切镜动词只用：`the camera cuts to` / `the shot cuts to` / `the shot transitions to` / `the shot switches to`。
 - 声景禁止抽象词（tense、sad）；只有用户要求静音才写 `N/A`。全集后期统一铺乐时 `non_diegetic_music: N/A`；`overall_soundscape` 不写 crowd / chatter。
-- 正文长度约「时长 × 25 词」。
+- 手写时正文长度约「时长 × 25 词」。`build_prompts.py` 出的三段式会长得多（没有参考图时，外貌、场景、站位全靠文字带）；机检对超过 700 词、单镜超过 240 词（首镜 380、末镜 300）的给提醒。
+- 一张参考图、一段音色都没有的 `ref2va` 段，脚本自动按这个版式（`t2va`）出，并在 `.media.json` 里记下 `"mode": "t2va"`——提交时要用 FL2VA 权重的工作流（`MiniMaxH3ImageToVideo` 节点）。
 
 ## 3. 六段式（Ref2VA，短剧主路线）
 
@@ -137,6 +138,8 @@ N/A
 - 运镜与表演细则（含 46 镜实跑数据）见 `camera-and-performance.md`：4 步 Turbo 抹掉运镜、背景板让运镜减半、台词按文本顺序连续铺轨、参考视频须 24 fps 等。
 
 ## 6. 风格句（三段式放在 [Shot 1] 开头；六段式是 [Shot 1] 之前的那一句）
+
+- 分镜 JSON 的 `style` 写成一个逗号列表（下面两例）；写成两三句也行，脚本会并成一个列表再放进提示词。
 
 - 电影质感：`Live-action, cinematic, shot on 35mm anamorphic, shallow depth of field, warm tungsten key light with cool window fill, fine film grain.`
 - 漫剧（2D）：`2D anime, clean cel shading, bold ink outlines, flat colors with soft gradient shadows, limited animation timing, speed lines on fast motion.`

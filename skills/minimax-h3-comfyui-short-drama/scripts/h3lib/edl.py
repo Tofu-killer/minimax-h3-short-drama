@@ -41,6 +41,37 @@ def resolve(edl_path: Path, p: str | Path) -> Path:
     return alt if alt.exists() else q
 
 
+def mix_is_stale(edl: dict, report_path=None, mix_path=None) -> str | None:
+    """A sentence when the mix report / mix wav was made from another cut than the one in this edit list, else None.
+    The report carries the cut signature; a wav on its own is judged by its length."""
+    import json as _json
+    import subprocess
+    from pathlib import Path as _P
+    fps, _plan, total_frames = timeline(edl)
+    if report_path and _P(report_path).exists():
+        try:
+            rep = _json.loads(_P(report_path).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            rep = {}
+        made = rep.get("cut_signature")
+        if made and made != cut_signature(edl):
+            return (f"{report_path} was made from another cut (in / out frames changed since): run mix_episode.py again, "
+                    f"then export once more")
+        if not made and rep.get("total_frames") not in (None, total_frames):
+            return f"{report_path} describes a {rep.get('total_frames')}-frame programme, this edit list has {total_frames} frames: mix again"
+    if mix_path and _P(mix_path).exists():
+        r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(mix_path)],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace")
+        try:
+            dur = float(r.stdout.strip())
+        except ValueError:
+            return None
+        if abs(dur - total_frames / fps) > 1.5 / fps:
+            return (f"{mix_path} is {dur:.3f}s long, this edit list is {total_frames / fps:.3f}s: the mix was made from another "
+                    f"cut - run mix_episode.py again, then export once more")
+    return None
+
+
 def cut_signature(edl: dict) -> str:
     """Changes whenever a cut moves: line times are stored relative to each segment's in point, so they are
     only valid for the cut they were measured on."""

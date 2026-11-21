@@ -28,14 +28,14 @@
 - performance：一个完整句，写看得见的身体变化（视线 / 眼睑 / 呼吸 / 肩 / 手），情绪词落成肌肉动作；按「触发 → 接收 → 一个主反应 → 落定」的顺序组织，但写成句子，不要写 trigger: / response: 这类标签。静止写呼吸眨眼，不写 completely still。可选。
 - lighting：一个完整句，可选。只在这一镜的光和风格行 / 场景描述不一样时写（逆光、灯闪、换了光源）；风格行里已有的不重复。
 - sound_cue：一个完整句，本镜一个绑定动作的声音（The envelope rustles as he pulls it out.），可选。它排在本镜动作句之后；要和动作中间的某一步对上，就把声音直接写进 action 的那一句里。
-- dialogue：speaker（角色 id 或 narrator）、language、text（原样，不改写，不用「……」，称呼后不加逗号）、delivery、offscreen（画外音则 true）。delivery 写成状语：softly / slowly and heavily / in a low, even voice / with rising anger（它接在 says 后面）。after_line 可选，一个完整句：说完之后这个人做什么（He closes his lips and lowers his eyes to {prop_folder}.）；不写则脚本补一句闭嘴。
+- dialogue：speaker（角色 id 或 narrator）、language、text（原样，不改写，不用「……」，称呼后不加逗号）、delivery、offscreen（画外音则 true；说话的人这一段不出场时不用绑进 character_ids，标 offscreen 即可）。delivery 写成状语：softly / slowly and heavily / in a low, even voice / with rising anger（它接在 says 后面）。after_line 可选，一个完整句：说完之后这个人做什么（He closes his lips and lowers his eyes to {prop_folder}.）；不写则脚本补一句闭嘴。
 - end_hold：段内最后一镜设 true——末 0.5 s 收束 + 1 s 定格，拼接时裁掉；质检和剪辑单都靠这个字段知道这一秒是定格。成片要停在一个定格画面上（剧本写了「定格」）的最后一段：不设 end_hold，把定格写进 action。
 - on_screen_characters：本镜画面里看得见的角色 id（只露肩膀 / 手的也算）。脚本靠它决定外貌写在哪一镜、保留行里写出现在哪些镜头。
 - 句子型字段（action / camera / performance / lighting / sound_cue / after_line）句末的句号可有可无，脚本会补。
 
 【段字段】
-- id、duration、scene_id、character_ids、prop_ids、hook_type（hook/setup/turn/cliffhanger，只是规划标签，不进提示词）。
-- mode：默认 "ref2va"（参考图保身份）。真人中文对白段先做首帧：首帧里只有一张清楚的脸（单人、过肩）用 "ref2va" 并填 first_frame，参考图和音色照带；首帧里有两张以上清楚的正脸只给首帧用 "i2va"（再挂身份参考会多出一个人；i2va 接不了音色参考）；必须演到某个结果的动作用 "fl2va"（首尾帧同构图不同姿势）。做不出首帧时仍用 "ref2va" 直出，并告诉用户真人中文对白的命中率会低。
+- id、duration、scene_id、character_ids、prop_ids、hook_type（hook/setup/turn/cliffhanger，只是规划标签，不进提示词）。一段只有一个 scene_id：戏跨了两个地方就拆成两段；实在拆不开，按主要的那个填，次要地点写进对应镜头的 framing。
+- mode：默认 "ref2va"（参考图保身份）。真人中文对白段先做首帧：首帧里只有一张清楚的脸（单人、过肩）用 "ref2va" 并填 first_frame，参考图和音色照带；首帧里有两张以上清楚的正脸只给首帧用 "i2va"（再挂身份参考会多出一个人；i2va 接不了音色参考）；必须演到某个结果的动作用 "fl2va"（首尾帧同构图不同姿势）。做不出首帧时仍用 "ref2va" 直出，并告诉用户真人中文对白的命中率会低。一张参考图、一段音色都没有的段不用改 mode：脚本会自动按纯文字（三段式 t2va）出提示词并提醒。
 - summary：可选，一个英文句，说这一段发生了什么（进提示词的 summary 段）。例：{dr_zhou} takes out {prop_folder} and admits how long he has kept the truth from {lin_lan}
 - continuity：本段开场时全场的状态。第一段留空。与上一段同一场景且动作接续的段写 "@observed"（后面可以再跟一句服装 / 光线说明）：出提示词时自动换成上一段已采纳片段的实拍末态；上一段还没有采纳片段时这一段会显示「等待」，这是正常状态。其余情况手写一句状态，写法见下一条。
 - end_state：本段结束时全场的状态，不以句号结尾。写每个人在**房间里**的位置（靠着哪件东西、在谁的左 / 右）、面朝谁、姿态、手里拿着什么、道具在哪：{lin_lan} stands beside the nurses' station, one metre in front of {dr_zhou} and facing him; {dr_zhou} …。不要写 at frame left / in the foreground 这类画面坐标——下一段是另一个机位。可以提到本集任何资产（包括下一段不出场的人），不要写 same as s01 这类指代，也不要写指令。即使末镜是特写也照写全场：它是给下一段接戏和核对用的；只有末镜是中景或更宽时脚本才把它写进本段提示词。
@@ -45,7 +45,7 @@
 - music："N/A"（全集后期统一配乐）。
 - first_frame_prompt：仅需要首帧的段，按 assets/image-prompts.md §6「逐镜首帧」的模板写英文静帧描述。
 
-【开场站位 stagings】（顶层数组；两个人以上的场景，每进入一次就给它的第一段写一条）
+【开场站位 stagings】（顶层数组；两个人以上的场景，每进入一次就给它的第一段写一条；有了它，这一段的 continuity 可以留空——两样都写会把位置说两遍）
 {"scene_id", "segment", "places": [{"character", "at", "side": "left|centre|right", "posture", "facing"}], "enters_later": [角色 id], "others"}
 - places 只列开场时已经在场的人；这一段里后进场的人写进 enters_later；开场空无一人就 places 留空、全写进 enters_later。
 - at 写成接在动词后的短语（at the left end of the sofa / by the door / behind the counter），用场景描述里真实存在的东西；也可以相对另一个已就位的人（two steps behind {lao_chen}）。posture 是第三人称动词（stands / sits / walks / kneels）。
