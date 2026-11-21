@@ -1,6 +1,6 @@
 # 02 · 端到端 AI 视频 / 短剧流水线与 agent 框架
 
-> 调研日期 2026‑11‑21。簇名 `pipelines`。方法：GitHub 搜索 API 跑了 90 条关键词（按 stars 各取前 50，去重后 2 000+ 仓库，筛出 112 个候选），其中 **46 个浅克隆读源码 / 提示词 / schema**（克隆时跳过 > 150 KB 的二进制），其余读 README；商业平台（LTX Studio / Higgsfield / Flova）只读公开网页。星数、推送日期取自搜索 API 当日快照；`head=` 是克隆到的提交短哈希与提交日期。没有任何一个系统在本机实跑——凡是「自报」「未验证」都照标。
+> 调研日期 2026‑11‑21。簇名 `pipelines`。方法：GitHub 搜索 API 跑了 90 条关键词（按 stars 各取前 50，去重后 2 643 个仓库，筛出 112 个候选），其中 **48 个浅克隆**（跳过 > 150 KB 的文件，合计 682 MB），33 个按「精读」处理（读到提示词 / schema / QC 或导出源码），其余读 README 与关键文件；商业平台（LTX Studio / Higgsfield / Flova）只读公开网页。星数、推送日期取自搜索 API 当日快照；`head=` 是克隆到的提交短哈希与提交日期。没有任何一个系统在本机实跑——凡是「自报」「未验证」都照标。
 > 许可提示：下文引用的提示词原文都注明来源与许可。**MIT / Apache‑2.0 / CC BY** 的可以带署名抄进 skill；**AGPL / Elastic License 2.0 / CC BY‑NC‑SA / 无许可 / MiniMax Community License** 的只能转述其做法，不要原样搬。
 > docs/09（Toonflow）与 docs/12 §9（OpenMontage）已写过，本文 §4 只补它们的新变化；docs/13 覆盖过的 H3 专用 skill（漫剧老李、infinite‑creation 等）不重复。
 
@@ -74,10 +74,10 @@
 | 仓库 | ★ | 许可 | 最后推送 | 一句话 | 本文处理 |
 |---|---:|---|---|---|---|
 | HKUDS/ViMax | 12983 | MIT | 2026-09-30 | "ViMax: Agentic Video Generation (Director, Screenwriter, Produ… | 精读 |
-| HKUDS/VideoAgent | 2059 | MIT | 2026-07-22 | [EMNLP2026] "VideoAgent: All-in-One Agentic Framework for Video… | 精读 |
+| HKUDS/VideoAgent | 2059 | MIT | 2026-07-22 | [EMNLP2026] "VideoAgent: All-in-One Agentic Framework for Video… | 略读 |
 | HITsz-TMG/VideoClaw | 1915 | MIT | 2026-08-26 | 🚀 AI 全自动化视频生成员工 / Your First AIGC Coworker. Chat an Idea. Get a… | 精读 |
 | HITsz-TMG/Anim-Director | 267 | 无 | 2026-01-07 | Controllable Animation Video Generation with Large Models-based… | 精读 |
-| showlab/MovieAgent | 380 | 无 | 2025-03-26 | MovieAgent: Automated Movie Generation via Multi-Agent CoT Plan… | 精读 |
+| showlab/MovieAgent | 380 | 无 | 2025-03-26 | MovieAgent: Automated Movie Generation via Multi-Agent CoT Plan… | 略读 |
 | ziplab/ATAS | 277 | MIT | 2026-11-03 | Any Time, Any Space: A World-State-Centric Framework for Agenti… | 精读 |
 | lichao-sun/Mora | 1589 | 无 | 2024-10-10 | Mora: More like Sora for Generalist Video Generation | 略读 |
 | HVision-NKU/StoryDiffusion | 6501 | Apache-2.0 | 2024-09-26 | Accepted as [NeurIPS 2024] Spotlight Presentation Paper | 略读 |
@@ -109,7 +109,7 @@
 | 仓库 | ★ | 许可 | 最后推送 | 一句话 | 本文处理 |
 |---|---:|---|---|---|---|
 | JuneYaooo/rea-video | 11555 | Apache-2.0 | 2026-11-21 | Reverse-engineer any video, shot by shot: filmed, AI-generated … | 精读 |
-| hypit-ai/hypit | 30919 | 改版 Apache‑2.0 | 2026-11-20 | Clone any viral video with AI agents. Not just a script, the wh… | 精读 |
+| hypit-ai/hypit | 30919 | 改版 Apache‑2.0 | 2026-11-20 | Clone any viral video with AI agents. Not just a script, the wh… | 略读 |
 | edenfunf/reelmimic | 2091 | MIT | 2026-11-20 | Open-source AI video style cloning for 2D animation. Give it a … | 略 |
 | bkingfilm/lapian-notes | 814 | MIT | 2026-10-26 | AI 辅助的电影拉片工具：AI 拆出剧情泳道时间轴、结构树、情绪曲线，边播边写拉片笔记，免费开源全本地 / AI-assist… | 略 |
 | JuneYaooo/rea-toon | 292 | 自定义 | 2026-11-18 | AI 拆解学习短剧：为什么火、剧本怎么写、每一镜怎么拍 / Break down any short drama with A… | 略 |
@@ -121,7 +121,7 @@
 | browser-use/video-use | 31387 | MIT | 2026-10-08 | Edit videos with coding agents | 精读 |
 | kajisho5/ffmpeg-skill | 9073 | MIT | 2026-11-21 | Local video editor for coding agents: 42 FFmpeg tools with a ma… | 精读 |
 | GuanYixuan/pyJianYingDraft | 4958 | Apache-2.0 | 2026-10-14 | 轻量、灵活、易上手的Python剪映草稿生成及导出工具，构建全自动化视频剪辑/混剪流水线。本项目的CapCut版本正于 htt… | 精读 |
-| GuanYixuan/pyCapCut | 779 | 无 | 2026-10-16 | A lightweight, flexible, and easy-to-use Python tool for genera… | 精读 |
+| GuanYixuan/pyCapCut | 779 | 无 | 2026-10-16 | A lightweight, flexible, and easy-to-use Python tool for genera… | 略读 |
 | Hommy-master/capcut-mate | 2191 | Apache-2.0 | 2026-11-21 | 开源剪映小助手｜剪映API / 扣子插件 / Open-source CapCut automation toolkit to… | 略读 |
 | FireRedTeam/FireRed-OpenStoryline | 3723 | Apache-2.0 | 2026-07-31 | FireRed-OpenStoryline is an AI video editing agent that transfo… | 略读 |
 | appariciojunior/video-editor-skills | 468 | 自定义 | 2026-10-23 | Skills that teach Claude Code to be a first-pass video editor i… | 精读 |
@@ -138,7 +138,7 @@
 
 | 仓库 | ★ | 许可 | 最后推送 | 一句话 | 本文处理 |
 |---|---:|---|---|---|---|
-| Huanshere/VideoLingo | 19339 | Apache-2.0 | 2026-11-13 | Netflix-level subtitle cutting, translation, alignment, and eve… | 精读 |
+| Huanshere/VideoLingo | 19339 | Apache-2.0 | 2026-11-13 | Netflix-level subtitle cutting, translation, alignment, and eve… | 略读 |
 | krillinai/OpenCreator | 14455 | Apache-2.0 | 2026-11-20 | Formerly KrillinAI, VideoTranslation and Dubbing Tool for 120+ … | 略 |
 | liuzhao1225/YouDub-Desktop | 5873 | Apache-2.0 | 2026-11-21 | Open-source AI video localization and dubbing for YouTube/Bilib… | 略 |
 
@@ -319,7 +319,7 @@ NarratoAI 反过来：原片抽帧 → VLM 逐帧理解 → 解说词 → TTS �
 | 链深度 | 续接只在场内合法；连续「吃自己输出」的生成 ≤ 2（硬顶 3），场界从母版重锚并清零 | Emily2040 `seedance-sequence` |
 | 训练式 | 每角色 LoRA（MovieAgent ED‑LoRA）；Higgsfield Soul ID（每角色 20+ 张照片先训再拍） | MovieAgent、Higgsfield 博客 2026‑07‑29 |
 
-没有任何一个 2026 年仍活跃的开源流水线把「角色 embedding / LoRA」当默认路径——主流全部是**多参考图 + 文本锁 + 状态台账**；LoRA 只出现在 2025 年初的学术代码和商业平台的付费功能里。
+在读到的系统里，没有任何一个 2026 年仍活跃的开源流水线把「角色 embedding / LoRA」当默认路径——主流全部是**多参考图 + 文本锁 + 状态台账**；LoRA 只出现在 2025 年初的学术代码和商业平台的付费功能里。
 
 ### 3.4 自动质检与返工
 
@@ -348,7 +348,7 @@ NarratoAI 反过来：原片抽帧 → VLM 逐帧理解 → 解说词 → TTS �
 |  | 有界预算：自检最多 3 轮（video‑use）；每步最多 3 次（LocalMiniDrama）；polish budget 先扣后发（Maestro）；RepairExhausted（ATAS） | 各自 |
 |  | 失败模式登记表：code / 是非问句 / prevention_rule / 正负向子句 / 命中计数；只有高置信模式进门禁 | DramaClaw `failure_registry.py` |
 
-全簇只有 AniMaker 用了**人脸相似度**（研究代码、无许可）；面向生产的系统要么靠 VLM 分维度打分（DramaClaw、wind‑comic），要么干脆不做（NarratoAI 把「主角人脸匹配」挂在待办里）。「ASR 对台词自动判 FAIL 并重出」这一环，开源系统里没有比我们 `qc-and-assembly.md` 写得更细的——但我们只有文字，没有脚本。
+在读到的源码里只有 AniMaker 用了**人脸相似度**模型（研究代码、无许可）；面向生产的系统要么靠 VLM 分维度打分（DramaClaw、wind‑comic），要么干脆不做（NarratoAI 把「主角人脸匹配」挂在待办里）。「ASR 对台词自动判 FAIL 并重出」这一环，开源系统里没有比我们 `qc-and-assembly.md` 写得更细的——但我们只有文字，没有脚本。
 
 ### 3.5 剪辑自动化与工程导出
 
