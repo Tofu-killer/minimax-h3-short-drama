@@ -187,6 +187,11 @@ OBSERVED = "@observed"
 PLACEHOLDER_RE = re.compile(r"\{([A-Za-z0-9_\u4e00-\u9fff-]+)\}")
 
 
+class NotObservedYet(ValueError):
+    """The segment opens from the observed end of the previous one, and that take has not been accepted and
+    observed yet. A normal state of the project, not a mistake in the storyboard."""
+
+
 def effective_continuity(ep: "Episode", seg: "Segment", allow_planned: bool = False) -> tuple[str, str]:
     """The text that opens a segment, and where it came from.
 
@@ -208,10 +213,13 @@ def effective_continuity(ep: "Episode", seg: "Segment", allow_planned: bool = Fa
     elif allow_planned and prev.end_state.strip():
         base, src = prev.end_state.strip(), f"planned:{prev.id}"
     else:
-        raise ValueError(f"segment {seg.id} opens from the observed end of {prev.id}, which has no accepted take with an "
-                         f"observed_end_state yet - accept a take of {prev.id} and run observe_take.py "
-                         f"(or build with --allow-planned for drafts)")
-    text = f"The clip opens from this state: {base.rstrip('.')}."
+        raise NotObservedYet(f"segment {seg.id} opens from the observed end of {prev.id}, which has no accepted take with an "
+                             f"observed_end_state yet - accept a take of {prev.id} and run observe_take.py "
+                             f"(or build with --allow-planned for drafts)")
+    text = f"As the video opens, {base.rstrip('. ')}."
+    if extra:
+        extra = extra[0].upper() + extra[1:]
+        extra = extra if extra[-1] in ".!?" else extra + "."
     return (text + " " + extra).strip(), src
 
 
@@ -252,7 +260,7 @@ def blocking_sentence(ep: "Episode", seg: "Segment") -> str:
     count = NUMBER_WORDS[n] if n < len(NUMBER_WORDS) else str(n)
     if n:
         out = "At the start " + "; ".join(parts) + "." + \
-              f" Exactly {count} {'person is' if n == 1 else 'people are'} in the scene at the start"
+              f" Exactly {count} {'person is' if n == 1 else 'people are'} in the scene" + (" at the start" if later else "")
     else:
         out = "At the start nobody is in the scene"
     if later:
@@ -337,13 +345,15 @@ def spoken_chars(text: str) -> int:
 
 
 def placeholder_problems(ep: "Episode") -> list[str]:
-    """Every {asset_id} in any text that reaches a prompt must be an asset bound to that segment - otherwise the
-    builder cannot replace it."""
+    """Every {asset_id} in a shot, a summary, a soundscape or a staging must be an asset bound to that segment -
+    it is replaced by that asset's label. A STATE (continuity, end_state, observed_end_state) describes the whole
+    room, so it may name any asset of the episode: one that is not bound to the segment is written in words
+    ("the ticket clerk") instead of a label."""
     out = []
-    for i, seg in enumerate(ep.segments):
+    everything = {c.id for c in ep.characters} | {p.id for p in ep.props} | {s.id for s in ep.scenes}
+    for seg in ep.segments:
         bound = set(seg.character_ids) | set(seg.prop_ids) | {seg.scene_id}
-        texts = [("summary", seg.summary), ("continuity", seg.continuity), ("end_state", seg.end_state),
-                 ("negatives", seg.negatives), ("soundscape", seg.soundscape)]
+        texts = [("summary", seg.summary), ("negatives", seg.negatives), ("soundscape", seg.soundscape)]
         for sh in seg.shots:
             for name in ("framing", "camera", "action", "lighting", "performance", "sound_cue"):
                 texts.append((f"shot {sh.index} {name}", getattr(sh, name, "")))
@@ -358,13 +368,10 @@ def placeholder_problems(ep: "Episode") -> list[str]:
                 if key not in bound:
                     out.append(f"segment {seg.id} {where}: {{{key}}} is not an asset bound to this segment "
                                f"(bound: {', '.join(sorted(bound))})")
-        if seg.observed_end_state and i + 1 < len(ep.segments) and ep.segments[i + 1].continuity.strip().startswith(OBSERVED):
-            nxt = ep.segments[i + 1]
-            nb = set(nxt.character_ids) | set(nxt.prop_ids) | {nxt.scene_id}
-            for key in PLACEHOLDER_RE.findall(seg.observed_end_state):
-                if key not in nb:
-                    out.append(f"segment {seg.id} observed_end_state: {{{key}}} is not bound in {nxt.id}, which opens from this "
-                               f"text - bind it there or describe it in words")
+        for where, text in (("continuity", seg.continuity), ("end_state", seg.end_state), ("observed_end_state", seg.observed_end_state)):
+            for key in PLACEHOLDER_RE.findall(text or ""):
+                if key not in everything:
+                    out.append(f"segment {seg.id} {where}: {{{key}}} is not an asset of this episode")
     return out
 
 
@@ -441,6 +448,83 @@ def frames_for_seconds(seconds: float) -> int:
     return 17 * k + 5
 
 
+# ---------------------------------------------------------------- hand-off states and spoken shots
+
+_FRAME_WORDS = re.compile(r"\b(?:at |on |in )?(?:the )?frame[- ](?:left|right|centre|center)\b|\b(?:left|right|centre|center|middle) "
+                          r"(?:side |edge |half |third )?of (?:the )?frame\b|\bat frame\b|\bin the (?:foreground|background)\b", re.I)
+_SPEECH_VERBS = re.compile(r"\b(speaks?|says?|talks?|tells?|asks?|replies|reply|answers?|whispers?|shouts?|murmurs?)\b", re.I)
+
+
+def state_problems(ep: "Episode") -> list[str]:
+    """A state is handed to the NEXT segment, whose first shot has a different camera: "at frame left" would be
+    read as a framing instruction there. Say where people are in the room instead."""
+    out = []
+    for seg in ep.segments:
+        for where, text in (("continuity", seg.continuity), ("end_state", seg.end_state), ("observed_end_state", seg.observed_end_state)):
+            m = _FRAME_WORDS.search(text or "")
+            if m:
+                out.append(f"segment {seg.id} {where}: WARN \"{m.group(0)}\" is a place in one camera's picture. A state is handed "
+                           f"to the next segment, which opens on another camera: say where each person is in the room (next to "
+                           f"what, to whose left or right, facing whom) and what they hold")
+    return out
+
+
+def speech_problems(ep: "Episode") -> list[str]:
+    out = []
+    for seg in ep.segments:
+        for sh, s0, e0 in shot_spans(seg):
+            if not sh.dialogue:
+                continue
+            if e0 - s0 < 3.0:
+                out.append(f"segment {seg.id} shot {sh.index}: WARN a shot with a line lasts {e0 - s0:.1f}s - give a spoken shot at "
+                           f"least 3 s")
+            for name in ("action", "performance"):
+                m = _SPEECH_VERBS.search(getattr(sh, name, "") or "")
+                if m:
+                    out.append(f"segment {seg.id} shot {sh.index} {name}: WARN \"{m.group(0)}\" - the line is written by the dialogue "
+                               f"field; a second mention of speaking invites extra speech. Describe what the body does instead")
+    return out
+
+
+def reference_count(ep: "Episode", seg: "Segment") -> tuple[int, int]:
+    """(pictures, audio clips) the builder will attach to this segment in ref2va mode."""
+    if seg.mode != "ref2va":
+        return (1 if seg.first_frame else 0) + (1 if seg.last_frame else 0), 0
+    speakers = {d.speaker for sh in seg.shots for d in sh.dialogue}
+    pics = 1 if seg.first_frame else 0
+    audio = 0
+    for cid in seg.character_ids:
+        try:
+            c = ep.char(cid)
+        except StopIteration:
+            continue
+        pics += min(3, len(c.reference_images))
+        if c.voice_reference and c.reference_images and cid in speakers:
+            audio += 1
+    try:
+        if ep.scene(seg.scene_id).reference_images and seg.use_scene_reference:
+            pics += 1
+    except StopIteration:
+        pass
+    for pid in seg.prop_ids:
+        try:
+            pics += 1 if ep.prop(pid).reference_images else 0
+        except StopIteration:
+            pass
+    return min(pics, 9), min(audio, 3)
+
+
+def reference_problems(ep: "Episode") -> list[str]:
+    out = []
+    for seg in ep.segments:
+        pics, audio = reference_count(ep, seg)
+        if seg.mode == "ref2va" and pics + audio > 6:
+            out.append(f"segment {seg.id}: WARN {pics} picture(s) + {audio} voice reference(s) = {pics + audio} references; community "
+                       f"tests found 6 or fewer the most stable. Options: one picture per person instead of two, "
+                       f"use_scene_reference false, or leave out a prop that is only glimpsed")
+    return out
+
+
 # ---------------------------------------------------------------- how people are written into prompts
 
 _ARTICLE_RE = re.compile(r"^(?:an?|the)\s+", re.I)
@@ -471,9 +555,9 @@ def identity_problems(ep: "Episode") -> list[str]:
             out.append(f"character {c.id}: WARN identity_phrase should read \"a <who> with <features>\" "
                        f"(\"a woman in her thirties with short black hair, ...\"); prompts call the person "
                        f"\"{designation_of(c)}\" - it starts with {p.split()[0]!r}")
-        elif " with " not in p and "," not in p:
-            out.append(f"character {c.id}: WARN identity_phrase has no feature list (\"a <who> with <hair>, <main garment>, "
-                       f"<one marker>\"); the person will only be called \"{designation_of(c)}\"")
+        elif " with " not in p and "," not in p and c.reference_images:
+            out.append(f"character {c.id}: WARN identity_phrase names nothing that can be seen (\"a <who> with <hair>, <main "
+                       f"garment>, <one marker>\" - write what the reference picture shows; fewer items are fine)")
         n = len(p.split())
         if n > IDENTITY_WORDS:
             out.append(f"character {c.id}: WARN identity_phrase is {n} words and is repeated where the person first appears in "
@@ -628,6 +712,9 @@ def validate_episode(ep: Episode) -> list[str]:
             if len(sh.action.split()) < 8:
                 problems.append(f"segment {seg.id} shot {sh.index}: action is too short to be a start→change→end description")
     problems += identity_problems(ep)
+    problems += state_problems(ep)
+    problems += speech_problems(ep)
+    problems += reference_problems(ep)
     problems += restated_look_problems(ep)
     problems += staging_problems(ep)
     problems += placeholder_problems(ep)

@@ -4,7 +4,8 @@
     python3 extract_tail_frame.py clips/seg_01.mp4 --out bible/handoff/seg_01_tail.png [--back 0.2] [--trim-freeze 1.0]
     python3 extract_tail_frame.py drafts/two_shot_probe.mp4 --out bible/firstframes/s04_reverse.png --after-cut 1
 
-Default: the frame at (end - --back) seconds. With --trim-freeze N the last N seconds (the declared freeze
+Default: the frame at (end - --back) seconds; --back is 0.2 s, which steps off the very last frames (they are the ones
+most often smeared by motion). observe_take.py shows the frames around the same point on its sheet. With --trim-freeze N the last N seconds (the declared freeze
 tail) are ignored, so the frame comes from the last MOVING second; <clip>_trimmed.mp4 is also written next to
 the clip without that tail (--no-trimmed-clip skips it; make_edl.py trims the tail by itself, so the file is
 only a convenience). Use --size with the generation canvas when the frame will be a first frame: take it from

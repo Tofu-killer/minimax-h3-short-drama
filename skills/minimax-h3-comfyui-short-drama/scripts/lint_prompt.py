@@ -192,12 +192,15 @@ def main():
         ctx = neg_scope[max(0, nm.start() - 40): nm.end() + 40]
         if not NEG_OK.search(ctx): warns.append(f"negation: …{ctx.strip()}…")
     if STILL.search(body): errs.append("'completely still'-type phrase freezes the whole shot")
+    for cm in re.finditer(r"\b(?:with|at) (?:a )?(medium|moderate|normal|average) (amplitude|speed)\b", body, re.I):
+        warns.append(f"camera modifier \"{cm.group(0)}\": the official modifiers are small / large amplitude and slow / fast speed; "
+                     f"a medium move is written without the modifier")
     turns = len(re.findall(r"\b(turns?|spins?|turning|spinning)\b", body, re.I))
     if turns > 1: warns.append(f"{turns} turn/spin verbs in one segment (keep <= 1; extra turns drift)")
     micro = re.findall(r"\b(winks?|blows? a kiss|raises? (?:an |one |her |his )?eyebrows?|licks?)\b", body, re.I)
     if micro: warns.append(f"micro-expression verbs {sorted(set(m.lower() for m in micro))} tend to force a face close-up")
     if d_open == 0 and not re.search(r"nobody speaks|no words|no dialogue|without speaking", body, re.I):
-        warns.append("no dialogue in this segment: state it ('Nobody speaks in this clip; every mouth stays closed.') or the model may "
+        warns.append("no dialogue in this segment: state it ('Nobody speaks in this video; every mouth stays closed.') or the model may "
                      "improvise speech - build_prompts.py adds this sentence by itself")
     sound = re.search(r"overall_soundscape:(.*?)(?:\n\s*\n|\Z)", text, re.S)
     music = re.search(r"non_diegetic_music:(.*?)(?:\n\s*\n|\Z)", text, re.S)

@@ -262,6 +262,82 @@ def settings_summary(wf: dict) -> list[str]:
     return out
 
 
+def job_size(wf: dict) -> tuple[int, int]:
+    """(frames, pixels per frame) of the H3 job in this workflow, (0, 0) when it cannot be read."""
+    for v in wf.values():
+        inp = v.get("inputs", {})
+        if v.get("class_type") in (H3_REF, H3_I2V, H3_EMPTY) and all(isinstance(inp.get(k), int) for k in ("width", "height", "length")):
+            return inp["length"], inp["width"] * inp["height"]
+    return 0, 0
+
+
+RATIOS = {"21:9": 21 / 9, "16:9": 16 / 9, "4:3": 4 / 3, "1:1": 1.0, "3:4": 3 / 4, "9:16": 9 / 16}
+
+
+def advice(wf: dict, ratio: str | None) -> list[str]:
+    """Things the server cannot object to but that usually mean a mistake. Printed with the preview; never blocks."""
+    out, steps, cfg, loras = [], None, None, []
+    for v in wf.values():
+        cls, inp = v.get("class_type", ""), v.get("inputs", {})
+        if isinstance(inp.get("steps"), int) and ("cfg" in inp or "sampler_name" in inp):
+            steps, cfg = inp["steps"], inp.get("cfg")
+        if isinstance(inp.get("lora_name"), str):
+            loras.append(inp["lora_name"])
+        if cls == H3_REF:
+            n_img = sum(1 for n in inp if n.startswith("ref_images."))
+            n_aud = sum(1 for n in inp if n.startswith("ref_audios."))
+            if n_img and not isinstance(inp.get("vae"), list):
+                out.append("the H3 reference node has no `vae` input: reference pictures are then read by the text encoder only "
+                           "and identity holds less well - connect the video VAE")
+            if n_aud and not isinstance(inp.get("audio_vae"), list):
+                out.append("voice references are wired but the H3 reference node has no `audio_vae` input: the samples are then "
+                           "not heard by the model at all (only their labels reach the text encoder) - connect the audio VAE")
+        if cls in (H3_REF, H3_I2V, H3_EMPTY) and ratio in RATIOS and isinstance(inp.get("width"), int) and isinstance(inp.get("height"), int):
+            got = inp["width"] / inp["height"]
+            if abs(got / RATIOS[ratio] - 1) > 0.005:
+                out.append(f"the canvas {inp['width']}x{inp['height']} is {got:.3f}:1, the episode is {ratio} ({RATIOS[ratio]:.3f}:1): "
+                           f"crop or scale to {ratio} in the edit (1344x768 -> crop 6 px top and bottom, then scale)")
+    distilled = [x for x in loras if any(t in x.lower() for t in ("turbo", "pdd", "lightx2v", "distill", "step"))]
+    if steps is not None and steps <= 10 and not distilled:
+        out.append(f"{steps} steps and no distillation LoRA in the workflow: the base model wants about 20 steps - "
+                   f"is the Turbo LoRA missing?")
+    if steps is not None and steps >= 16 and distilled:
+        out.append(f"{steps} steps with {distilled[0]} loaded: a refinement pass runs without the Turbo LoRA")
+    if isinstance(cfg, (int, float)) and abs(cfg - 1.0) > 1e-6:
+        out.append(f"cfg {cfg}: the open weights are CFG-distilled, keep cfg at 1.0")
+    return out
+
+
+LOG_HEADER = ["time", "tag", "seed", "status", "seconds", "workflow", "fingerprint", "output", "overrides", "score", "frames", "pixels", "settings"]
+
+
+def log_take(path: Path, row: dict) -> None:
+    """Append one row; a log written by an older version of this script gets the new columns added."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rows = []
+    if path.exists():
+        with open(path, newline="", encoding="utf-8-sig") as fh:
+            rows = list(csv.DictReader(fh))
+    rows.append(row)
+    with open(path, "w", newline="", encoding="utf-8-sig") as fh:
+        w = csv.DictWriter(fh, fieldnames=LOG_HEADER, extrasaction="ignore")
+        w.writeheader()
+        for r in rows:
+            w.writerow({k: r.get(k, "") for k in LOG_HEADER})
+
+
+def estimate(history: list[tuple[float, int, int]], frames: int, pixels: int, n: int, where: str) -> str:
+    """history: (seconds, frames, pixels) of finished takes. Scaled to this job's size when the sizes are known."""
+    scaled = [sec / (f * px) * frames * pixels for sec, f, px in history if f and px and frames and pixels]
+    if scaled:
+        per = statistics.median(scaled)
+        note = f"median of {len(scaled)} finished take(s) {where}, scaled to this job's frame count and canvas"
+    else:
+        per = statistics.median(sec for sec, _f, _px in history)
+        note = f"median of {len(history)} finished take(s) {where}; their size is unknown, so this is not scaled"
+    return f"about {per * n / 60:.1f} min at {per:.0f}s per take ({note})"
+
+
 def seed_nodes(wf):
     return [k for k, v in wf.items() if "seed" in v.get("inputs", {}) and not isinstance(v["inputs"]["seed"], list)]
 
@@ -501,8 +577,8 @@ def main():
     ap.add_argument("--set-title", action="append", default=[], help='"Node title".input=value')
     ap.add_argument("--batch", type=int, default=1, help="number of seeds to queue (抽卡)")
     ap.add_argument("--seed", type=int, help="first seed; default keeps the workflow's seed")
-    ap.add_argument("--out", required=True)
-    ap.add_argument("--tag", default="take")
+    ap.add_argument("--out", help="folder for the takes; default with --media: takes/<name of the prompts folder>/<segment>")
+    ap.add_argument("--tag", help="prefix of each take's folder; default: the segment id with --media, else `take`")
     ap.add_argument("--poll", type=float, default=20.0,
                     help="seconds between status polls (polling mid-sample stalls the sampler 18-43 s, keep >= 20)")
     ap.add_argument("--timeout", type=float, default=7200.0, help="seconds to wait for one take")
@@ -521,6 +597,19 @@ def main():
     offline = a.dry_run
     media: dict[str, str] = {}
     wiring: list[str] = []
+    ratio = None
+    if a.media:
+        try:
+            meta_in = json.loads(Path(a.media).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as e:
+            die(f"cannot read {a.media}: {e}")
+        ratio = meta_in.get("ratio")
+        if not a.out:
+            a.out = str(Path("takes") / Path(a.media).resolve().parent.name / str(meta_in.get("segment", "segment")))
+        a.tag = a.tag or str(meta_in.get("segment", "take"))
+    if not a.out:
+        die("--out is required when there is no --media to derive it from")
+    a.tag = a.tag or "take"
     try:
         if a.media:
             wiring = apply_media(wf, Path(a.media), a.server, media, do_upload=not offline, node_id=a.h3_node)
@@ -558,36 +647,38 @@ def main():
         state = "new" if a.force else take_state(dest, fp)
         plan.append({"seed": seed, "fp": fp, "dest": dest, "state": state})
     batch_id = hashlib.sha256("|".join(p["fp"] for p in plan).encode()).hexdigest()[:12]
+    frames, pixels = job_size(wf)
     past = []
     for rj in out.glob("*/run.json"):
         try:
             r = json.loads(rj.read_text(encoding="utf-8"))
             if r.get("status") == "success" and r.get("seconds"):
-                past.append(float(r["seconds"]))
+                past.append((float(r["seconds"]), int(r.get("frames") or 0), int(r.get("pixels") or 0)))
         except (OSError, json.JSONDecodeError, ValueError):
             pass
     todo = [p for p in plan if p["state"] != "done"]
-    if not todo:
-        est = "nothing to do"
-    elif past:
-        est = (f"about {statistics.median(past) * len(todo) / 60:.1f} min at {statistics.median(past):.0f}s per take "
-               f"(median of {len(past)} finished take(s) in this folder)")
-    else:
-        est = "no timing history in this folder yet"
+    where = "in this folder"
     if not past and todo and a.log and Path(a.log).exists():               # no history here: look in the takes log
         try:
             with open(a.log, newline="", encoding="utf-8-sig") as fh:
-                logged = [float(r["seconds"]) for r in csv.DictReader(fh)
-                          if r.get("workflow") == Path(a.workflow).name and r.get("status") == "success" and r.get("seconds")]
-            if logged:
-                est = (f"about {statistics.median(logged) * len(todo) / 60:.1f} min at {statistics.median(logged):.0f}s per take "
-                       f"(median of {len(logged)} earlier take(s) of this workflow in {a.log})")
+                past = [(float(r["seconds"]), int(r.get("frames") or 0), int(r.get("pixels") or 0)) for r in csv.DictReader(fh)
+                        if r.get("workflow") == Path(a.workflow).name and r.get("status") == "success" and r.get("seconds")]
+            where = f"of this workflow in {a.log}"
         except (OSError, ValueError, KeyError):
-            pass
+            past = []
+    if not todo:
+        est = "nothing to do"
+    elif past:
+        est = estimate(past, frames, pixels, len(todo), where)
+    else:
+        est = "no finished take to estimate the time from yet"
     for line in wiring:
         print("  " + line)
     for line in settings_summary(wf):
         print("  " + line)
+    for line in advice(wf, ratio):
+        print("  advice: " + line)
+    print(f"  output folder: {out}")
     print(f"batch {batch_id}: {len(plan)} take(s) -> {len(todo)} to run; {est}")
     for p in plan:
         note = {"done": "already finished with identical inputs - skipped", "resume": "was queued before - will be collected, not resubmitted",
@@ -637,19 +728,15 @@ def main():
             meta = {"prompt_id": pid, "seed": seed, "fingerprint": fp, "seconds": round(time.time() - t0, 1),
                     "status": "success" if ok and files else ("error" if not ok else "no_output"),
                     "files": [str(f) for f in files], "workflow": str(a.workflow), "comfyui_version": version,
-                    "overrides": a.set + a.set_title, "media_sha256": media}
+                    "overrides": a.set + a.set_title, "media_sha256": media, "frames": frames, "pixels": pixels}
             (dest / "run.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
             ran += 1
             if a.log:
-                lp = Path(a.log)
-                lp.parent.mkdir(parents=True, exist_ok=True)
-                fresh = not lp.exists()
-                with open(lp, "a", newline="", encoding="utf-8-sig") as fh:
-                    w = csv.writer(fh)
-                    if fresh:
-                        w.writerow(["time", "tag", "seed", "status", "seconds", "workflow", "fingerprint", "output", "overrides", "score"])
-                    w.writerow([time.strftime("%Y-%m-%d %H:%M:%S"), a.tag, seed, meta["status"], meta["seconds"], Path(a.workflow).name,
-                                fp[:12], files[0].name if files else "", " ".join(a.set + a.set_title), ""])
+                log_take(Path(a.log), {"time": time.strftime("%Y-%m-%d %H:%M:%S"), "tag": a.tag, "seed": seed, "status": meta["status"],
+                                       "seconds": meta["seconds"], "workflow": Path(a.workflow).name, "fingerprint": fp[:12],
+                                       "output": files[0].name if files else "", "overrides": " ".join(a.set + a.set_title),
+                                       "score": "", "frames": frames, "pixels": pixels,
+                                       "settings": "; ".join(settings_summary(wf))})
             if a.free_every and ran % a.free_every == 0:
                 try:
                     http(a.server, "/free", json.dumps({"unload_models": True, "free_memory": True}).encode(),

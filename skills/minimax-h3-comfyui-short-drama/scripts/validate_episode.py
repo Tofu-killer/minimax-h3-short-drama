@@ -62,15 +62,16 @@ def main():
         n += sum(1 for p in seg.prop_ids if ep.prop(p).reference_images)
         n += 1 if (seg.mode == "ref2va" and seg.first_frame) else 0
         if n > 9: problems.append(f"segment {seg.id}: {n} reference images exceed the 9-slot limit (drop a character detail image or a prop)")
-        elif n > 6: problems.append(f"segment {seg.id}: WARN {n} reference images; >6 is less stable")
     warnings = [p.replace(": WARN ", ": ", 1) for p in problems if ": WARN " in p]
     errors = [p for p in problems if ": WARN " not in p]
-    if a.rhythm:
-        warnings += ["rhythm - " + w for w in rhythm_warnings(ep)]
+    rhythm = rhythm_warnings(ep) if a.rhythm else []
+    warnings += ["rhythm - " + w for w in rhythm]
     if warnings:
         print(f"{len(warnings)} warning(s):")
         for w in warnings:
             print(" ~", w)
+    if a.rhythm and not rhythm:
+        print("rhythm check: no findings")
     if errors:
         print(f"{len(errors)} problem(s):")
         for p in errors:

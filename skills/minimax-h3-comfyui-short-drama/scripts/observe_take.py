@@ -2,12 +2,16 @@
 """Record where an ACCEPTED take really ends, so the next segment opens from reality instead of from the plan.
 
     # 1. look: writes a sheet with the first frame, three middle frames and the last moving frame(s)
-    python3 observe_take.py selects/ep01/s02.mp4 --episode episodes/ep01.json --segment s02 --freeze-tail 1.0
+    python3 observe_take.py takes/ep01/s02/s02_101/s02_101.mp4 --episode episodes/ep01.json --segment s02
 
     # 2. write back what the last frames show (same style as end_state, {asset_id} placeholders)
-    python3 observe_take.py selects/ep01/s02.mp4 --episode episodes/ep01.json --segment s02 \
-        --write "{lin_lan} sits on the left end of the sofa facing frame right, the envelope open on her knees; {dr_zhou} stands by the door, one hand on the frame." \
+    python3 observe_take.py takes/ep01/s02/s02_101/s02_101.mp4 --episode episodes/ep01.json --segment s02 \
+        --write "{lin_lan} sits at the left end of the sofa facing {dr_zhou}, the envelope open on her knees; {dr_zhou} stands by the door with one hand on the door frame." \
         --confidence high --deviation "she sat down instead of staying on her feet"
+
+Which take, which segment: the take is the one you ACCEPTED for a segment (the draft take is fine - refining the
+same seed keeps the composition), given where comfy_submit.py saved it; --segment is the segment that take belongs
+to, not the one that follows.
 
 Why: a storyboard's end_state is a plan. The take that gets accepted often ends a little differently (someone
 sat down, the prop changed hands, the light moved). If the next segment is written from the plan, the two do
@@ -98,13 +102,17 @@ def main():
         text = a.write.strip()
         if len(text.split()) < 8:
             sys.exit("the observed state is too short to hand over positions, posture and props (write one or two full sentences)")
-        if nxt and (nxt.get("continuity") or "").strip().startswith("@observed"):
-            bound = set(nxt.get("character_ids", [])) | set(nxt.get("prop_ids", [])) | {nxt.get("scene_id")}
-            import re as _re
-            unknown = [k for k in _re.findall(r"\{([A-Za-z0-9_\u4e00-\u9fff-]+)\}", text) if k not in bound]
-            if unknown:
-                sys.exit(f"{nxt['id']} opens from this text, but it does not bind {', '.join('{' + k + '}' for k in unknown)}: "
-                         f"add them to {nxt['id']}'s character_ids / prop_ids, or describe them in words")
+        import re as _re
+        assets = {x["id"] for kind in ("characters", "scenes", "props") for x in raw.get(kind, [])}
+        named = _re.findall(r"\{([A-Za-z0-9_\u4e00-\u9fff-]+)\}", text)
+        unknown = [k for k in named if k not in assets]
+        if unknown:
+            sys.exit(f"not an asset of this episode: {', '.join('{' + k + '}' for k in unknown)} (assets: {', '.join(sorted(assets))})")
+        framed = _re.search(r"\bframe[- ](?:left|right|centre|center)\b|\b(?:left|right|centre|center) (?:side |edge )?of (?:the )?frame\b"
+                            r"|\bin the (?:foreground|background)\b", text, _re.I)
+        if framed:
+            print(f"note: \"{framed.group(0)}\" is a place in this take's picture; the next segment opens on another camera. "
+                  f"Prefer where the person is in the room (next to what, to whose left or right, facing whom).")
         seg["status"] = "accepted_with_deviation" if a.deviation else "accepted"
         seg["accepted_take"] = {"path": str(take), "sha256": sha256_file(take)}
         seg["observed_end_state"] = text
@@ -119,6 +127,11 @@ def main():
             cont = (nxt.get("continuity") or "").strip()
             if cont.startswith("@observed"):
                 print(f"next: {nxt['id']} opens from this state - rebuild its prompt: build_prompts.py {ep_path} --out <prompts dir> --only {nxt['id']}")
+                bound = set(nxt.get("character_ids", [])) | set(nxt.get("prop_ids", [])) | {nxt.get("scene_id")}
+                loose = sorted({k for k in named if k not in bound})
+                if loose:
+                    print(f"  {', '.join('{' + k + '}' for k in loose)} {'is' if len(loose) == 1 else 'are'} not bound to {nxt['id']}: "
+                          f"the prompt names {'it' if len(loose) == 1 else 'them'} in words (no reference picture is attached there)")
             elif nxt.get("scene_id") == seg.get("scene_id"):
                 print(f"next: {nxt['id']} plays in the same scene but has a hand-written continuity:\n    {cont}\n"
                       f"  check it against what you just observed, or set it to \"@observed\" (plus any wardrobe / light note) "
@@ -147,11 +160,13 @@ def main():
     print(f"\nplanned end_state of {a.segment}:\n  {seg.get('end_state', '(none)')}")
     print("""
 Look at the LAST frames of the sheet and write one or two sentences in the style of end_state, with {asset_id} placeholders.
-The text is pasted into the next segment's prompt after "The clip opens from this state:", so write a state, in
-English, and use only placeholders of assets the next segment binds:
-  each person  where in frame (left / centre / right, near / far), which way they face, posture, what the hands hold, wardrobe state
+The text is pasted into the next segment's prompt after "As the video opens,", so write a state, in English:
+  each person  where in the ROOM (next to which piece of the set, to whose left or right), which way they face,
+               posture, what the hands hold, wardrobe state
   key props    where they are now
   light        direction and colour, if it differs from the start
+The next segment opens on another camera, so do not write places in the picture ("at frame left", "in the
+foreground"). Any asset of the episode may be named; one the next segment does not bind is written in words there.
 Leave out what stills cannot show: whether an action finished, the phase of a camera move, anything about sound.
 If the frames differ from the plan and you keep the take, say how with --deviation.""")
     print(f"\nthen:\n  python3 observe_take.py {take} --episode {ep_path} --segment {a.segment} --write \"<observed state>\" "

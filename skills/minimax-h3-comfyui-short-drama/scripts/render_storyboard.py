@@ -57,15 +57,18 @@ def main():
         out += [f"> {ep.synopsis}", ""]
     for seg in ep.segments:
         fr = frames_for(seg.duration)
-        refs = [ep.char(c).name for c in seg.character_ids] + [ep.scene(seg.scene_id).name] + \
-               [next(p.name for p in ep.props if p.id == pid) for pid in seg.prop_ids]
+        def shown(obj, attached=True):                  # what is bound, and whether a picture really goes with it
+            return obj.name + ("" if (obj.reference_images and attached) else "（无图，只有文字）")
+        refs = [shown(ep.char(c)) for c in seg.character_ids] + \
+               [shown(ep.scene(seg.scene_id), getattr(seg, "use_scene_reference", True))] + \
+               [shown(next(p for p in ep.props if p.id == pid)) for pid in seg.prop_ids]
         chars = sum(spoken_chars(d.text) for sh in seg.shots for d in sh.dialogue)
         try:
             opening, source = effective_continuity(ep, seg, True)
         except ValueError:
             opening, source = seg.continuity, "authored"
         out += [f"## {seg.id} · {seg.mode} · {seg.duration} s（{fr} 帧 = {fr / 24:.3f} s）{' · ' + seg.hook_type if seg.hook_type else ''}", "",
-                f"- 参考：{'、'.join(refs)}" + (f"；首帧：{Path(seg.first_frame).name}" if seg.first_frame else ""),
+                f"- 绑定：{'、'.join(refs)}" + (f"；首帧：{Path(seg.first_frame).name}" if seg.first_frame else ""),
                 f"- 台词 {chars} 字 / 上限 {int((seg.duration - 2) * 4.5)} 字",
                 *([f"- 开场站位：{esc(blocking_sentence(ep, seg))}"] if blocking_sentence(ep, seg) else []),
                 f"- 承接：{esc(seg.continuity) or '（首段）'}"
@@ -88,7 +91,7 @@ def main():
                 rate = spoken_chars(d.text) / talk if talk > 0 else 0
                 tone = f"〔{d.delivery}〕" if d.delivery else ""
                 after = f" → {d.after_line.strip()}" if getattr(d, "after_line", "").strip() else ""
-                lines.append(f"{who}{'（画外）' if d.offscreen else ''}{tone}：{d.text}（{rate:.1f} 字/s）{after}")
+                lines.append(f"{who}{'（画外）' if d.offscreen else ''}{tone}：{d.text}（摊到本镜 {rate:.1f} 字/s，上限 3）{after}")
             out.append("| " + " | ".join([
                 str(sh.index), f"{bounds[i]:.2f}–{bounds[i + 1]:.2f}",
                 esc(sh.framing + (f"，{sh.lens}" if getattr(sh, "lens", "") else "")),

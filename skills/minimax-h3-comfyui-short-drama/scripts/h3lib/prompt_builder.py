@@ -37,10 +37,12 @@ from media import audio_item, image_item, text_item
 from storyboard import (Dialogue, Episode, Segment, Shot, blocking_sentence, effective_continuity,
                         frames_for_seconds, _framing_class)
 
+ROOM_SHOTS = ("medium", "medium wide", "wide")      # framings that show the room: everyone on screen is seen properly
+
 ALLOW_PLANNED = False       # build_prompts.py --allow-planned: "@observed" may fall back to the PLANNED end state (drafts only)
 MAX_REF_IMAGES = 9
 MAX_REF_AUDIO = 3
-NO_SPEECH = "Nobody speaks in this clip; every mouth stays closed and only the sounds of the scene are heard."
+NO_SPEECH = "Nobody speaks in this video; every mouth stays closed and only the sounds of the scene are heard."
 
 
 def timecode(sec: float) -> str:
@@ -110,10 +112,14 @@ def full_look(c) -> str:
 
 def unpictured_look(c) -> dict:
     """What follows the first mention of a person who has no reference picture: the feature list when the
-    designation is the head of the identity phrase, the whole phrase when a short_phrase replaced it."""
+    designation is the head of the identity phrase, the whole phrase when a short_phrase replaced it (and nothing
+    when the identity says no more than the designation does)."""
     head, tail = split_identity(c.identity_phrase)
     if (getattr(c, "short_phrase", "") or "").strip():
-        return {"look": c.identity_phrase.strip().rstrip(". "), "sep": ", "}
+        whole = c.identity_phrase.strip().rstrip(". ")
+        if _ARTICLE.sub("", whole).lower() == _ARTICLE.sub("", designation(c)).lower():
+            return {}
+        return {"look": whole, "sep": ", "}
     if not tail:
         return {}
     return {"look": tail, "sep": " " if tail.startswith("with ") else ", "}
@@ -183,6 +189,28 @@ def fill(text: str, labels: dict[str, str]) -> str:
     return PLACEHOLDER.sub(sub, text or "")
 
 
+def room_labels(ep: Episode, labels: dict[str, str]) -> dict[str, str]:
+    """Labels for a STATE text (continuity / end_state / observed_end_state): it describes the whole room, so it may
+    name people and things that are not bound to this segment. Those are written in words."""
+    out = {c.id: designation(c) for c in ep.characters}
+    out.update({x.id: prompt_name(x, "prop") for x in ep.props})
+    out.update({x.id: prompt_name(x, "scene") for x in ep.scenes})
+    out.update(labels)
+    return out
+
+
+def style_sentence(style: str) -> str:
+    """One sentence before [Shot 1] (ref guide 5.2). A style written as a full sentence is used as it is; a
+    comma list ("Live-action, cinematic, shot on 35mm ...") is introduced, not forced into a clause."""
+    st = style.strip().rstrip(".")
+    if st.lower().startswith("the target video"):
+        return st + "."
+    return f"The target video is in the following style: {st[0].lower() + st[1:]}."
+
+
+NUMBER = ["zero", "one", "two", "three", "four", "five", "six"]
+
+
 def _sentence(text: str, labels: dict[str, str]) -> str:
     t = fill((text or "").strip(), labels)
     if not t:
@@ -208,18 +236,25 @@ class BuiltPrompt:
 
 # ---------------------------------------------------------------- shared shot body
 
-def _shot_parts(seg: Segment, sh: Shot, is_first: bool, labels: dict[str, str], speak, closure, lead: str = "") -> tuple[str, list[str]]:
+def _shot_parts(seg: Segment, sh: Shot, is_first: bool, labels: dict[str, str], speak, closure, lead: str = "",
+                speakers: dict[str, str] | None = None) -> tuple[str, list[str]]:
     """-> (framing sentence, the sentences that follow it). `speak(dialogue)` returns the sentence for one line,
     `closure(dialogue)` the sentence that closes the speaker's mouth afterwards."""
     framing = fill(sh.framing.strip().rstrip("."), labels)
+    for d in sh.dialogue:                                   # official: "a close-up of <Subject 4> (S2), the young man ..."
+        tag = labels.get(d.speaker, "")
+        if speakers and not d.offscreen and tag.startswith("<") and tag in framing and f"{tag} (" not in framing:
+            framing = framing.replace(tag, f"{tag} ({speakers[d.speaker]})", 1)
     lens = (sh.lens or "").strip().rstrip(".")
     shot_open = framing + (f", {lens}" if lens else "")
-    if is_first:
-        head = f"[Shot {sh.index}] {lead}{shot_open if lead else shot_open[0].upper() + shot_open[1:]}."
+    if is_first and lead:                                   # three-part: the style opens [Shot 1]
+        head = f"[Shot {sh.index}] {lead}{shot_open}."
+    elif is_first:
+        head = f"[Shot {sh.index}] The video opens on {shot_open}."
     else:
         head = f"[Shot {sh.index}] At {timecode(sh.start)}, the shot cuts to {shot_open}."
-    body = [_sentence(sh.action, labels), _sentence(sh.lighting, labels), _sentence(sh.performance, labels),
-            _sentence(sh.camera, labels), _sentence(sh.sound_cue, labels)]
+    body = [_sentence(sh.action, labels), _sentence(sh.sound_cue, labels), _sentence(sh.performance, labels),
+            _sentence(sh.lighting, labels), _sentence(sh.camera, labels)]
     for j, d in enumerate(sh.dialogue):
         body.append(speak(d))
         nxt = sh.dialogue[j + 1] if j + 1 < len(sh.dialogue) else None
@@ -244,16 +279,17 @@ def only_these_words(seg: Segment) -> str:
         return ""
     first = "Speak only the quoted dialogue line." if len(lines) == 1 else "Speak only the quoted dialogue lines."
     if len({d.speaker for d in lines}) > 1:
-        return first + " Those are the only words in the clip."
+        return first + " Those are the only words in the video."
     return first + " After that nobody says anything else."
 
 
-def _closing(seg: Segment, labels: dict[str, str]) -> str:
-    """The end state is written out unless the segment closes on an insert - there a room-wide state would fight the shot."""
+def _closing(ep: Episode, seg: Segment, labels: dict[str, str]) -> str:
+    """The room-wide end state is written out only when the last shot shows the room (medium or wider, or a framing
+    the classifier does not know). Inside a close-up it would describe things the shot cannot show."""
     out = []
     last = seg.shots[-1]
-    if seg.end_state.strip() and _framing_class(last.framing) not in ("insert", "extreme close-up"):
-        out.append(f"The segment ends in this state: {_state(seg.end_state, labels)}.")
+    if seg.end_state.strip() and _framing_class(last.framing) in ROOM_SHOTS + ("other",):
+        out.append(f"At the end of the video, {_state(seg.end_state, room_labels(ep, labels))}.")
     if seg.negatives.strip():
         out.append(_sentence(seg.negatives, labels))
     out.append(only_these_words(seg))
@@ -267,9 +303,9 @@ def _opening(ep: Episode, seg: Segment, labels: dict[str, str]) -> dict[str, str
     is_first = ep.segments[0] is seg
     text, source = effective_continuity(ep, seg, ALLOW_PLANNED)
     if source != "authored":
-        out["state"] = fill(text, labels)
+        out["state"] = fill(text, room_labels(ep, labels))
     elif text and not is_first:                           # the first segment inherits nothing: its note stays a note
-        out["state"] = f"The clip opens from this state: {_state(text, labels)}."
+        out["state"] = f"As the video opens, {_state(text, room_labels(ep, labels))}."
     if not any(sh.dialogue for sh in seg.shots):
         out["nospeech"] = NO_SPEECH
     return out
@@ -308,32 +344,50 @@ def _splice(text: str, label: str, addition: str, sep: str = ", ") -> tuple[str,
     return text, False
 
 
-def _introduce(heads: list[str], parts: list[dict[str, str]], subjects: list[dict]) -> None:
+_ABSENT = re.compile(r"\b(outside the frame|out of (?:the )?frame|off[- ]?screen|off frame|has left|have left|is gone|are gone|"
+                     r"absent|no longer|not in the)\b", re.I)
+
+
+def _present(text: str, pat: re.Pattern) -> bool:
+    """True when `text` mentions the label in a clause that does not say it is away."""
+    return any(pat.search(clause) and not _ABSENT.search(clause) for clause in re.split(r"[;.]", text or ""))
+
+
+def _introduce(heads: list[str], parts: list[dict[str, str]], subjects: list[dict], classes: list[str]) -> None:
     """Official rule (ref guide 5.3): at the first clear appearance of a subject, describe its referenced
     characteristics; later shots keep the label. `subjects`: {"label", "look", "sep", "short", "person", "visible"}.
-      * look    - spliced in once, in the first shot that really shows the subject: it is on screen, it is more
-                  than a shoulder or a pair of hands in the framing, and the framing is about it or about nobody
-                  in particular (an establishing shot). A shot that is somebody else's close-up does not count.
+      * look    - spliced in once, after the first mention in the first shot that really shows the subject: it is
+                  on screen, it is more than a shoulder or a pair of hands in the framing, and either the shot
+                  shows the room (medium or wider), or its framing names the subject, or it names nobody.
+                  Somebody else's close-up does not count.
       * short   - said at a first glimpse that comes before that shot, and as a reminder at each later cut whose
                   framing leads with this subject ("<Subject 2>, the man in his fifties from Shot 1")
       * visible - shot indexes where the person is on screen (None: not declared, any mention counts)
-    Only the opening positions, the shot's own sentences and the framing are searched: an inherited state or an
-    end state may mention a subject to say that it is NOT there."""
+    `classes` is the shot size of each shot (storyboard._framing_class). Text is searched in reading order -
+    framing, opening positions, inherited state, the shot's own sentences - and an end state is never touched."""
     first_label = re.compile(r"<Subject \d+>")
     people = [_label_re(x["label"]) for x in subjects if x.get("person")]
 
-    def put(i: int, label: str, addition: str, sep: str = ", ") -> bool:
-        for key in ("blocking", "body"):
-            parts[i][key], ok = _splice(parts[i].get(key, ""), label, addition, sep)
+    def put(i: int, s: dict, addition: str, sep: str = ", ") -> bool:
+        pat = _label_re(s["label"])
+        for key in ("head", "blocking", "state", "body"):
+            text = heads[i] if key == "head" else parts[i].get(key, "")
+            if key == "state" and not _present(text, pat):
+                continue
+            new, ok = _splice(text, s["label"], addition, sep)
             if ok:
+                if key == "head":
+                    heads[i] = new
+                else:
+                    parts[i][key] = new
                 return True
-        heads[i], ok = _splice(heads[i], label, addition, sep)
-        return ok
+        return False
 
     for s in subjects:
         pat = _label_re(s["label"])
         mention = [i for i in range(len(heads))
-                   if pat.search(heads[i]) or pat.search(parts[i].get("blocking", "")) or pat.search(parts[i].get("body", ""))]
+                   if pat.search(heads[i]) or pat.search(parts[i].get("blocking", "")) or pat.search(parts[i].get("body", ""))
+                   or _present(parts[i].get("state", ""), pat)]
         if not mention:
             continue
         partial = set()
@@ -342,15 +396,16 @@ def _introduce(heads: list[str], parts: list[dict[str, str]], subjects: list[dic
             partial = {i for i in mention if glimpse.search(heads[i])}
         clear = [i for i in mention
                  if (s.get("visible") is None or i in s["visible"]) and i not in partial
-                 and (pat.search(heads[i]) or not s.get("person") or not any(q.search(heads[i]) for q in people))]
+                 and (not s.get("person") or classes[i] in ROOM_SHOTS or pat.search(heads[i])
+                      or not any(q.search(heads[i]) for q in people))]
         shown = None
-        if clear and s.get("look") and put(clear[0], s["label"], s["look"], s.get("sep", ", ")):
+        if clear and s.get("look") and put(clear[0], s, s["look"], s.get("sep", ", ")):
             shown = clear[0]
         short = s.get("short")
         if not short:
             continue
         if shown is None or mention[0] < shown:              # a first glimpse still says who it is
-            put(mention[0], s["label"], short)
+            put(mention[0], s, short)
         if shown is None:
             continue
         for i in mention:
@@ -376,6 +431,7 @@ def build_ref2va(ep: Episode, seg: Segment) -> BuiltPrompt:
     audio_ret: list[str] = []
     audio_of: dict[str, int] = {}
     all_shots = ", ".join(f"[Shot {sh.index}]" for sh in seg.shots)
+    on_screen: dict[str, set[int]] = {}     # label -> shot indexes the storyboard declares the person visible in
     sc = ep.scene(seg.scene_id)
     scene_name = prompt_name(sc, "scene")
 
@@ -407,6 +463,7 @@ def build_ref2va(ep: Episode, seg: Segment) -> BuiltPrompt:
         nsubj += 1
         subj = f"<Subject {nsubj}>"
         labels[cid] = subj
+        on_screen[subj] = {i for i, sh in enumerate(seg.shots) if cid in sh.on_screen_characters}
         head, tail = split_identity(c.identity_phrase)
         who = designation(c)
         tail = f", {tail}" if tail else ""
@@ -419,9 +476,8 @@ def build_ref2va(ep: Episode, seg: Segment) -> BuiltPrompt:
                         f"come from {pics[1]}{extra}{tail}.")
             kept = (f"the facial identity and hairstyle of {who} are retained from {pics[0]} and the build, outfit and "
                     f"silhouette from {pics[1]}" + (f"; {pics[2]} adds detail" if len(pics) > 2 else ""))
-        shots_in = ", ".join(f"[Shot {sh.index}]" for sh in seg.shots if cid in sh.on_screen_characters) or all_shots
-        retention.append(f"{subj} (appears in {shots_in}): fully_preserved - {kept}; only the person is taken from "
-                         f"{'this picture' if len(pics) == 1 else 'these pictures'}, the setting comes from the scene.")
+        retention.append(f"{subj} (appears in @@SHOTS:{subj}@@): fully_preserved - {kept}; only the person is taken from "
+                         f"{'this picture' if len(pics) == 1 else 'these pictures'}, the setting comes from @@SETTING@@.")
         declared = any(sh.on_screen_characters for sh in seg.shots)
         subjects.append({"label": subj, "look": full_look(c), "short": who, "person": True,
                          "visible": {i for i, sh in enumerate(seg.shots) if cid in sh.on_screen_characters} if declared else None})
@@ -440,12 +496,15 @@ def build_ref2va(ep: Episode, seg: Segment) -> BuiltPrompt:
         subj = f"<Subject {nsubj}>"
         labels[sc.id] = subj
         defs.append(f"{subj} is the environment in <Picture {pic}>, {sc.description.strip().rstrip('.')}.")
+        # partially_preserved on purpose: "fully" also keeps the picture's viewpoint, which freezes the camera
         retention.append(f"{subj} (appears in {all_shots}): partially_preserved - the layout, light direction and set "
                          f"dressing are retained while the camera position changes from shot to shot.")
         setting = f"The setting is {subj}, {scene_brief(sc.description)}."
+        setting_ref = subj
     else:
         labels[sc.id] = scene_name                          # no picture: the words have to carry the place
         setting = f"The setting is {scene_name}, {sc.description.strip().rstrip('.')}."
+        setting_ref = "the described setting"
 
     for pid in seg.prop_ids:
         p = ep.prop(pid)
@@ -455,10 +514,8 @@ def build_ref2va(ep: Episode, seg: Segment) -> BuiltPrompt:
             nsubj += 1
             subj = f"<Subject {nsubj}>"
             labels[pid] = subj
-            defs.append(f"{subj} is {prompt_name(p, 'prop')}, the exact item shown in <Picture {pic}>, {p.description.strip().rstrip('.')}.")
-            named = [f"[Shot {sh.index}]" for sh in seg.shots
-                     if f"{{{pid}}}" in " ".join([sh.framing, sh.action, sh.performance, sh.lighting, sh.sound_cue, sh.camera])]
-            retention.append(f"{subj} (appears in {', '.join(named) or all_shots}): fully_preserved - the item's shape, colour, "
+            defs.append(f"{subj} is {definite(p.description)}, the exact item shown in <Picture {pic}>.")
+            retention.append(f"{subj} (appears in @@SHOTS:{subj}@@): fully_preserved - the item's shape, color, "
                              f"markings and material are retained exactly; no other item is substituted.")
             subjects.append({"label": subj, "look": definite(p.description)})
 
@@ -492,7 +549,8 @@ def build_ref2va(ep: Episode, seg: Segment) -> BuiltPrompt:
         voiced.add(d.speaker)
         voice = ""
         if d.speaker in audio_of:                           # cited wherever the audio relationship is active (ref guide 5.3)
-            voice = (f", using the voice timbre referenced from <Audio {audio_of[d.speaker]}>," if first else
+            described = f" {voice_tail(c)}," if voice_tail(c).startswith("with ") else ""
+            voice = (f", using the voice timbre referenced from <Audio {audio_of[d.speaker]}>,{described}" if first else
                      f", in the same voice referenced from <Audio {audio_of[d.speaker]}>,")
         elif first and voice_tail(c):                       # no reference: the voice is described where it is first heard
             voice = f", {voice_tail(c)},"
@@ -505,17 +563,24 @@ def build_ref2va(ep: Episode, seg: Segment) -> BuiltPrompt:
     def closure(d: Dialogue) -> str:
         return f"{labels[d.speaker][0].upper() + labels[d.speaker][1:]} closes {possessive(ep.char(d.speaker))} lips."
 
-    style = seg.style.strip().rstrip(".")
-    lead_line = f"The target video is rendered as {style[0].lower() + style[1:]}."      # official: style only before [Shot 1]
+    lead_line = style_sentence(seg.style)                   # official: only the style comes before [Shot 1]
     heads, parts = [], []
     for i, sh in enumerate(seg.shots):
-        h, b = _shot_parts(seg, sh, i == 0, labels, speak, closure)
+        h, b = _shot_parts(seg, sh, i == 0, labels, speak, closure, speakers=speakers)
         heads.append(h)
         parts.append({"body": " ".join(b)})
     parts[0].update(setting=setting, **_opening(ep, seg, labels))            # the set-up sits inside [Shot 1]
-    parts[-1]["closing"] = _closing(seg, labels)
-    _introduce(heads, parts, subjects)
+    parts[-1]["closing"] = _closing(ep, seg, labels)
+    _introduce(heads, parts, subjects, [_framing_class(sh.framing) for sh in seg.shots])
     shot_lines = [_join_shot(h, p) for h, p in zip(heads, parts)]
+
+    # "appears in" lists the shots that name the subject or declare it on screen - read off the finished text
+    def appears(label: str) -> str:
+        pat = _label_re(label)
+        hit = [i for i, line in enumerate(shot_lines) if pat.search(line) or i in on_screen.get(label, ())]
+        return ", ".join(f"[Shot {seg.shots[i].index}]" for i in hit) or all_shots
+    retention = [re.sub(r"@@SHOTS:(<Subject \d+>)@@", lambda m: appears(m.group(1)), r).replace("@@SETTING@@", setting_ref)
+                 for r in retention]
 
     types = (["keyframe completion"] if seg.first_frame else []) + ["reference generation"] + (["audio reference"] if aud else [])
     people = [labels[c] for c in seg.character_ids]
@@ -527,8 +592,10 @@ def build_ref2va(ep: Episode, seg: Segment) -> BuiltPrompt:
             + f" across {n} shot{'s' if n > 1 else ''}."
     if seg.first_frame:
         gist += " It opens on <Picture 1>."
-    for cid, j in audio_of.items():
-        gist += f" <Audio {j}> is the voice-timbre reference for {labels[cid]}."
+    if audio_of:                                            # official: "The three-shot exchange uses <Audio 1> as the ..."
+        uses = _join([f"<Audio {j}> as the voice-timbre reference for {labels[cid]}" for cid, j in audio_of.items()])
+        count = f"{NUMBER[n]}-shot " if 1 < n < len(NUMBER) else ""
+        gist += f" The {count}video uses {uses}."
     summary = f"[{' + '.join(types)}] {gist}"
 
     text = (
@@ -606,7 +673,7 @@ def build_three_part(ep: Episode, seg: Segment) -> BuiltPrompt:
     style = seg.style.strip().rstrip(".")
     heads, parts = [], []
     for i, sh in enumerate(seg.shots):
-        h, b = _shot_parts(seg, sh, i == 0, labels, speak, closure, lead=f"{style}, " if i == 0 else "")
+        h, b = _shot_parts(seg, sh, i == 0, labels, speak, closure, lead=f"{style}, " if i == 0 else "", speakers=speakers)
         heads.append(h)
         parts.append({"body": " ".join(b)})
     parts[0].update(setting=setting, **_opening(ep, seg, labels))            # the set-up sits inside [Shot 1], after the framing
@@ -615,8 +682,8 @@ def build_three_part(ep: Episode, seg: Segment) -> BuiltPrompt:
             "The shot settles into the pose, spacing and composition established by Picture 2 at the end.",
             _sentence(seg.negatives, labels), only_these_words(seg)) if x)
     else:
-        parts[-1]["closing"] = _closing(seg, labels)
-    _introduce(heads, parts, subjects)
+        parts[-1]["closing"] = _closing(ep, seg, labels)
+    _introduce(heads, parts, subjects, [_framing_class(sh.framing) for sh in seg.shots])
     body = " ".join(_join_shot(h, p) for h, p in zip(heads, parts))
 
     text = (

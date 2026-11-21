@@ -18,7 +18,7 @@ import argparse, json, sys
 from pathlib import Path
 sys.dont_write_bytecode = True      # keep the skill folder free of __pycache__
 sys.path.insert(0, str(Path(__file__).parent / "h3lib"))
-from storyboard import load_episode, validate_episode, effective_continuity, frames_for_seconds  # noqa: E402
+from storyboard import NotObservedYet, load_episode, validate_episode, effective_continuity, frames_for_seconds  # noqa: E402
 import prompt_builder  # noqa: E402
 from prompt_builder import build, dialogue_cues  # noqa: E402
 
@@ -62,13 +62,16 @@ def main():
     prompt_builder.ALLOW_PLANNED = a.allow_planned
     only = set(a.only.split(",")) if a.only else None
     out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
-    blocked = []
+    blocked, waiting = [], []
     for seg in ep.segments:
         if only and seg.id not in only:
             continue
         try:
             _text, source = effective_continuity(ep, seg, a.allow_planned)
             bp = build(ep, seg)
+        except NotObservedYet as e:
+            waiting.append(str(e))
+            continue
         except ValueError as e:
             blocked.append(str(e))
             continue
@@ -77,7 +80,8 @@ def main():
         frames = frames_for_seconds(seg.duration)
         (out / f"{seg.id}.txt").write_text(text, encoding="utf-8")
         (out / f"{seg.id}.media.json").write_text(json.dumps(
-            {"segment": seg.id, "mode": seg.mode, "duration": seg.duration, "frames": frames, "effective_seconds": round(frames / 24, 3),
+            {"segment": seg.id, "mode": seg.mode, "ratio": ep.ratio, "duration": seg.duration, "frames": frames,
+             "effective_seconds": round(frames / 24, 3),
              "prompt_file": f"{seg.id}.txt", "labels": bp.labels, "media": media},
             ensure_ascii=False, indent=1), encoding="utf-8")
         note = {"authored": ""}.get(source, f"  [opens from {source.replace(':', ' end of ')}]")
@@ -92,6 +96,10 @@ def main():
             idx += 1
         offset += frames_for_seconds(seg.duration) / 24.0
     (out / "cues.srt").write_text("\n".join(srt), encoding="utf-8")
+    if waiting:
+        print("WAITING for a take to be accepted (expected at this stage, the other segments were written):")
+        for w in waiting:
+            print(" -", w)
     if blocked:
         print("NOT BUILT (the other segments were written):")
         for b in blocked:
