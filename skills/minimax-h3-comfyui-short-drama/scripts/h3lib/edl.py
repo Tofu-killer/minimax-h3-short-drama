@@ -39,3 +39,18 @@ def resolve(edl_path: Path, p: str | Path) -> Path:
         return q
     alt = Path(edl_path).parent / q
     return alt if alt.exists() else q
+
+
+def cut_signature(edl: dict) -> str:
+    """Changes whenever a cut moves: line times are stored relative to each segment's in point, so they are
+    only valid for the cut they were measured on."""
+    import hashlib
+    key = ";".join(f"{s['id']}:{s['in_frame']}:{s['out_frame']}:{s.get('src_fps', '')}:{s.get('video')}:{s.get('audio')}"
+                   for s in edl.get("segments", []))
+    return hashlib.sha1(key.encode("utf-8")).hexdigest()[:12]
+
+
+def subtitles_stale(edl: dict) -> bool:
+    """True when retime_subtitles.py recorded a cut signature and the cuts no longer match it."""
+    made = (edl.get("subtitles") or {}).get("cut_signature")
+    return bool(made) and made != cut_signature(edl)

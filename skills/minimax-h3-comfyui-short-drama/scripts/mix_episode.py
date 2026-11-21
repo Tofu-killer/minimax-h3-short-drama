@@ -4,6 +4,10 @@
     python3 mix_episode.py edit/ep01.edl.json --out final/ep01.mp4
     python3 mix_episode.py edit/ep01.edl.json --out final/ep01.mp4 --ass subs/ep01.ass --stems-out audio/ep01/stems
 
+--stems-out writes the pre-master buses that carry sound: <name>.takes.wav when every segment plays its own
+sound (dialogue and the takes' own effects are one track then), or <name>.dialogue.wav when separate dialogue
+stems are used, plus <name>.effects.wav / <name>.music.wav when those exist.
+
 Stages (each writes a file; --keep-temp DIR keeps them, so a failure is easy to locate):
   1. picture   every segment is cut on exact clip frames [in_frame, out_frame), conformed to the timeline fps and
                delivery size (lanczos; --fit cover crops, contain pads), subtitles burned in the same pass when
@@ -24,7 +28,7 @@ Stages (each writes a file; --keep-temp DIR keeps them, so a failure is easy to 
                target, true peak <= -1.0 dBTP. A JSON report is written next to the output.
 
 EDL fields used: fps, width, height, segments[{id, video, src_fps, in_frame, out_frame, audio ("native" | path |
-null), nondialogue, l_cut, j_cut, scene, lines[{start, end}]}], ambience{scene: {file, gain_db}},
+null), nondialogue, l_cut, j_cut, scene, lines[{start, end, gain_db}]}], ambience{scene: {file, gain_db}},
 music{file, gain_db, fade_in, fade_out, loop, duck{depth_db, pre, post, attack, release, mode ("lines" |
 "sidechain"), threshold, ratio}},
 loudness{dialogue_lufs, program_lufs, true_peak}.
@@ -44,6 +48,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+sys.dont_write_bytecode = True      # keep the skill folder free of __pycache__
 sys.path.insert(0, str(Path(__file__).parent / "h3lib"))
 import edl as edl_lib  # noqa: E402
 
@@ -248,13 +253,23 @@ def main():
             vf = (f"trim=start_frame={s['in_frame']}:end_frame={s['out_frame']},setpts=PTS-STARTPTS,fps={fps:g},"
                   f"tpad=stop_mode=clone:stop_duration=1,{geo},setsar=1")
             if subs_name:
-                vf += f",setpts=PTS+{p['start_s']:.6f}/TB,subtitles={subs_name},setpts=PTS-STARTPTS"
+                # after the fps filter one PTS tick is one frame: shift by whole frames, so a cue that starts on
+                # frame k is drawn from frame k (a seconds-based offset lands a hair early and loses a frame)
+                vf += f",setpts=PTS+{p['start_frame']},subtitles={subs_name},setpts=PTS-STARTPTS"
             vf += ",format=yuv420p"
             run(["ffmpeg", "-v", "error", "-y", "-i", str(resolve(s["video"]).resolve()), "-an", "-vf", vf,
                  "-frames:v", str(p["frames"]), "-c:v", "libx264", "-crf", str(a.crf), "-preset", a.preset,
                  "-g", gop, "-bf", "2", "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709",
                  "-video_track_timescale", "24000", name], f"cutting picture of {p['id']}", cwd=tmp)
             names.append(name)
+        if a.ass:                                # do the clips already carry burned text? burning again would double it
+            import signals
+            for p in plan:
+                spans = signals.burned_text(resolve(p["seg"]["video"]), p["src_out"] - p["src_in"], p["src_in"])
+                if spans:
+                    warnings.append(f"{p['id']}: the clip already has text burned into its lower third at "
+                                    + ", ".join(f"{x - p['src_in']:.1f}-{y - p['src_in']:.1f}s" for x, y in spans)
+                                    + " - the subtitles you are burning will sit on top of it; regenerate the take or mix without --ass")
         (tmp / "concat.txt").write_text("".join(f"file '{n}'\n" for n in names), encoding="utf-8")
         video_only = tmp / "video_only.mp4"
         run(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", "concat.txt", "-c", "copy", "video_only.mp4"],
@@ -311,8 +326,10 @@ def main():
                         basis = "speech"
                         for ln, l, _d in per:
                             if l < top - 6.0:
-                                warnings.append(f"{p['id']}: line '{ln['text'][:10]}' is {top - l:.0f} LU quieter than the rest of "
-                                                f"the take - hard to hear; re-roll the take or lift that line in an editor")
+                                if not ln.get("gain_db"):
+                                    warnings.append(f"{p['id']}: line '{ln['text'][:10]}' is {top - l:.0f} LU quieter than the rest of the "
+                                                    f"take - hard to hear; re-roll the take, or add \"gain_db\": {min(12, round(top - l - 2))} to "
+                                                    f"that line in the EDL (it lifts everything under the line too)")
                         raw = loud["dialogue_lufs"] - ref
                     elif lines:
                         ref, basis = whole_i, "whole take"
@@ -335,7 +352,18 @@ def main():
             inputs += ["-i", str(path)]
             dur = a1 - a0
             delay_ms = max(0.0, (p["start_s"] - lead) * 1000.0)
-            chains.append(f"[{k}:a]atrim=start={a0:.6f}:end={a1:.6f},asetpts=PTS-STARTPTS,{STEREO},volume={gain:.3f}dB,"
+            lifts = ""                                             # optional per-line trims: lines[].gain_db
+            for ln in s.get("lines") or []:
+                g = float(ln.get("gain_db") or 0.0)
+                if g and ln.get("start") is not None and ln.get("end") is not None:
+                    g = max(-12.0, min(12.0, g))
+                    w0, w1 = lead + float(ln["start"]), lead + float(ln["end"])
+                    ramp = f"min(1,max(0,(t-{w0 - 0.08:.3f})/0.08))*min(1,max(0,({w1 + 0.15:.3f}-t)/0.15))"
+                    lifts += f",volume=volume='pow(10,{g:.2f}/20*({ramp}))':eval=frame"
+                    entry.setdefault("line_gains", []).append({"text": ln["text"][:12], "gain_db": g})
+            if lifts:
+                lifts = ",asetnsamples=n=256" + lifts
+            chains.append(f"[{k}:a]atrim=start={a0:.6f}:end={a1:.6f},asetpts=PTS-STARTPTS,{STEREO},volume={gain:.3f}dB{lifts},"
                           f"afade=t=in:d=0.01,afade=t=out:st={max(0.0, dur - 0.12):.6f}:d=0.12,"
                           f"adelay={delay_ms:.3f}:all=1[d{k}]")
             labels.append(f"[d{k}]")
@@ -502,7 +530,13 @@ def main():
         if a.stems_out:
             sd = Path(a.stems_out)
             sd.mkdir(parents=True, exist_ok=True)
-            for name, f in (("dialogue", dlg_bus), ("effects", fx_bus), ("music", music_bus)):
+            all_native = all(s_.get("audio") in (None, "native") for s_ in edl["segments"])
+            stems = [("takes" if all_native else "dialogue", dlg_bus)]         # with native sound it is the takes' whole sound
+            if any(s_.get("nondialogue") for s_ in edl["segments"]) or beds:
+                stems.append(("effects", fx_bus))
+            if music:
+                stems.append(("music", music_bus))
+            for name, f in stems:                                             # silent buses are not written
                 shutil.copyfile(f, sd / f"{out.stem}.{name}.wav")
         vdur, adur = stream_duration(out, "v"), stream_duration(out, "a")
         integ, peak = ebur128(out)
@@ -522,6 +556,9 @@ def main():
         for e in seg_report:
             if e.get("gain_db") is not None:
                 print(f"  {e['id']:>6}  {e.get('basis', '-'):11s} {e.get('measured_lufs', '-')} LUFS -> {e['gain_db']:+.2f} dB")
+        if a.ass and edl_lib.subtitles_stale(edl):
+            warnings.append("the cuts changed after the subtitles were timed (in / out frames differ from when "
+                            "retime_subtitles.py ran): the burned subtitles may be off - run retime_subtitles.py and mix again")
         for w_ in warnings:
             print("WARN ", w_)
         print(f"picture {vdur:.3f}s / sound {adur:.3f}s / plan {total:.3f}s ; loudness {integ} LUFS (target {tgt_i:g}), "

@@ -32,6 +32,10 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 
 生态里每类任务该选哪个仓库、为什么，见 `references/ecosystem-map.md`；所有已知禁忌集中在 `references/pitfalls.md`。
 
+**只做质检和后期**（片段已经生成好了）：直接看 `references/qc-and-assembly.md` §0——只需要一份带段 id、镜头起点和锁定台词的精简分镜，不必先让 `validate_episode.py` 通过。
+
+**命令约定**：所有脚本都在项目根目录下运行，写作 `python <本 skill 目录>/scripts/xxx.py …`（下文与各 reference 里简写成 `scripts/xxx.py`）；通配符放进引号由脚本自己展开；每个脚本都有 `--help`。references 里引用的 `docs/13-…`、`docs/14-…` 是仓库里的调研底稿，不随 skill 安装：<https://github.com/Tofu-killer/minimax-h3-short-drama/tree/main/docs>。
+
 ## 必须遵守的铁律
 
 1. **描述英文、台词原语言**，台词只放在 `<d>[Chinese] …</d>` 里。
@@ -47,7 +51,7 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 11. **每段写 `end_state` 与 `continuity`**，下一段从上一段终态开场——同场景接续的段从**已采纳片段的实拍末态**开场（`observe_take.py` 写回，`continuity` 写 `"@observed"`），不是从计划的 `end_state`；跨段衔接优先「尾帧→首帧」或 latent 续接节点，不写「continue the previous video」。
 12. **可复现**：任何一段都能从 `prompts/ + bible/ + project.yaml` 重生成；参数写进 `logs/takes.csv`。
 13. **短剧默认硬切，不续接**：每段 5–12 s 独立 Ref2VA + 同一组参考图 + 音色锚；一条续接链 ≤ 4 段，链上关 Spectrum、不改分辨率 / LoRA / shift。
-14. **段尾写 0.5 s 收束 + 1 s 定格，拼接时剪掉**；下一段同时投喂母版（角色参考 / 场景母版）与截取的末帧，首镜同档景别起手。
+14. **段尾写 0.5 s 收束 + 1 s 定格，拼接时剪掉**（末镜标 `"end_hold": true`——提示词、质检和剪辑单都靠这个字段知道这一秒是定格）；下一段同时投喂母版（角色参考 / 场景母版）与截取的末帧，首镜同档景别起手。
 15. **有台词的镜头整镜只做说话**；单段说话人 ≤ 2；台词文字永不经 LLM 改写；说话重讲 / 含糊先换 seed。
 16. **有运镜的镜头精修用 20 步、关 Turbo**（4 步 Turbo 几乎抹掉运镜；8 步可做草稿）；Ref2VA 只挂身份参考，背景板会让运镜减半，只在必须锁环境时挂。
 17. **真人对白段先出首帧再生成**（盲评：直出 0:4 输，垫首帧 4:0 赢）；漫剧可直出。参考视频先重采到 24 fps（节点不重采样）。
@@ -78,20 +82,21 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 | `scripts/build_prompts.py <ep.json> --out prompts/ep01 [--only s03] [--allow-planned]` | 生成每段最终提示词 `.txt` + 媒体顺序 `.media.json` + `cues.srt`；`continuity` 为 `"@observed"` 的段从上一段实拍末态开场，尚未观测时不出这一段 |
 | `scripts/observe_take.py <take.mp4> --episode ep.json --segment s02 [--write "…" --confidence high --deviation "…"]` | 出已采纳片段的观测表（首帧 / 中段 / 末帧），再把实拍末态、置信度、与计划的偏差写回分镜 |
 | `scripts/comfy_submit.py <wf.api.json> --set … --batch N --out takes/ep01/s03 --tag s03 [--dry-run \| --confirm <批次号>] [--free-every 3] [--log logs/takes.csv]` | 向本地 ComfyUI 提交 API 格式工作流、上传媒体、按 seed 抽卡、下载产物。提交前**预检**（节点是否安装、模型 / LoRA 文件名是否在服务器列表里并给出最接近的名字、必填输入、H3 帧数 17k+5、宽高 32 倍数、参考图接线格式）；每个 take 按「最终工作流 + 上传文件内容」算指纹，**相同的已完成 take 自动跳过**；任务被受理就把 `prompt_id` 落盘，脚本中断后原样重跑会**接回原任务**而不是重复提交；同一目录里旧结果移到 `_prev_*` 不覆盖。轮询 ≥ 20 s |
-| `scripts/qc_probe.py "takes/ep01/**/*.mp4" --episode ep.json --freeze-tail 1.0 --out qc/probe` | 技术 QC：分辨率 / 时长 / 帧率 / 音轨 / 峰值 > −1 dB / 冻结 > 1 s / 黑场 > 0.25 s（排除声明的定格尾）；**镜头数与分镜对账**（少切、多切、切点偏移）、首尾跳帧、动作量。没有分镜时用 `--expect-seconds / --expect-size / --shots 0,3.5` |
+| `scripts/qc_probe.py "takes/ep01/**/*.mp4" --episode ep.json --freeze-tail 1.0 --out qc/probe` | 技术 QC。FAIL：缺音轨 / 帧率 / 时长不符、音频削波、冻结 > 1 s、黑场 > 0.25 s；WARN：**镜头数与分镜对不上**（少切、多切、切点偏移）、首尾跳帧、**画面里烧着字**、近乎静止、峰值偏高、画幅不符。定格尾只在标了 `end_hold` 的段上排除。没有分镜时用 `--expect-seconds / --expect-size / --shots 0,3.5` |
 | `scripts/qc_dialogue.py --episode ep.json --targets "takes/ep01/**/*.mp4" --out qc/dialogue` | 台词质检：每句是否说了、说全、只说一次、何时说；无台词段是否擅自说话；输出首 / 末字时间与语速（需 `faster-whisper`） |
-| `scripts/contact_sheet.py "takes/ep01/s03/*.mp4" --freeze-tail 1.0` | 联络表：首末帧、每个切点前后各一帧、每镜中段，帧下印秒数；Windows 直接可用 |
+| `scripts/contact_sheet.py "takes/ep01/s03/*.mp4" --episode ep.json --freeze-tail 1.0 [--out-dir qc/sheets]` | 联络表：首帧、末尾可用帧、最后一帧、跳变帧、每个切点前后各一帧、每镜中段，帧下印秒数 |
 | `scripts/identity_gate.py --episode ep.json --targets "takes/**/*.mp4" --out qc/identity` | 真人脸身份门禁（YuNet + SFace，CPU 可跑，首次自动从 HuggingFace 下模型）：逐帧把脸指派给本段应出现的角色，报换人 / 克隆脸 / 多出的人，并先自检角色之间是否撞脸；默认只警告，`--strict` 才拦截。动漫脸检测不到，改用下一行的动漫轨 |
 | `scripts/identity_gate_anime.py --episode ep.json --targets "first/*.png" "takes/**/*.mp4" --out qc/identity_anime` | 动漫 / 手绘 / 3D 国漫的身份门禁（CCIP 动漫角色相似度模型，CPU 可跑，首次从 HuggingFace 下 150 MB）：整张图与角色参考比，差异 ≤ 0.178 同一角色、0.178–0.30 去看、> 0.30 换人；先自检角色库（两个角色差异 ≤ 0.178 = 撞脸）。**只判单角色画面**（派生视图、单人首帧、单人段），多人画面列出数值但不判，交给 `assets/judge-take-prompt.md` |
 | `scripts/extract_tail_frame.py <mp4> --out tail.png --trim-freeze 1.0 [--after-cut N]` | 截末帧（duration−0.2 s）作下一段首帧 / 参考，并剪掉声明的 1 s 定格；`--after-cut N` 取第 N 个硬切后的第一帧（给反打 / 特写出同一空间的首帧） |
-| `scripts/make_edl.py ep.json --selects selects/ep01 --out edit/ep01.edl.json` | 从分镜 + 中选片段生成剪辑单：每段入出帧（裁起始音节与定格尾）、锁定台词、L-cut；之后所有后期脚本都读它 |
-| `scripts/retime_subtitles.py edit/ep01.edl.json --out subs/ep01 [--bilingual]` | 字幕：文字 = 锁定台词，时间 = 音频；出 `.srt` / `.ass`，并把每句起止时间写回剪辑单（需 `faster-whisper`） |
-| `scripts/mix_episode.py edit/ep01.edl.json --out final/ep01.mp4 [--ass subs/ep01.ass] [--stems-out audio/ep01]` | 装配与母带：帧精确拼接、按台词区间对齐各段电平、环境声底、配乐在台词处自动压低、成片 −14 LUFS / −1.5 dBTP、可烧字幕；自动验收并写报告 |
+| `scripts/make_edl.py ep.json --selects selects/ep01 --out edit/ep01.edl.json [--pick s03=<片段>]` | 从分镜 + 选中的片段生成剪辑单（选片 = 把片段以段 id 开头的文件名放进 `selects/ep01/`，或用 `--pick` 指定）：每段入出帧（裁起始音节与声明的定格尾）、锁定台词、L-cut；之后所有后期脚本都读它，手改不会被覆盖 |
+| `scripts/retime_subtitles.py edit/ep01.edl.json --out subs/ep01 [--bilingual] [--font …]` | 字幕：文字 = 锁定台词，时间 = 音频（识别器的词时间再按人声能量收回，避免字幕早出）；出 `.srt` / `.ass`，把每句起止时间写回剪辑单并标出要复核的句子；手改过并加 `"locked": true` 的句子不再覆盖（需 `faster-whisper`） |
+| `scripts/mix_episode.py edit/ep01.edl.json --out final/ep01.mp4 [--ass subs/ep01.ass] [--stems-out audio/ep01/stems]` | 装配与母带：帧精确拼接、按台词区间对齐各段电平（单句可用 `gain_db` 微调）、环境声底、配乐在台词处自动压低、成片 −14 LUFS / −1.5 dBTP、逐帧准确地烧字幕（片段里已有字会警告）；自动验收并写报告 |
 | `scripts/voice_check.py edit/ep01.edl.json --out qc/voice [--episode ep.json \| --anchor 角色=样音.wav]` | 音色漂移量化：逐句测中位基频，与角色锚点（或本集该角色的中位数）比，≤ 0.5 半音不动、0.5–2 半音去听、> 2 半音重抽或变声；台词下面压着音效 / 配乐测不准的句子标 `unreadable`（需 `numpy`） |
 | `scripts/export_capcut_draft.py edit/ep01.edl.json --drafts "<剪映草稿目录>" [--report … --mix …]` | 导出可在剪映 / CapCut 里继续精修的草稿（切点与自动成片逐帧一致；需 `pyJianYingDraft`） |
 | `scripts/export_otio.py edit/ep01.edl.json --out edit/ep01` | 导出 `.otio` + FCP7 XML + CMX3600，给 Resolve / Premiere（需 `opentimelineio`） |
 | `scripts/lint_prompt.py <prompt.txt> --seconds 10 --images 4 --audios 1` | 提示词机检：字段顺序、时码递增与 1.2 s 下限、17k+5 有效时长、`<d>` 配对、标签先定义后引用、retention 关键词、否定句、静止句、全角符号、字数 |
-| `scripts/selfcheck.py [--keep work]` | 装完 skill 先跑一次（约 1 分钟、不用 GPU）：用合成素材把校验 → 提示词 → 技术 QC（切点对账）→ 联络表 → 剪辑单 → 混音母带 → 工程导出整条链走一遍，逐步报 PASS / FAIL / SKIP，并列出缺哪些可选依赖 |
+| `scripts/make_character_board.py --face face.png --views full.png side.png back.png --out sheet.png` | 把单人单视图拼成 16:9 角色审阅板——只给人看，不当参考图 |
+| `scripts/selfcheck.py [--keep work]` | 装完 skill 先跑一次（约 1 分钟、不用 GPU、不用模型）：用合成素材把校验 → 提示词 → 技术 QC → 联络表 → 剪辑单 → 字幕 → 台词质检流程 → 音色检查 → 混音母带 → 两种工程导出整条链走一遍，逐步报 PASS / FAIL / SKIP，并列出缺哪些可选依赖。它不测语音识别本身和 ComfyUI |
 | `scripts/fetch_official_guides.py [目录]` | 拉取 MiniMax 官方提示词指南原文作对照 |
 | `scripts/h3lib/catalog.py build <dir> --kind prop --out props.json` | 把道具图目录化（稀有度从路径解析），供 `validate_episode.py --catalog props.json` 检查 |
 

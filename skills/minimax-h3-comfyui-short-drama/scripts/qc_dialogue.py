@@ -13,8 +13,14 @@ Checks (thresholds from the production notes collected in references/qc-and-asse
   head_missing / tail_missing   none of the first / last 3 characters of a line was heard
   inserted_words    recognised length > locked length x 1.15 + 2 characters (repeats, improvised words)
   unexpected_speech a segment with no dialogue contains >= 2 recognised words with no_speech_prob < 0.5
-  late_start (warn) first word later than --late-start seconds (default 2.5)
-  tail_gap (warn)   last word closer than 0.2 s to the usable end of the clip (line may be cut off)
+  late_start (warn) first word later than --late-start seconds (default 2.5): dead air to trim with in_frame in
+                    the EDL, unless the acting before the line is wanted
+  ends_..._before_the_end / ..._into_the_declared_freeze (warn)
+                    the last word stops less than 0.2 s before the usable end of the clip (the clip end, or the
+                    start of the freeze tail on segments that declare end_hold): the line may be cut off
+  low_confidence (warn)  the recogniser was unsure (mean word probability < 0.65) - listen
+  short_line (warn)      a line of one or two characters: a match proves little - listen
+Word times are pulled to where the voice actually rises and falls (the recogniser tends to start early).
 Also reports first / last word time per line and characters per second - make_edl.py and the editor use
 those to place cuts.  A failing take should be re-rolled with a NEW seed (speech rhythm follows the seed);
 the same failure on two batches means the storyboard / prompt needs changing, not another seed.
@@ -34,6 +40,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+sys.dont_write_bytecode = True      # keep the skill folder free of __pycache__
 sys.path.insert(0, str(Path(__file__).parent / "h3lib"))
 import speech  # noqa: E402
 
@@ -55,7 +62,9 @@ def main():
     ap.add_argument("--targets", nargs="+", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--segment", help="force this segment id for every target (when paths carry no id)")
-    ap.add_argument("--freeze-tail", type=float, default=1.0, help="declared end freeze: not counted as usable clip time")
+    ap.add_argument("--freeze-tail", type=float, default=1.0,
+                    help="length of the declared end freeze; only applied to segments whose last shot has end_hold")
+    ap.add_argument("--freeze-tail-all", action="store_true", help="treat the last --freeze-tail seconds of every take as freeze")
     ap.add_argument("--late-start", type=float, default=2.5)
     ap.add_argument("--min-similarity", type=float, default=0.72)
     ap.add_argument("--aligner", choices=["faster-whisper", "cmd", "units"], default="faster-whisper")
@@ -69,10 +78,11 @@ def main():
 
     ep = json.loads(Path(a.episode).read_text(encoding="utf-8"))
     names = {c["id"]: c.get("name", c["id"]) for c in ep.get("characters", [])}
-    seg_lines = {}
+    seg_lines, seg_hold = {}, {}
     for s in ep["segments"]:
         seg_lines[s["id"]] = [{"speaker": d["speaker"], "name": names.get(d["speaker"], d["speaker"]), "text": d["text"],
                                "shot": sh["index"]} for sh in s["shots"] for d in sh.get("dialogue", [])]
+        seg_hold[s["id"]] = bool(s["shots"] and s["shots"][-1].get("end_hold"))
     paths: list[Path] = []
     for pat in a.targets:
         hits = sorted(glob.glob(pat, recursive=True)) or ([pat] if Path(pat).exists() else [])
@@ -97,15 +107,21 @@ def main():
                 continue
             lines = seg_lines[sid]
             dur = duration(p)
-            usable = max(0.0, dur - a.freeze_tail)
+            hold = a.freeze_tail > 0 and (seg_hold[sid] or a.freeze_tail_all)     # same rule as make_edl.py / qc_probe.py
+            usable = max(0.0, dur - a.freeze_tail) if hold else dur
             wav = tmp / (re.sub(r"[^A-Za-z0-9_]+", "_", str(p))[-80:] + ".wav")
             entry = {"take": str(p), "segment": sid, "duration": round(dur, 3), "expected_lines": len(lines)}
             flags, warns = [], []
+            env, hop = None, 0.01
             if not speech.extract_wav(p, wav):
                 units, segs = [], []
                 if lines:
                     flags.append("no_audio_track")
             else:
+                try:
+                    env, hop = speech.envelope(wav)
+                except ImportError:
+                    env = None
                 units, segs = speech.get_units(a.aligner, wav, lines or [{"text": ""}], model=a.model, language=a.language,
                                                device=a.device, cmd=a.aligner_cmd, tmp=tmp, bias=False,
                                                units_file=Path(a.units_dir) / f"{p.stem}.units.json" if a.units_dir else None)
@@ -120,8 +136,15 @@ def main():
                 per = []
                 for ln in m["lines"]:
                     n = len(speech.norm(ln["text"]))
+                    if ln["first_s"] is not None and env is not None:       # recogniser times drift early: pull them to the voice
+                        ln["first_s"], ln["last_s"], _shift = speech.refine_span(env, hop, ln["first_s"], ln["last_s"])
                     span = (ln["last_s"] - ln["first_s"]) if ln["first_s"] is not None else None
-                    per.append({"speaker": ln["name"], "text": ln["text"], "coverage": ln["coverage"],
+                    conf = ln.get("confidence")
+                    if ln["first_s"] is not None and conf is not None and conf < 0.65:
+                        warns.append(f"low_confidence:{ln['text'][:8]}")
+                    elif ln["first_s"] is not None and n <= 2:
+                        warns.append(f"short_line:{ln['text'][:8]}")
+                    per.append({"speaker": ln["name"], "text": ln["text"], "coverage": ln["coverage"], "confidence": conf,
                                 "first_word_s": ln["first_s"], "last_word_s": ln["last_s"],
                                 "chars_per_s": round(n / span, 2) if span and span > 0.2 else None,
                                 "head_missing": ln["head_missing"], "tail_missing": ln["tail_missing"]})
@@ -141,7 +164,8 @@ def main():
                 if firsts and firsts[0] > a.late_start:
                     warns.append(f"late_start:{firsts[0]:.2f}s")
                 if lasts and usable and usable - lasts[-1] < 0.2:
-                    warns.append(f"tail_gap:{usable - lasts[-1]:.2f}s")
+                    gap = usable - lasts[-1]
+                    warns.append(f"ends_{abs(gap):.2f}s_{'into_the_declared_freeze' if hold and gap < 0 else 'before_the_end' if gap >= 0 else 'past_the_end'}")
                 entry.update({"similarity": m["similarity"], "heard": m["hyp_text"], "locked_chars": m["ref_chars"],
                               "heard_chars": m["hyp_chars"], "inserted_chars": m["inserted_chars"], "lines": per,
                               "first_word_s": firsts[0] if firsts else None, "last_word_s": lasts[-1] if lasts else None,

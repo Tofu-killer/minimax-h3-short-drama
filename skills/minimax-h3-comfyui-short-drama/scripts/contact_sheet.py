@@ -4,7 +4,8 @@
     python3 contact_sheet.py "takes/ep01/s03/*.mp4" --freeze-tail 1.0
     python3 contact_sheet.py final/ep01.mp4 --max 24 --cols 6 --out-dir qc/sheets
 
-Instead of 12 evenly spaced frames, each sheet holds: the first and the last moving frame, the frame just
+Instead of 12 evenly spaced frames, each sheet holds: the first frame, the last moving frame and the very last
+frame, any frame qc_probe would flag as an abrupt change at a clip end, the frame just
 before and just after every hard cut (so a shot that never happened, or one that was invented, is visible
 at a glance), one or two frames from the middle of every shot, and the first frame of any black / frozen
 span. Frames are in time order; the stamp reads "<seconds>s <tag>".
@@ -19,18 +20,28 @@ from __future__ import annotations
 
 import argparse
 import glob
+import json
+import re
 import sys
 from pathlib import Path
 
+sys.dont_write_bytecode = True      # keep the skill folder free of __pycache__
 sys.path.insert(0, str(Path(__file__).parent / "h3lib"))
 import signals  # noqa: E402
 
 VIDEO_EXT = {".mp4", ".mov", ".mkv", ".webm"}
 
 
-def plan_samples(dur: float, usable: float, fps: float, cuts: list[float], black: list, freeze: list, limit: int) -> list[tuple[float, str]]:
+def plan_samples(dur: float, usable: float, fps: float, cuts: list[float], black: list, freeze: list, limit: int,
+                 edge_jumps: list[int] = (), n_frames: int = 0) -> list[tuple[float, str]]:
     f = 1.0 / (fps or 24.0)
     must = [(min(2 * f, usable / 2), "start"), (max(0.0, usable - 2 * f), "end")]
+    # ffmpeg's seek returns the first frame at or after the time asked for: a quarter frame before frame k's
+    # timestamp lands on frame k exactly, also after rounding to milliseconds
+    for k in edge_jumps:                            # frames qc_probe flags as an abrupt change at a clip end
+        must.append((max(0.0, (k - 0.25) * f), "edge jump"))
+    if n_frames and usable >= dur - f:              # the very last frame too: a stray frame there flashes at the join
+        must.append((max(0.0, (n_frames - 1.25) * f), "last frame"))
     for c in cuts:
         must += [(max(0.0, c - 2 * f), "before cut"), (min(usable, c + f), "after cut")]
     for s, _e in black:
@@ -46,7 +57,11 @@ def plan_samples(dur: float, usable: float, fps: float, cuts: list[float], black
     for length, s, e in shots:
         if length >= 5.0:
             extra += [(s + length / 4, "mid"), (s + 3 * length / 4, "mid")]
-    picked = must[:limit]
+    seen: list[tuple[float, str]] = []                 # one frame, one tile: keep the first label for the same frame
+    for item in must:
+        if all(abs(item[0] - t) > 0.4 * f for t, _tag in seen):
+            seen.append(item)
+    picked = seen[:limit]
     for item in extra:
         if len(picked) >= limit:
             break
@@ -58,7 +73,10 @@ def plan_samples(dur: float, usable: float, fps: float, cuts: list[float], black
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("files", nargs="+", help="clips or glob patterns (quote them on Windows)")
-    ap.add_argument("--freeze-tail", type=float, default=0.0, help="seconds of declared end freeze to leave out")
+    ap.add_argument("--freeze-tail", type=float, default=0.0,
+                    help="length of the declared end freeze to leave out. With --episode only on segments whose last shot "
+                         "has end_hold (the same rule make_edl.py and qc_probe.py use); without it on every clip")
+    ap.add_argument("--episode", help="storyboard JSON (the segment id is read from each clip's path)")
     ap.add_argument("--max", type=int, default=12, help="frames per sheet")
     ap.add_argument("--cols", type=int, default=4)
     ap.add_argument("--width", type=int, default=480, help="width of one frame in the sheet")
@@ -71,6 +89,9 @@ def main():
         paths += [Path(h) for h in hits if Path(h).suffix.lower() in VIDEO_EXT]
     if not paths:
         sys.exit("no clips matched")
+    segs = {}
+    if a.episode:
+        segs = {x["id"]: x for x in json.loads(Path(a.episode).read_text(encoding="utf-8"))["segments"]}
     font = signals.find_font()
     if not font:
         print("NOTE: no TrueType font found (set H3_QC_FONT) - sheets are unstamped, use the legend below")
@@ -80,10 +101,14 @@ def main():
             print(f"skip {p}: no video stream")
             continue
         dur = info["duration"]
-        usable = max(0.2, dur - a.freeze_tail)
-        det = signals.detect_cuts(p, info["fps"], usable if a.freeze_tail else None)
-        bf = signals.black_and_freeze(p, usable if a.freeze_tail else None)
-        samples = plan_samples(dur, usable, info["fps"], [c["t"] for c in det["cuts"]], bf["black"], bf["freeze"], a.max)
+        seg = next((segs[t] for t in re.split(r"[^A-Za-z0-9]+", str(p)) if t in segs), None)
+        shots = (seg or {}).get("shots") or []
+        hold = a.freeze_tail > 0 and (not segs or bool(shots and shots[-1].get("end_hold")))
+        usable = max(0.2, dur - a.freeze_tail) if hold else dur
+        det = signals.detect_cuts(p, info["fps"], usable if hold else None)
+        bf = signals.black_and_freeze(p, usable if hold else None)
+        samples = plan_samples(dur, usable, info["fps"], [c["t"] for c in det["cuts"]], bf["black"], bf["freeze"], a.max,
+                               [e["frame"] for e in det["edge_jumps"]], det["frames"])
         dest_dir = Path(a.out_dir) if a.out_dir else p.parent
         sheet = (dest_dir / f"{p.stem}_sheet.png").resolve()
         try:

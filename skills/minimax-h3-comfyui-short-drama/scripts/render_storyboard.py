@@ -10,6 +10,7 @@ Review this BEFORE spending GPU time.
 """
 import argparse, re, sys
 from pathlib import Path
+sys.dont_write_bytecode = True      # keep the skill folder free of __pycache__
 sys.path.insert(0, str(Path(__file__).parent / "h3lib"))
 from storyboard import load_episode, blocking_sentence  # noqa: E402
 

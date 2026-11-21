@@ -17,7 +17,11 @@ FILES = {"SKILL.md": "h3-prompt-writing.SKILL.md", "references/base-en.txt": "ba
 
 
 def main():
-    dest = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).resolve().parent.parent / "references" / "official"
+    import argparse
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap.add_argument("dest", nargs="?", default=str(Path(__file__).resolve().parent.parent / "references" / "official"),
+                    help="folder to save into (default: the skill's references/official)")
+    dest = Path(ap.parse_args().dest)
     dest.mkdir(parents=True, exist_ok=True)
     failed = 0
     for remote, local in FILES.items():

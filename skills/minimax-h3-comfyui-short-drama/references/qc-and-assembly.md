@@ -1,28 +1,36 @@
 # QC 与拼接
 
-> 本页脚本的验证口径：`qc_probe.py`、`qc_dialogue.py`、`contact_sheet.py`、`make_edl.py`、`retime_subtitles.py`、`mix_episode.py`、两个导出脚本都在一支 38 s 的真实 H3 成片（切成 5 段）上跑通过（Linux、ffmpeg 6.1、CPU）：切点 7 / 7 检出且无误报，复读台词被拦下，成片 910 帧与计划一致、音画偏移 0 ms、−14.2 LUFS / −1.6 dBTP。**没有在用户的 Windows + 4090 上跑过**，剪映草稿也没有在剪映里打开过——装好后先跑 `scripts/selfcheck.py`（合成素材，约 1 分钟，逐步报 PASS / FAIL），再拿样片段走一遍。
+> 验证口径：本页脚本都在一支 38 s 的真实 H3 成片（切成 5 段）上跑通过（Linux、ffmpeg 6.1、CPU）——7 个切点全部检出且无误报，复读台词、画面里已有的字幕、段尾混入的一帧都被查出；成片帧数与剪辑单一致（默认每段裁 2 帧起始音节时 900 帧）、音画偏移 0 ms、−14.2 LUFS、烧录字幕逐帧对上。之后又请一个只读文档的 agent 独立走了一遍，它指出的问题已修进脚本与本页。**没有在用户的 Windows + 4090 上跑过**，剪映草稿也没有在剪映里打开过——装好后先跑 `scripts/selfcheck.py`，再拿样片段走一遍。
+> 命令约定：都在**项目根目录**下运行（剪辑单里存的是相对它的路径），写作 `python <skill 目录>/scripts/xxx.py …`；下面为了简短只写 `scripts/xxx.py`。通配符放在引号里，由脚本自己展开。
+
+## 0. 只做质检和后期（片段已经有了）
+
+不需要完整的分镜：`episodes/ep01.json` 里只要有 `characters[].id / name`、`segments[].id / duration / scene_id`、每段 `shots[].index / start`（镜头起点，用来对账切点）和 `shots[].dialogue[].speaker / text`（锁定台词）；末镜要裁定格尾就写 `"end_hold": true`。`validate_episode.py` 是给生成用的，后期不要求它通过。然后按 §1 的 1→4 过质检，把选中的片段放进 `selects/ep01/`，走 §3。
 
 ## 1. QC：脚本先筛，人只看联络表
 
-技术通过 ≠ 整体通过。按便宜到贵的顺序过，前一道不过就不做后一道：
+技术通过 ≠ 整体通过。下表按成本从低到高排；1–3 是脚本，便宜，直接对所有候选片段跑；第 4、5 步和精修只花在前面没被硬门拦下的片段上。
 
 | 顺序 | 门 | 命令 | 拦什么 |
 |------|----|------|--------|
-| 1 | 技术 | `scripts/qc_probe.py "takes/ep01/**/*.mp4" --episode episodes/ep01.json --freeze-tail 1.0 --out qc/probe` | FAIL：缺视频 / 音轨、尺寸或帧率不符、时长偏差 > 0.6 s、采样峰值 > −1 dB、定格尾之外冻结 > 1 s 或黑场 > 0.25 s。WARN：**镜头数与分镜不符**（少切 = 两镜糊成一镜，多切 = 自己加了镜头）、切点偏移 > 0.3 s、首尾 8 帧内的跳帧（拼接处会闪）、动作量 < 1.2（近乎静止） |
-| 2 | 台词 | `scripts/qc_dialogue.py --episode episodes/ep01.json --targets "takes/ep01/**/*.mp4" --out qc/dialogue` | FAIL：整体相似度 < 0.72（`F-DIALOGUE-TEXT`）、句首 / 句尾 3 字没听到、识别字数 > 原文 × 1.15 + 2（复读 / 加词）、无台词段出现 ≥ 2 个词。WARN：首字晚于 2.5 s、末字离可用结尾 < 0.2 s |
-| 3 | 身份 | 真人：`scripts/identity_gate.py --episode episodes/ep01.json --targets "takes/ep01/**/*.mp4" --out qc/identity`；漫剧：`scripts/identity_gate_anime.py`（同样的参数） | 真人脸：换人、克隆脸、多出的人、缺席；先看自检（两个角色互相 ≥ 0.363 = 撞脸，回去改角色设计）。漫剧：整张图与角色参考的差异（CCIP），只判单角色画面 |
-| 4 | 联络表 + 人眼 | `scripts/contact_sheet.py "takes/ep01/s03/*.mp4" --freeze-tail 1.0` | 下面的清单 |
+| 1 | 技术 | `scripts/qc_probe.py "takes/ep01/**/*.mp4" --episode episodes/ep01.json --freeze-tail 1.0 --out qc/probe` | FAIL（退出码 1）：缺视频 / 音轨、帧率不符、时长偏差 > 0.6 s、**音频削波**（采样卡在满幅）、定格尾之外冻结 > 1 s 或黑场 > 0.25 s；给了 `--expect-size` 时尺寸不符也算。WARN：**镜头数与分镜不符**（少切 = 两镜糊成一镜，多切 = 自己加了镜头）、切点偏移 > 0.3 s、首尾 8 帧内的跳帧（拼接处会闪）、**画面下三分之一烧着字**、动作量 < 1.2、峰值高于 −1 dB 但没削波、画幅与分镜的 `ratio` 不符 |
+| 2 | 台词 | `scripts/qc_dialogue.py --episode episodes/ep01.json --targets "takes/ep01/**/*.mp4" --out qc/dialogue` | FAIL（默认只报告，`--strict` 才退出 1）：整体相似度 < 0.72（`F-DIALOGUE-TEXT`）、句首 / 句尾 3 字没听到、识别字数 > 原文 × 1.15 + 2（复读 / 加词）、无台词段出现 ≥ 2 个词。WARN：首字晚于 2.5 s、末字离可用结尾 < 0.2 s、识别把握低（词概率均值 < 0.65）、只有一两个字的短句 |
+| 3 | 身份 | 真人：`scripts/identity_gate.py --episode episodes/ep01.json --targets "takes/ep01/**/*.mp4" --out qc/identity`；漫剧：`scripts/identity_gate_anime.py`（同样的参数） | 真人脸：换人、克隆脸、多出的人、缺席；先看自检（两个角色互相 ≥ 0.363 = 撞脸，回去改角色设计）。漫剧：整张图与角色参考的差异（CCIP），只判单角色画面。没有角色参考图就跳过这一步 |
+| 4 | 联络表 + 人眼 | `scripts/contact_sheet.py "takes/ep01/s03/*.mp4" --episode episodes/ep01.json --freeze-tail 1.0 [--out-dir qc/sheets]` | 下面的清单 |
 | 5 | VLM 评分（可选） | `assets/judge-take-prompt.md` | 事实 / 身份 / 画面三张小评分表 |
 
+- **`--freeze-tail` 的口径（三个脚本一致，也与 `make_edl.py` 一致）**：它是「声明的定格尾有多长」。给了 `--episode` 时，只有末镜写了 `"end_hold": true` 的段才把最后这一秒排除在检查之外——因为只有这些段在拼接时会裁掉它；其它段的最后一秒要进成片，照查不误。不给分镜时对每个片段都排除。输出里会注明「last 1s = declared freeze, not checked」。
 - **切点对账**用分镜里各镜的 `start`，容差 ±0.5 s；切点检测不靠 ffmpeg 的 scene 阈值（同一房间的两镜 0.19–0.28，飞舞的纸张 0.30，分不开），而是看「切点前后 4 帧均值的台阶 + 比安静一侧高 4 倍 + 之后画面不回来」（`scripts/h3lib/signals.py`）。标定素材只有一支片子：WARN 先看联络表再动手，要当硬门用 `--strict-cuts`。叠化 / 淡变不算硬切。
-- **台词质检不给识别器任何提示**：把台词原文当提示喂给 whisper-small，会「听到」没说过的句子（实测出现别段的台词和乱码）。脚本用无提示转写 + 拼音比对（装 `pypinyin`，同音字误识不扣分）；GPU 空闲时 `--model large-v3 --device cuda` 更准。
-- **动作量**（240 px 灰度相邻帧差的中位数）：动作镜 ≥ 2.5、特写表演 ≥ 1.8、< 1.0 接近静帧。
+- **画面烧字**是启发式（需要 `numpy`）：找下三分之一里带深色描边的亮色笔画、沿一行有很多独立笔画、连续半秒以上亮在同一位置。在测试片上 5 处字幕全部找到、误差 0.2 s 内；没有描边的深色字检不到，纹理很细的静止画面可能误报——它只负责提醒你去看那一帧。`mix_episode.py --ass` 也会做同样的检查并警告「会叠字」。
+- **台词质检不给识别器任何提示**：把台词原文当提示喂给 whisper-small，会「听到」没说过的句子（实测出现别段的台词和乱码）。脚本用无提示转写 + 拼音比对（装 `pypinyin`，同音字误识不扣分）；GPU 空闲时 `--model large-v3 --device cuda` 更准。识别器给的词时间偏早（实测首字比人声早 0.3–1.2 s），脚本会按语音频段的能量把起止点收回到人声上，报告里的首字 / 末字时间是收回后的值。只有一两个字的台词（「啊？！」）即使相似度 1.0 也只是弱证据，会标 `short_line` 或 `low_confidence`——去听。
+- **首字晚**（`late_start`）怎么办：开口前是有效表演就留着；是空等就在剪辑单里把该段 `in_frame` 往后挪。**末字贴着结尾**：把 `out_frame` 往后挪（没标 `end_hold` 的段）或靠 L-cut，并抽听。
+- **动作量**（240 px 灰度相邻帧差的中位数）：脚本只在 < 1.2（近乎静止）时警告；动作镜 ≥ 2.5、特写表演 ≥ 1.8 是给人对照的参考值，分镜没有标镜头类型，脚本不按它判。
 - **身份门禁**阈值（OpenCV SFace）：≥ 0.55 通过、0.363–0.55 警告、< 0.363 不通过；失败帧 > 20% 或第一个有脸的帧失败则整段不通过。侧脸、背影、< 40 px 的脸与动漫脸不参与；分数是警告信号，不是定论。
 - **动漫轨**（`identity_gate_anime.py`）：差异值越小越像，≤ 0.178 通过（模型自带阈值，F1 0.917）、0.178–0.30 警告、> 0.30 不通过；失败帧 > 20% 或第一帧失败则整段不通过。0.30 这条线只来自 12 张图的小样本（同角色最大 0.28、异角色最小 0.34），是暂定值。比的是整张画面，所以只判本段只有一个角色的图 / 片段，远景里人很小也会落进警告带；最适合用在生图阶段——派生视图和单人首帧对着冻结的定妆照过一遍。模型许可 OpenRAIL，商用前读条款。
-- **联络表**不再均匀抽 12 帧：首帧、末帧、每个切点前后各一帧、每镜中段、黑场 / 冻结起点，帧下印秒数与标签。人眼看：身份（是否换人）、服装道具（颜色 / 件数 / 是否被换成虚构物）、环境（布局 / 光向 / 色温是否接上一段）、动作（瞬移 / 多肢体 / 手崩）、镜头（是否按分镜切）、下方 15% 字幕安全区。
+- **联络表**不再均匀抽 12 帧：首帧、末尾可用帧、**最后一帧**、`qc_probe` 报跳变的那一帧、每个切点前后各一帧、每镜中段、黑场 / 冻结起点，帧下印秒数与标签。人眼看：身份（是否换人）、服装道具（颜色 / 件数 / 是否被换成虚构物）、环境（布局 / 光向 / 色温是否接上一段）、动作（瞬移 / 多肢体 / 手崩）、镜头（是否按分镜切）、**画面里有没有自带的字**、下方 15% 字幕安全区。
 - **音频抽听**：语言对、没有错人开口、句尾没被截。
 
-硬门 = 文件不可解码、缺镜 / 缺节拍、尺寸帧率时长违约、身份 / 服装 / 道具 / 轴线显著错、音频削波、意外黑帧、冻结；软警 = 轻微拖影、背景小漂移、音量不均。硬门不过只允许原样重试一次。
+硬门 = 文件不可解码、缺镜 / 缺节拍、帧率时长违约、身份 / 服装 / 道具 / 轴线显著错、音频削波、意外黑帧、冻结；软警 = 轻微拖影、背景小漂移、音量不均、峰值偏高。硬门不过只允许原样重试一次。用户明确要先用现有片段出一版时可以带着问题装配，结论记为 PROVISIONAL 并逐条写明（模板见 `assets/review-template.md`）。
 
 ### 失败码 → 责任层 → 处置
 
@@ -44,11 +52,11 @@
 - **先分流再动手**：区间外的毛病裁掉，能后期修的后期修；只有漏关键动作 / 台词、换脸、轴线全反、关键文字乱码才必须重生成。先判是「参考图的毛病」还是「生成的毛病」——参考图错了重抽多少次都错。
 - 原因不明时一次只改一个变量；**一眼看清的多处错漏同一轮改完**。原样重抽 1–2 次仍是同一硬伤 → 改词或拆镜，不再抽。
 - 仍不行给用户三条出路：留用并靠切点藏住 / 把这条信息挪到相邻段 / 删段（先把剧情信息转移走）。
-- 每条问题记：集‑时间码‑镜头‑类型‑证据‑根因‑修复层级‑复验状态；每集出一份 `qc/review.md`，结论取 PASS / PROVISIONAL / REVISE / REJECT。冷观众四问（想要什么 / 什么阻止 / 什么变了 / 为何结局）任一答错即 REVISE。
+- 每集出一份 `qc/review.md`（模板 `assets/review-template.md`）：每条问题记 集‑时间码‑门‑现象‑失败码‑证据‑根因层‑处置‑复验状态。结论四选一——PASS：所有门都过；PROVISIONAL：可交付但带着列明的已知问题（WARN，或被豁免的 FAIL，写明理由）；REVISE：交付前必须重抽或改分镜；REJECT：从分镜 / 资产层重来。冷观众四问（想要什么 / 什么阻止 / 什么变了 / 为何结局）任一答错即 REVISE。
 
 ### 自动闭环的边界
 
-- 只对「技术参数 / 首帧接不上 / 画面自带字幕 / 台词不过」类失败自动换 seed；切点偏移、片尾抖动只标记不重出（重出改善率 29%、0 / 4）。
+- 只对「技术参数 / 首帧接不上 / 画面自带字幕 / 台词不过」类失败自动换 seed（画面自带字幕由 `qc_probe.py` 的启发式提醒，以联络表上看到的为准）；切点偏移、片尾抖动只标记不重出（重出改善率 29%、0 / 4）。
 - 无台词段「擅自说话」的判据：`no_speech_prob < 0.5` 且 ≥ 2 词（`qc_dialogue.py` 的 `unexpected_speech`）。
 - VLM 抽帧只作「崩坏 / 水印 / 乱码」与事实核对，不替代动作量与台词检查；每个 take 的评估绑定视频哈希，静帧不足以放行有运动或台词的镜头。
 
@@ -62,33 +70,42 @@
 
 ## 3. 后期：一份剪辑单（EDL）走到底
 
+**先选片**：把每段选中的（精修后的）片段复制到 `selects/ep01/`，文件名以段 id 开头（`s03.mp4`、`s03_seed103.mp4` 都行），一段一个；或者不复制，用 `make_edl.py --pick s03=<片段路径>` 逐段指定。
+
 ```
-selects/ep01/<段>.mp4（精修后的中选片段，一段一个）
  → scripts/make_edl.py episodes/ep01.json --selects selects/ep01 --out edit/ep01.edl.json
  → scripts/retime_subtitles.py edit/ep01.edl.json --out subs/ep01          # 出 .srt / .ass，并把每句起止时间写回 EDL
- → scripts/mix_episode.py edit/ep01.edl.json --out final/ep01.mp4 [--ass subs/ep01.ass] [--stems-out audio/ep01]
- → scripts/export_capcut_draft.py edit/ep01.edl.json --drafts "<剪映草稿目录>" --report final/ep01.mix.report.json --mix final/ep01.mix.wav
-   scripts/export_otio.py edit/ep01.edl.json --out edit/ep01 --mix final/ep01.mix.wav   # 要人工精修时二选一
+ → scripts/mix_episode.py edit/ep01.edl.json --out final/ep01.mp4 [--ass subs/ep01.ass] [--stems-out audio/ep01/stems]
+ → scripts/export_otio.py edit/ep01.edl.json --out edit/ep01 --mix final/ep01.mix.wav        # 给 Resolve / Premiere
+   scripts/export_capcut_draft.py edit/ep01.edl.json --drafts "<剪映草稿目录>" --report final/ep01.mix.report.json --mix final/ep01.mix.wav
 ```
 
 完整示例见 `assets/edl.example.json`（一段用片段自带声音，一段用分离出的对白 / 非人声 stem，带环境声与配乐）。
 
-**EDL 是唯一事实源**：字幕、混音、剪映草稿、OTIO 都从它算时间线（`scripts/h3lib/edl.py`，位置 = 帧数累加，不是秒数累加），所以四者的切点逐帧一致。手改都改这一个文件，重跑 `make_edl.py` 不会覆盖已有的段（`--overwrite` 才重建）。
+**EDL 是唯一事实源**：字幕、混音、剪映草稿、OTIO 都从它算时间线（`scripts/h3lib/edl.py`，位置 = 帧数累加，不是秒数累加），所以四者的切点逐帧一致。手改都改这一个文件，重跑 `make_edl.py` 不会覆盖已有的段（`--overwrite` 才重建，`--pick` 只换指定的段）。
+
+**改完之后重跑什么**：
+
+| 改了什么 | 重跑 |
+|----------|------|
+| 切点（`in_frame` / `out_frame`）、换片段、调整段的顺序 | `retime_subtitles.py` → `mix_episode.py` → 导出（台词时间是相对各段入点存的，切点一动就过期；没重跑时混音和导出会警告「字幕是按另一版切点对的时」） |
+| 某句字幕的时间或逐句增益、配乐、环境声、响度目标 | `mix_episode.py` → 导出（改了字幕时间先重跑 `retime_subtitles.py` 重写 .srt / .ass） |
+| 只想换字幕样式 / 字体 | `retime_subtitles.py`（时间不变）→ 带 `--ass` 的 `mix_episode.py` |
 
 | EDL 字段 | 含义 | 默认 |
 |----------|------|------|
-| `segments[].in_frame / out_frame` | 用素材的哪几帧（素材自己的帧号，出点不含） | 入点裁 2 帧（H3 开头常带一个起始音节）；末镜标了 `end_hold` 的段裁掉 1 s 定格尾 |
+| `segments[].in_frame / out_frame` | 用素材的哪几帧（素材自己的帧号，出点不含） | 入点裁 2 帧（H3 开头常带一个起始音节）；末镜标了 `end_hold` 的段裁掉 1 s 定格尾（`--freeze-tail-all` 对所有段都裁） |
 | `segments[].audio` | `"native"` = 用片段自带的声音；路径 = 单独的对白 stem；`null` = 静音 | 有音轨即 `native` |
 | `segments[].l_cut / j_cut` | 声音比画面晚收 / 早进的秒数 | 有台词的段 L-cut 0.25 s |
-| `segments[].lines[]` | 锁定的台词原文（字幕文字只从这里来）；`start / end` 由 `retime_subtitles.py` 填 | 取自分镜 `dialogue[]` |
+| `segments[].lines[]` | 锁定的台词原文（字幕文字只从这里来）。`start / end` = **从该段入点算起的秒数**，由 `retime_subtitles.py` 填；手改某句时间后加 `"locked": true`，之后重跑不再覆盖它；`"gain_db": 6` 单独抬高（或压低）这一句 | 取自分镜 `dialogue[]` |
 | `ambience{场景: {file, gain_db}}` | 每个场景一条循环环境声底，带限 150–6500 Hz | 空；`gain_db` 默认 −34 |
 | `music{file, gain_db, fade_in, fade_out, loop, duck{depth_db, …}}` | 全集配乐；按每句台词的起止时间自动压低（增益包络，不受片段里音效影响） | 空；默认压 9 dB。EDL 里没有台词时间时退回 sidechain（真实对白上只有约 3–6 dB） |
 | `loudness{dialogue_lufs, program_lufs, true_peak}` | 响度目标 | −16 / −14 LUFS / −1.5 dBTP |
 
-- **字幕**：文字 = 锁定台词，时间 = 音频（无提示识别 + 拼音对齐）。入点 = 首字 − 0.08 s，出点 = 末字 + 0.25 s，≥ 0.8 s，≤ 9 字 / s，相邻 ≥ 2 帧，全部吸附到帧。没听到的句子不丢，标 `needs_review: not_heard` 并给占位时间；末字贴着出点的标 `ends_at_cut`（把 `out_frame` 往后挪，或靠 L-cut 并抽听）。ASS 样式：中文 58 px、英文 36 px（按 1080p 等比），`--bilingual` 出双语；Windows 默认字体 Microsoft YaHei。不让模型画字幕。
-- **逐段电平**按「有台词的那几秒」对齐到 −16 LUFS，不按整段平均：一段里只有一句短台词时整段平均会偏低，按它放大会把环境声和音效一起抬 8–9 dB（实测）。自带声音的片段对白和音效在同一条轨上，音效峰值会限制能加多少——脚本最多让峰值被限幅 4 dB，超出就报「对白会偏低约 N dB」，这时该段改用分离出的对白 stem 或换一个 take。某一句比同段其他句低 6 LU 以上也会单独报。
+- **字幕**：文字 = 锁定台词，时间 = 音频（无提示识别 + 拼音对齐）。规则：入点 = 首字 − 0.08 s，出点 = 末字 + 0.25 s，≥ 0.8 s，≤ 9 字 / s，相邻 ≥ 2 帧，全部吸附到帧。「首字」不直接用识别器给的时间——它常把第一个字放进人声之前的静音里（实测早 0.3–1.2 s），脚本按语音频段能量把起止点收回到人声上；这仍是估计，成片后看一遍。需要复核的句子会标出来：`not_heard`（没听到，给占位时间）、`low_coverage`、`low_confidence`、`timing_suspect`（时长对这几个字来说太长）、`ends_at_cut`（末字贴着出点）。看着不对就在 EDL 里改这句的 `start / end` 并加 `"locked": true`。ASS 样式：中文 58 px、英文 36 px（按 1080p 等比），`--bilingual` 出双语；字体默认按系统取（Windows Microsoft YaHei、macOS PingFang SC、Linux Noto Sans CJK SC），`--font` 可改。烧录是逐帧准的（实测与字幕帧号偏差 0）。**片段画面里已经有字的不要再烧一遍。** 不让模型画字幕。
+- **逐段电平**按「有台词的那几秒」对齐到 −16 LUFS，不按整段平均：一段里只有一句短台词时整段平均会偏低，按它放大会把环境声和音效一起抬 8–9 dB（实测）。自带声音的片段对白和音效在同一条轨上，音效峰值会限制能加多少——脚本最多让峰值被限幅 4 dB，超出就报「对白会偏低约 N dB」，这时该段改用分离出的对白 stem 或换一个 take。某一句比同段其他句低 6 LU 以上会单独报，并给出建议的 `gain_db`。
 - **成片响度**：能用纯增益到 −14 LUFS 就只加增益；增益会顶破 −1.5 dBTP 时才加限幅并补偿。不用 `loudnorm` 的动态模式（会抽吸）。限幅超过 4 dB 会警告：压低音效 / 配乐，或把目标改成 −16。
-- **验收**（`mix_episode.py` 自动做，不过则退出码 1）：音画等长（±2 帧）、帧数 = 计划、响度在目标 ±1 LU、真峰 ≤ −1 dBTP；报告写在 `final/ep01.mix.report.json`。
+- **验收**（`mix_episode.py` 自动做，不过则退出码 1）：音画等长（±2 帧）、帧数 = 计划、响度在目标 ±1 LU、真峰 ≤ −1 dBTP；报告写在 `final/ep01.mix.report.json`。`--stems-out` 只写有声音的总线：片段都用自带声音时是 `<集>.takes.wav`（对白和片段自带的音效在一条轨上），用了分离的对白 stem 时是 `<集>.dialogue.wav`，另有 `effects` / `music`。
 - 其余常数：边界淡变 10 ms 入 / 120 ms 出；集尾切黑 ≥ 末词 + 0.6 s；胸像 / 口播拼接前裁底部 12%（H3 在下缘凭空长手指）；脸只放不缩 ≤ 1.35×；同场接色向组内中位数拉 70%；配乐硬切点对齐 1/4 或 1/8 拍；开头 3 s 剪到最紧。竖屏 TikTok 把黑位抬到 TV 36（边缘连续近黑 ≥ 4 s 会被平台判定）。
 - 交付 16:9：1920×1080、24 fps（或转 30）、bt709、AAC 48 kHz 立体声 320 k、`faststart`；不是 16:9 的片段 `--fit cover` 裁满 / `contain` 加边。
 
@@ -97,10 +114,10 @@ selects/ep01/<段>.mp4（精修后的中选片段，一段一个）
 | 要什么 | 用哪个 | 注意 |
 |--------|--------|------|
 | 直接发布 | `mix_episode.py` 的 mp4（`--ass` 烧字幕，或平台另传 `.srt`） | 改任何东西都回 EDL 重跑 |
-| 在剪映里加花字 / 转场 / 调色 | `export_capcut_draft.py`（`pip install pyJianYingDraft`；国际版 CapCut 加 `--international`） | 片段自带的声音留在片段上（挪切点时跟着走），电平取混音报告；配乐按 −8 dB 静态垫着（草稿里不带自动压低）；成片混音作为**静音**参考轨——没动过切点时，解除它的静音并静音其余轨即得自动母带。素材按绝对路径引用，别移动 |
+| 在剪映里加花字 / 转场 / 调色 | `export_capcut_draft.py`（`pip install pyJianYingDraft`；国际版 CapCut 加 `--international`）。`--drafts` 是剪映「全局设置 → 草稿位置」那个文件夹，要在装着剪映、放着素材的那台机器上跑 | 片段自带的声音留在片段上（挪切点时跟着走），电平取混音报告；配乐按 −8 dB 静态垫着（草稿里不带自动压低）；成片混音作为**静音**参考轨——没动过切点时，解除它的静音并静音其余轨即得自动母带。素材按绝对路径引用，别移动 |
 | 交给 Resolve / Premiere 或外部剪辑师 | `export_otio.py`（`.otio` + FCP7 XML + CMX3600，`pip install opentimelineio otio-fcp-adapter otio-cmx3600-adapter`） | 不带电平；每句台词是片段上的一个标记；字幕另导 `.srt` |
 
-生成成功 ≠ 在目标软件里打开播放过：第一次导出后先打开看一眼时间线。
+不确定用哪个剪辑软件时先出 `export_otio.py`（FCP7 XML 在免费的 DaVinci Resolve 里就能打开）。生成成功 ≠ 在目标软件里打开播放过：第一次导出后先打开看一眼时间线。
 
 ## 4. 产物目录（可复现）
 

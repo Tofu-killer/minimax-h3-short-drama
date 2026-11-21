@@ -12,6 +12,7 @@ arithmetic. Warnings are printed with "~" and do not fail the run; exit code 1 o
 """
 import argparse, sys
 from pathlib import Path
+sys.dont_write_bytecode = True      # keep the skill folder free of __pycache__
 sys.path.insert(0, str(Path(__file__).parent / "h3lib"))
 from storyboard import load_episode, validate_episode, rhythm_warnings  # noqa: E402
 

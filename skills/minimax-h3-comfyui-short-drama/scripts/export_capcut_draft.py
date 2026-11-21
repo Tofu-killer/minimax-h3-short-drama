@@ -35,6 +35,7 @@ import json
 import sys
 from pathlib import Path
 
+sys.dont_write_bytecode = True      # keep the skill folder free of __pycache__
 sys.path.insert(0, str(Path(__file__).parent / "h3lib"))
 import edl as edl_lib  # noqa: E402
 
@@ -84,8 +85,12 @@ def main():
     def lin(db: float) -> float:
         return round(10 ** (db / 20.0), 4)
 
+    existed = (drafts / name).exists()
+    if existed and not a.overwrite:
+        sys.exit(f"a draft named {name!r} already exists in {drafts} - pass --overwrite to replace it, or --name for another name")
     script = lib.DraftFolder(str(drafts)).create_draft(name, int(edl.get("width", 1920)), int(edl.get("height", 1080)),
                                                       fps=int(round(fps)), allow_replace=a.overwrite)
+    notes: list[str] = []
 
     def add_track(kind: str, track: str, mute: bool = False) -> None:
         ttype = getattr(lib.TrackType, kind)
@@ -94,79 +99,116 @@ def main():
         else:                                         # pycapcut / older pyJianYingDraft
             script.add_track(ttype, track, mute=mute)
 
-    has_stem = any(p["seg"].get("audio") not in (None, "native") for p in plan)
-    has_fx = any(p["seg"].get("nondialogue") for p in plan)
-    music = edl.get("music")
-    add_track("video", "picture")
-    if has_stem:
-        add_track("audio", "dialogue_a")
-        add_track("audio", "dialogue_b")
-    if has_fx:
-        add_track("audio", "effects")
-    if music:
-        add_track("audio", "music")
-    if a.mix:
-        add_track("audio", "master_mix", mute=True)
-    if not a.no_subtitles:
-        add_track("text", "subtitle")
+    def material(kind: str, path: str):
+        """The library reads a file's length rounded to the millisecond; asking for the true length (frames
+        counted exactly) can exceed that by a fraction of a millisecond and is refused. So every source range
+        is clipped to the length the library reports."""
+        cls = getattr(lib, kind + "Material", None)
+        return cls(path) if cls else path
 
-    stem_i = 0
-    for i, p in enumerate(plan):
-        s = p["seg"]
-        t0 = us(p["start_frame"])
-        dur = us(p["start_frame"] + p["frames"]) - t0             # contiguous by construction: no 1-microsecond gaps
-        src0 = int(round(p["src_in"] * SEC))
-        src_dur = dur if abs(p["src_fps"] - fps) < 1e-3 else int(round((p["src_out"] - p["src_in"]) * SEC))
-        own_sound = s.get("audio") == "native"
-        vol = lin(gains.get(p["id"], 0.0)) if own_sound else 0.0
-        script.add_segment(lib.VideoSegment(absolute(s["video"]), lib.trange(t0, dur),
-                                            source_timerange=lib.trange(src0, src_dur), volume=vol), "picture")
-        if s.get("audio") not in (None, "native"):
-            last = i == len(plan) - 1
-            tail = 0 if last else int(round(float(s.get("l_cut", 0) or 0) * SEC))
-            seg = lib.AudioSegment(absolute(s["audio"]), lib.trange(t0, dur + tail),
-                                   source_timerange=lib.trange(src0, dur + tail), volume=lin(gains.get(p["id"], 0.0)))
-            seg.add_fade("0.01s", "0.12s")
-            script.add_segment(seg, "dialogue_a" if stem_i % 2 == 0 else "dialogue_b")
-            stem_i += 1
-        if s.get("nondialogue"):
-            script.add_segment(lib.AudioSegment(absolute(s["nondialogue"]), lib.trange(t0, dur),
-                                                source_timerange=lib.trange(src0, dur),
-                                                volume=lin(gains.get(p["id"], 0.0))), "effects")
-    total_us = us(total_frames)
-    if music:
-        seg = lib.AudioSegment(absolute(music["file"]), lib.trange(0, total_us),
-                               volume=lin(float(music.get("gain_db", -6)) + STATIC_DUCK_DB))
-        seg.add_fade(f"{float(music.get('fade_in', 0.5))}s", f"{float(music.get('fade_out', 1.0))}s")
-        script.add_segment(seg, "music")
-    if a.mix:
-        script.add_segment(lib.AudioSegment(str(Path(a.mix).resolve()), lib.trange(0, total_us)), "master_mix")
+    def clip_source(mat, start: int, want: int) -> int:
+        have = getattr(mat, "duration", None)
+        if have is None:
+            return want
+        return max(1, min(want, int(have) - start))
 
-    cues, untimed = 0, 0
-    if not a.no_subtitles:
-        style = lib.TextStyle(size=7.0, color=(1.0, 1.0, 1.0), align=1, auto_wrapping=True)
-        place = lib.ClipSettings(transform_y=-0.78)
-        border = lib.TextBorder(color=(0.06, 0.06, 0.06), width=40.0)
-        rows = []
-        for p in plan:
-            for ln in p["seg"].get("lines") or []:
-                if ln.get("start") is None or ln.get("end") is None:
-                    untimed += 1
+    def build() -> tuple[int, int]:
+        has_stem = any(p["seg"].get("audio") not in (None, "native") for p in plan)
+        has_fx = any(p["seg"].get("nondialogue") for p in plan)
+        music = edl.get("music")
+        add_track("video", "picture")
+        if has_stem:
+            add_track("audio", "dialogue_a")
+            add_track("audio", "dialogue_b")
+        if has_fx:
+            add_track("audio", "effects")
+        if music:
+            add_track("audio", "music")
+        if a.mix:
+            add_track("audio", "master_mix", mute=True)
+        if not a.no_subtitles:
+            add_track("text", "subtitle")
+
+        stem_i = 0
+        for i, p in enumerate(plan):
+            s = p["seg"]
+            t0 = us(p["start_frame"])
+            dur = us(p["start_frame"] + p["frames"]) - t0             # contiguous by construction: no 1-microsecond gaps
+            src0 = int(round(p["src_in"] * SEC))
+            src_dur = dur if abs(p["src_fps"] - fps) < 1e-3 else int(round((p["src_out"] - p["src_in"]) * SEC))
+            own_sound = s.get("audio") == "native"
+            vol = lin(gains.get(p["id"], 0.0)) if own_sound else 0.0
+            vmat = material("Video", absolute(s["video"]))
+            script.add_segment(lib.VideoSegment(vmat, lib.trange(t0, dur),
+                                                source_timerange=lib.trange(src0, clip_source(vmat, src0, src_dur)), volume=vol),
+                               "picture")
+            if s.get("audio") not in (None, "native"):
+                last = i == len(plan) - 1
+                tail = 0 if last else int(round(float(s.get("l_cut", 0) or 0) * SEC))
+                amat = material("Audio", absolute(s["audio"]))
+                n = clip_source(amat, src0, dur + tail)
+                seg = lib.AudioSegment(amat, lib.trange(t0, n), source_timerange=lib.trange(src0, n),
+                                       volume=lin(gains.get(p["id"], 0.0)))
+                seg.add_fade("0.01s", "0.12s")
+                script.add_segment(seg, "dialogue_a" if stem_i % 2 == 0 else "dialogue_b")
+                stem_i += 1
+            if s.get("nondialogue"):
+                fmat = material("Audio", absolute(s["nondialogue"]))
+                n = clip_source(fmat, src0, dur)
+                script.add_segment(lib.AudioSegment(fmat, lib.trange(t0, n), source_timerange=lib.trange(src0, n),
+                                                    volume=lin(gains.get(p["id"], 0.0))), "effects")
+        total_us = us(total_frames)
+        if music:
+            mmat = material("Audio", absolute(music["file"]))
+            n = clip_source(mmat, 0, total_us)
+            if n < total_us - SEC // 10:
+                notes.append(f"the music file is {n / SEC:.1f}s, shorter than the {total_us / SEC:.1f}s programme: it is placed once - "
+                             f"copy / loop it in the editor")
+            seg = lib.AudioSegment(mmat, lib.trange(0, n), source_timerange=lib.trange(0, n),
+                                   volume=lin(float(music.get("gain_db", -6)) + STATIC_DUCK_DB))
+            seg.add_fade(f"{float(music.get('fade_in', 0.5))}s", f"{float(music.get('fade_out', 1.0))}s")
+            script.add_segment(seg, "music")
+        if a.mix:
+            xmat = material("Audio", str(Path(a.mix).resolve()))
+            n = clip_source(xmat, 0, total_us)
+            script.add_segment(lib.AudioSegment(xmat, lib.trange(0, n), source_timerange=lib.trange(0, n)), "master_mix")
+
+        cues, untimed = 0, 0
+        if not a.no_subtitles:
+            style = lib.TextStyle(size=7.0, color=(1.0, 1.0, 1.0), align=1, auto_wrapping=True)
+            place = lib.ClipSettings(transform_y=-0.78)
+            border = lib.TextBorder(color=(0.06, 0.06, 0.06), width=40.0)
+            rows = []
+            for p in plan:
+                for ln in p["seg"].get("lines") or []:
+                    if ln.get("start") is None or ln.get("end") is None:
+                        untimed += 1
+                        continue
+                    text = ln["text"] + (f"\n{ln['en']}" if a.bilingual and ln.get("en") else "")
+                    rows.append([int(round((p["start_s"] + float(ln["start"])) * SEC)),
+                                 int(round((p["start_s"] + float(ln["end"])) * SEC)), text])
+            rows.sort()
+            for x, y in zip(rows, rows[1:]):                           # segments on one track may not overlap
+                x[1] = min(x[1], y[0])
+            for st, en, text in rows:
+                en = min(en, total_us)
+                if en - st < 100_000:
                     continue
-                text = ln["text"] + (f"\n{ln['en']}" if a.bilingual and ln.get("en") else "")
-                rows.append([int(round((p["start_s"] + float(ln["start"])) * SEC)),
-                             int(round((p["start_s"] + float(ln["end"])) * SEC)), text])
-        rows.sort()
-        for x, y in zip(rows, rows[1:]):                           # segments on one track may not overlap
-            x[1] = min(x[1], y[0])
-        for st, en, text in rows:
-            en = min(en, total_us)
-            if en - st < 100_000:
-                continue
-            script.add_segment(lib.TextSegment(text, lib.trange(st, en - st), style=style, clip_settings=place,
-                                               border=border), "subtitle")
-            cues += 1
-    script.save()
+                script.add_segment(lib.TextSegment(text, lib.trange(st, en - st), style=style, clip_settings=place,
+                                                   border=border), "subtitle")
+                cues += 1
+        return cues, untimed
+
+    try:
+        cues, untimed = build()
+        script.save()
+    except Exception as e:  # noqa: BLE001 - whatever the library raised, do not leave half a draft behind
+        import shutil
+        if not existed:
+            shutil.rmtree(drafts / name, ignore_errors=True)
+        sys.exit(f"could not build the draft ({type(e).__name__}: {e})"
+                 + ("" if not existed else f"\nthe previous draft {name!r} was being replaced and may now be incomplete"))
+    music = edl.get("music")
 
     out_dir = drafts / name
     content = json.loads((out_dir / "draft_content.json").read_text(encoding="utf-8"))
@@ -184,6 +226,10 @@ def main():
         print(f"  music placed {STATIC_DUCK_DB:g} dB under its mix level (no ducking in 剪映) - ride it by hand")
     if a.mix:
         print("  master_mix is muted: un-mute it and mute the rest only if no cut was moved")
+    for n_ in notes:
+        print("  NOTE " + n_)
+    if edl_lib.subtitles_stale(edl):
+        print("  WARN the cuts changed after the subtitles were timed: run retime_subtitles.py again, then export once more")
     print("  open 剪映 and re-enter the draft list to see it; missing fonts / effects load on the second open")
 
 

@@ -29,6 +29,7 @@ import json
 import sys
 from pathlib import Path
 
+sys.dont_write_bytecode = True      # keep the skill folder free of __pycache__
 sys.path.insert(0, str(Path(__file__).parent / "h3lib"))
 import signals  # noqa: E402
 

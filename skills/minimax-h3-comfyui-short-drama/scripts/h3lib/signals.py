@@ -59,6 +59,46 @@ def _diff(a: list[int], b: list[int]) -> float:
     return sum(abs(x - y) for x, y in zip(a, b)) / (W * H * 3 * 255.0)
 
 
+def _mean2(a: list[int], b: list[int]) -> list[float]:
+    return [(x + y) / 2 for x, y in zip(a, b)]
+
+
+def _locate(frames: list[list[int]], i: int, n: int) -> int:
+    """First frame of the new shot near i. The biggest frame-to-frame change is not good enough: when the new
+    shot opens on violent motion (paper flying through the frame) a later frame changes more than the cut
+    itself. A cut at j is where the two frames before differ from the two frames after, while the frames on
+    each side agree with each other."""
+    best, best_j = -1.0, i
+    for j in range(max(2, i - 2), min(n - 2, i + 2) + 1):
+        score = _diff(_mean2(frames[j - 2], frames[j - 1]), _mean2(frames[j], frames[j + 1])) \
+            - 0.5 * (_diff(frames[j - 1], frames[j - 2]) + _diff(frames[j + 1], frames[j]))
+        if score > best:
+            best, best_j = score, j
+    return best_j
+
+
+def clipping(path: Path) -> dict | None:
+    """{"peak_db", "flat_factor", "clipped"} for the first audio stream; None without audio.
+    A high peak is not clipping. Clipping is a run of samples stuck at full scale (flat factor > 0)."""
+    r = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-i", str(path), "-vn", "-af", "astats=metadata=0", "-f", "null", "-"],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
+    tail = r.stderr[r.stderr.rfind("Overall"):] if "Overall" in r.stderr else ""
+    pk = re.search(r"Peak level dB: (-?[\d.]+|-?inf)", tail)
+    ff = re.search(r"Flat factor: ([\d.]+)", tail)
+    pc = re.search(r"Peak count: ([\d.]+)", tail)
+    ns = re.search(r"Number of samples: (\d+)", tail)
+    if not pk:
+        return None
+    try:
+        peak = float(pk.group(1))
+    except ValueError:
+        peak = -120.0
+    flat = float(ff.group(1)) if ff else 0.0
+    share = (float(pc.group(1)) / max(1, int(ns.group(1)))) if pc and ns else 0.0
+    return {"peak_db": round(peak, 2), "flat_factor": round(flat, 2),
+            "clipped": (flat > 0 and peak >= -0.3) or (peak >= -0.05 and share > 0.001)}
+
+
 def _window_sums(frames: list[list[int]], k: int) -> list[list[int] | None]:
     """sums[i] = per-pixel sum of frames[i : i + k] (None where the window does not fit)."""
     n = len(frames)
@@ -107,11 +147,13 @@ def detect_cuts(path: Path, fps: float | None = None, analyse_seconds: float | N
         far = sum(abs(x - y) for x, y in zip(sums[i - 2 * K], sums[i + K])) / norm
         if far < MIN_PERSIST * s:                                              # the change does not last: a flash
             continue
-        lo, hi = max(1, i - 2), min(n - 1, i + 2)                              # the exact first frame of the new shot
-        j = max(range(lo, hi + 1), key=lambda q: _diff(frames[q], frames[q - 1]))
+        j = _locate(frames, i, n)                                              # the exact first frame of the new shot
+        jump = _diff(frames[j], frames[j - 1])
+        if jump < 0.5 * s:                                                     # no single frame carries the change: a flash or a blur
+            continue
         if j - 2 >= 0 and j + 3 < n:                                           # a flash of 1-3 frames returns to the old picture
             across = min(_diff(frames[j - 2], frames[j + 1]), _diff(frames[j - 2], frames[j + 3]))
-            if across < MIN_PERSIST * _diff(frames[j], frames[j - 1]):
+            if across < MIN_PERSIST * jump:
                 continue
         if cuts and j - cuts[-1]["frame"] < 6:
             if s > cuts[-1]["step"]:
@@ -156,6 +198,67 @@ def motion(path: Path, analyse_seconds: float | None = None) -> float | None:
     out = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace").stdout
     vals = [float(x) for x in re.findall(r"YAVG=([\d.]+)", out)][1:]          # the first frame has nothing to differ from
     return round(median(vals), 2) if vals else None
+
+
+def burned_text(path: Path, analyse_seconds: float | None = None, start: float | None = None) -> list[list[float]] | None:
+    """Spans [[start, end]] where caption-like text sits in the lower third of the picture; None without numpy.
+
+    What it looks for: bright strokes with a dark edge right next to them (white glyphs with an outline or
+    shadow), many separate strokes along a row, spread across the middle of the frame, no column filled
+    from top to bottom (that would be bars or blinds, not writing), and - the decisive part - the same
+    pixels lit in consecutive samples for at least half a second while the picture goes on.
+    Checked on one real film whose takes carried burned captions (all five caption spans found to within
+    0.2 s, none reported on the take without captions or on test patterns). Dark or coloured text without
+    an outline is not detected; treat an empty result as "nothing obvious", not as proof."""
+    try:
+        import numpy as np
+    except ImportError:
+        return None
+    w, h, fps = 480, 270, 6
+    bh = int(h * 0.34)
+    cmd = ["ffmpeg", "-v", "error"]
+    if start:
+        cmd += ["-ss", f"{start:.3f}"]
+    cmd += ["-i", str(path)]
+    if analyse_seconds and analyse_seconds > 0:
+        cmd += ["-t", f"{analyse_seconds:.3f}"]
+    cmd += ["-an", "-vf", f"fps={fps},scale={w}:{h},crop={w}:{bh}:0:{h - bh},format=gray", "-f", "rawvideo", "-"]
+    raw = subprocess.run(cmd, capture_output=True).stdout
+    n = len(raw) // (w * bh)
+    if n < 3:
+        return []
+    band = np.frombuffer(raw[:n * w * bh], np.uint8).reshape(n, bh, w)
+    flags, prev = [], None
+    for y in band:
+        bright, dark = y > 200, y < 70
+        near = np.zeros_like(dark)
+        for dx, dy in ((1, 0), (-1, 0), (2, 0), (-2, 0), (0, 1), (0, -1), (0, 2), (0, -2)):
+            near |= np.roll(np.roll(dark, dy, axis=0), dx, axis=1)
+        m = bright & near
+        ok = False
+        count = int(m.sum())
+        if count >= 40:
+            ys, xs = np.where(m)
+            rows = m[ys.min():ys.max() + 1]
+            transitions = int((np.diff(rows.astype(np.int8), axis=1) == 1).sum(axis=1).max())
+            column_fill = float(m.sum(axis=0).max()) / bh
+            same = float((m & prev).sum()) / max(1, int((m | prev).sum())) if prev is not None else 0.0
+            ok = (xs.max() - xs.min() >= 60 and transitions >= 6 and 0.2 <= xs.mean() / w <= 0.8
+                  and column_fill <= 0.6 and same >= 0.5)
+        flags.append(ok)
+        prev = m
+    spans, i, off = [], 0, float(start or 0.0)
+    while i < n:
+        if flags[i]:
+            j = i
+            while j + 1 < n and flags[j + 1]:
+                j += 1
+            if j - i + 1 >= 3:                                        # held for at least half a second
+                spans.append([round(off + max(0, i - 1) / fps, 2), round(off + (j + 1) / fps, 2)])
+            i = j + 1
+        else:
+            i += 1
+    return spans
 
 
 def match_cuts(expected: list[float], detected: list[float], tolerance: float = 0.5) -> dict:
@@ -217,6 +320,11 @@ def stamped_sheet(path: Path, samples: list[tuple[float, str]], sheet: Path, wid
             r = subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{max(0.0, t):.3f}", "-i", str(path), "-frames:v", "1",
                                 "-vf", vf, str(tmp / f"f_{i:03d}.png")], capture_output=True, text=True,
                                cwd=str(font.parent) if font else None)
+            if r.returncode != 0 or not (tmp / f"f_{i:03d}.png").exists():
+                # asked for a time at or past the last frame: take the last frame the file has
+                r = subprocess.run(["ffmpeg", "-v", "error", "-y", "-sseof", "-1", "-i", str(path), "-vf", vf, "-update", "1",
+                                    str(tmp / f"f_{i:03d}.png")], capture_output=True, text=True,
+                                   cwd=str(font.parent) if font else None)
             if r.returncode != 0 or not (tmp / f"f_{i:03d}.png").exists():
                 raise RuntimeError(f"ffmpeg could not extract a frame at {t:.2f}s from {path}: {r.stderr.strip()[-300:]}")
         cols = max(1, min(cols, len(samples)))

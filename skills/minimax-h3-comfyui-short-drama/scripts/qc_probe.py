@@ -5,9 +5,16 @@ clip cut where the storyboard said it should (needs ffprobe / ffmpeg on PATH; st
     python3 qc_probe.py "takes/ep01/s03/*.mp4" --expect-seconds 10 --expect-size 1344x768 --freeze-tail 1.0
     python3 qc_probe.py "takes/ep01/**/*.mp4" --episode episodes/ep01.json --freeze-tail 1.0 --out qc/probe
 
-Hard checks (FAIL, exit 1): no video / no audio stream, wrong size, wrong frame rate, duration off by more
-than --tolerance, sample peak above -1 dBFS, frozen span > 1 s or black span > 0.25 s outside the declared
-freeze tail.
+Hard checks (FAIL, exit 1): no video / no audio stream, wrong size (with --expect-size), wrong frame rate,
+duration off by more than --tolerance, clipped audio (samples stuck at full scale), frozen span > 1 s or
+black span > 0.25 s outside the declared freeze tail.
+Warnings: a sample peak above -1 dBFS that is not clipped (the mix re-levels it), a picture whose aspect does
+not match the storyboard's ratio, caption-like text burned into the lower third (needs numpy; a heuristic
+for white text with a dark outline - see h3lib/signals.py).
+--freeze-tail N is the length of the declared end freeze. With --episode the last N seconds are left unchecked
+only on segments whose last shot has "end_hold": true - the same rule make_edl.py uses to cut them off. On
+every other segment that second goes into the cut, so it is checked. (--freeze-tail-all skips it everywhere;
+without --episode it is skipped on every clip.)
 Shot check (WARN; FAIL with --strict-cuts): hard cuts found in the picture are compared with the shot start
 times - from --episode (the segment id is read from the path: a folder or file-name token equal to it; its
 duration is used as --expect-seconds too) or from --shots 0,3.5,7.2. A missing cut means H3 ran two shots
@@ -23,21 +30,23 @@ import argparse
 import glob
 import json
 import re
-import subprocess
 import sys
 from pathlib import Path
 
+sys.dont_write_bytecode = True      # keep the skill folder free of __pycache__
 sys.path.insert(0, str(Path(__file__).parent / "h3lib"))
 import signals  # noqa: E402
 
 VIDEO_EXT = {".mp4", ".mov", ".mkv", ".webm"}
 
 
-def peak_db(p: Path) -> float | None:
-    r = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-i", str(p), "-vn", "-af", "volumedetect", "-f", "null", "-"],
-                       capture_output=True, text=True, encoding="utf-8", errors="replace")
-    m = re.search(r"max_volume: ([-\d.]+) dB", r.stderr)
-    return float(m.group(1)) if m else None
+RATIOS = {"21:9": 21 / 9, "16:9": 16 / 9, "4:3": 4 / 3, "1:1": 1.0, "3:4": 3 / 4, "9:16": 9 / 16}
+
+
+def declared_hold(seg: dict | None) -> bool:
+    """Does the storyboard say this segment ends in a freeze that is cut off later? (last shot has end_hold)"""
+    shots = (seg or {}).get("shots") or []
+    return bool(shots and shots[-1].get("end_hold"))
 
 
 def main():
@@ -52,11 +61,14 @@ def main():
     ap.add_argument("--tolerance", type=float, default=0.6, help="seconds allowed on the duration")
     ap.add_argument("--cut-tolerance", type=float, default=0.5, help="seconds allowed between a planned and a found cut")
     ap.add_argument("--freeze-tail", type=float, default=0.0,
-                    help="seconds of declared end freeze excluded from freeze / black / cut detection (skill default 1.0)")
+                    help="length of the declared end freeze (skill default 1.0). With --episode it is skipped only on segments "
+                         "whose last shot has end_hold; without a storyboard it is skipped on every clip")
+    ap.add_argument("--freeze-tail-all", action="store_true", help="skip the freeze tail on every clip even with --episode")
     ap.add_argument("--min-motion", type=float, default=1.2,
                     help="warn below this median frame change (240 px grey difference; action >= 2.5, close-up acting >= 1.8)")
     ap.add_argument("--strict-cuts", action="store_true", help="a shot-count mismatch fails the clip")
     ap.add_argument("--no-cuts", action="store_true", help="skip cut detection (faster)")
+    ap.add_argument("--no-text", action="store_true", help="skip the burned-in text check (it needs numpy and is skipped without it)")
     ap.add_argument("--out", help="folder for probe_report.json")
     a = ap.parse_args()
 
@@ -66,10 +78,11 @@ def main():
         paths += [Path(h) for h in hits if Path(h).suffix.lower() in VIDEO_EXT]
     if not paths:
         sys.exit("no clips matched")
-    segs = {}
+    segs, ep, ep_ratio = {}, {}, None
     if a.episode:
         ep = json.loads(Path(a.episode).read_text(encoding="utf-8"))
         segs = {s["id"]: s for s in ep["segments"]}
+        ep_ratio = RATIOS.get(str(ep.get("ratio", "")))
     manual_shots = [float(x) for x in a.shots.split(",")] if a.shots else None
 
     rows, bad = [], 0
@@ -99,19 +112,35 @@ def main():
             problems.append(f"size {row['size']} != {a.expect_size}")
         if abs(info["fps"] - a.expect_fps) > 0.5:
             problems.append(f"fps {info['fps']:.2f} != {a.expect_fps:g}")
-        peak = peak_db(p) if info["has_audio"] else None
+        clip = signals.clipping(p) if info["has_audio"] else None
+        peak = clip["peak_db"] if clip else None
         row["peak_db"] = peak
         if not info["has_audio"]:
             problems.append("no audio track")
+        elif clip and clip["clipped"]:
+            problems.append(f"audio is clipped (peak {peak} dB, samples stuck at full scale) - the distortion is baked in: re-roll")
         elif peak is not None and peak > -1.0:
-            problems.append(f"audio peak {peak} dB above -1 dB (sample peak; the delivery spec is -1 dBTP)")
-        usable = dur - a.freeze_tail if a.freeze_tail else None
+            warns.append(f"audio peak {peak} dB is hot but not clipped - fine as a take, mix_episode.py re-levels it")
+        if not a.expect_size and ep_ratio and info["height"]:
+            got = info["width"] / info["height"]
+            if abs(got / ep_ratio - 1) > 0.03:
+                warns.append(f"picture is {row['size']} ({got:.2f}:1) but the storyboard says {ep.get('ratio')} - it will be cropped or padded at assembly")
+        # the last second is only skipped where the storyboard declares a freeze tail (same rule as make_edl.py):
+        # on any other segment that second goes into the cut and has to be checked
+        hold = a.freeze_tail > 0 and (a.freeze_tail_all or seg is None and not segs or declared_hold(seg))
+        usable = dur - a.freeze_tail if hold else None
+        row["freeze_tail_excluded"] = a.freeze_tail if hold else 0
         bf = signals.black_and_freeze(p, usable)
         row.update(bf)
         if bf["freeze"]:
             problems.append("frozen " + ", ".join(f"{s:.2f}-{e:.2f}s" for s, e in bf["freeze"]))
         if bf["black"]:
             problems.append("black " + ", ".join(f"{s:.2f}-{e:.2f}s" for s, e in bf["black"]))
+        text = None if a.no_text else signals.burned_text(p, usable)
+        if text:
+            row["burned_text"] = text
+            warns.append("text is burned into the lower third at " + ", ".join(f"{s0:.1f}-{s1:.1f}s" for s0, s1 in text)
+                         + " (F-BURN-TEXT): trim it if it is a flash, otherwise regenerate - and do not burn subtitles over it")
         row["motion"] = signals.motion(p, usable)
         if row["motion"] is not None and row["motion"] < a.min_motion:
             warns.append(f"motion {row['motion']} is below {a.min_motion:g}: close to a still picture - check it is not a slideshow take")
@@ -142,7 +171,7 @@ def main():
         bad += bool(problems)
         row.update({"segment": sid, "verdict": verdict, "problems": problems, "warnings": warns})
         rows.append(row)
-        cuts_txt = "" if a.no_cuts else f" cuts={row['cuts']}"
+        cuts_txt = ("" if a.no_cuts else f" cuts={row['cuts']}") + (f" (last {a.freeze_tail:g}s = declared freeze, not checked)" if hold else "")
         print(f"{verdict.upper():4s} {p.name}: {row['size']} {info['fps']:.0f}fps {dur:.2f}s audio={'yes' if info['has_audio'] else 'no'} "
               f"peak={peak} motion={row['motion']}{cuts_txt}" + ("  " + "; ".join(problems + warns) if problems or warns else ""))
     if a.out:

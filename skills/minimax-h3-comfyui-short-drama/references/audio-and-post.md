@@ -1,6 +1,6 @@
 # 声音后期：对白从哪来、怎么统一、怎么混
 
-> 依据：`docs/14-ai-video-workflows/04-audio-lipsync-and-post.md`（2026-11-21 快照，许可与文件名来自各仓库 README / 模型卡）。本页的 ffmpeg 混音、字幕对时、工程导出已由 skill 脚本实现并在真实 H3 成片上跑通（见 `qc-and-assembly.md` 页首）；**所有模型（TTS / 变声 / 改嘴 / 拟音 / 配乐）都没有在 4090 上实跑过**，速度与显存是作者自报，标「待 A/B」的先做样片。
+> 依据：仓库里的调研报告 `docs/14-ai-video-workflows/04-audio-lipsync-and-post.md`（不随 skill 安装，见 <https://github.com/Tofu-killer/minimax-h3-short-drama/blob/main/docs/14-ai-video-workflows/04-audio-lipsync-and-post.md>；2026-11-21 快照，许可与文件名来自各仓库 README / 模型卡）。本页的 ffmpeg 混音、字幕对时、工程导出已由 skill 脚本实现并在真实 H3 成片上跑通（见 `qc-and-assembly.md` 页首）；**所有模型（TTS / 变声 / 改嘴 / 拟音 / 配乐）都没有在 4090 上实跑过**，速度与显存是作者自报，标「待 A/B」的先做样片。
 > 下载只走 HuggingFace / GitHub；只在 ModelScope 的权重（如 ComplexSync）视为不可用。
 
 ## 1. 三条链路，先选再做

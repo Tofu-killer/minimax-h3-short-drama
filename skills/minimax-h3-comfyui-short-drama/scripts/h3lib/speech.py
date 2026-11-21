@@ -81,7 +81,8 @@ def units_faster_whisper(wav: Path, model: str = "small", language: str = "zh", 
                          "no_speech_prob": round(float(s.no_speech_prob), 3)})
         for w in (s.words or []):
             if w.word.strip():
-                units.append({"text": w.word.strip(), "start": float(w.start), "end": float(w.end)})
+                units.append({"text": w.word.strip(), "start": float(w.start), "end": float(w.end),
+                              "prob": round(float(getattr(w, "probability", 1.0) or 0.0), 3)})
     return units, seg_info
 
 
@@ -113,13 +114,67 @@ def keys(text: str) -> list[str]:
     return out
 
 
-def flatten_chars(units: list[dict]) -> list[tuple[str, float, float]]:
+def flatten_chars(units: list[dict]) -> list[tuple[str, float, float, float]]:
     chars = []
     for u in units:
         t = norm(u["text"])
         d = (u["end"] - u["start"]) / max(len(t), 1)
-        chars += [(ch, u["start"] + k * d, u["start"] + (k + 1) * d) for k, ch in enumerate(t)]
+        chars += [(ch, u["start"] + k * d, u["start"] + (k + 1) * d, float(u.get("prob", 1.0))) for k, ch in enumerate(t)]
     return chars
+
+
+def envelope(wav: Path, hop: float = 0.01):
+    """Loudness curve of the speech band in dB, one value per `hop` seconds (numpy). Pre-emphasis removes the
+    rumble and room tone that would otherwise hide where a voice starts."""
+    import numpy as np
+    x = _load_wav(wav)
+    if len(x) < 400:
+        return np.zeros(0), hop
+    x = np.append(x[0], x[1:] - 0.97 * x[:-1])
+    with wave.open(str(wav), "rb") as w:
+        sr = w.getframerate()
+    n = int(sr * hop)
+    k = len(x) // n
+    rms = np.sqrt((x[:k * n].reshape(k, n) ** 2).mean(axis=1) + 1e-12)
+    rms = np.convolve(rms, np.ones(3) / 3, mode="same")
+    return 20 * np.log10(rms + 1e-9), hop
+
+
+def refine_span(env, hop: float, first_s: float, last_s: float) -> tuple[float, float, float]:
+    """Word times from a recogniser drift: the first word is often placed in the silence before the voice
+    (measured on real takes: cues 0.4-1.2 s early). Pull the start forward to where the speech band actually
+    rises, and the end back to where it falls. Returns (start, end, largest shift in seconds).
+    Only moves inwards: speech that begins before the recognised start is left alone."""
+    import numpy as np
+    if len(env) == 0 or last_s <= first_s:
+        return first_s, last_s, 0.0
+    a, b = int(first_s / hop), min(len(env), int(last_s / hop) + 1)
+    if b - a < 5:
+        return first_s, last_s, 0.0
+    floor = float(np.percentile(env, 10))
+    peak = float(env[a:b].max())
+    thr = max(floor + 8.0, peak - 22.0)
+    if peak - floor < 10.0:                              # no clear voice above the bed: nothing to snap to
+        return first_s, last_s, 0.0
+    loud = env[a:b] >= thr
+    run = 0
+    on = None
+    for i, v in enumerate(loud):                         # first stretch of >= 50 ms above the threshold
+        run = run + 1 if v else 0
+        if run >= 5:
+            on = i - 4
+            break
+    if on is None:
+        return first_s, last_s, 0.0
+    idx = np.where(loud)[0]
+    off = int(idx[-1]) + 1
+    start = (a + on) * hop
+    end = (a + off) * hop
+    start = start if start - first_s > 0.10 else first_s
+    end = end if last_s - end > 0.15 else last_s
+    if end - start < 0.15:
+        return first_s, last_s, 0.0
+    return round(start, 3), round(end, 3), round(max(start - first_s, last_s - end), 3)
 
 
 def map_lines(lines: list[dict], units: list[dict]) -> dict:
@@ -153,7 +208,8 @@ def map_lines(lines: list[dict], units: list[dict]) -> dict:
                     "head_missing": not any(i in r2h for i in range(a, a + edge)),
                     "tail_missing": not any(i in r2h for i in range(b - edge, b)),
                     "first_s": round(chars[hit[0]][1], 3) if hit else None,
-                    "last_s": round(chars[hit[-1]][2], 3) if hit else None})
+                    "last_s": round(chars[hit[-1]][2], 3) if hit else None,
+                    "confidence": round(sum(chars[i][3] for i in hit) / len(hit), 3) if hit else None})
         out.append(row)
     return {"lines": out, "similarity": round(sm.ratio(), 3) if (ref or hyp) else 1.0, "ref_chars": len(ref),
             "hyp_chars": len(hyp), "inserted_chars": len(hyp) - len(matched_h), "hyp_text": hyp,

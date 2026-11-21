@@ -346,6 +346,13 @@ def rhythm_warnings(ep: "Episode") -> list[str]:
     return out
 
 
+def frames_for_seconds(seconds: float) -> int:
+    """Frame count on the model's 17k+5 grid at 24 fps (rounded up)."""
+    n = int(round(seconds * 24))
+    k = max(0, -(-(n - 5) // 17))
+    return 17 * k + 5
+
+
 # ---------------------------------------------------------------- validation
 
 def validate_episode(ep: Episode) -> list[str]:
@@ -361,6 +368,9 @@ def validate_episode(ep: Episode) -> list[str]:
         tag = f"segment {seg.id}"
         if not 4 <= seg.duration <= 15:
             problems.append(f"{tag}: duration {seg.duration} outside 4..15")
+        elif seg.duration < 5:
+            problems.append(f"{tag}: WARN {seg.duration} s is {frames_for_seconds(seg.duration)} frames, below the ~124 frames the open "
+                            f"weights were trained on (motion may not finish, sound may thin out) - generate 5 s and trim in the edit")
         if seg.scene_id not in sids:
             problems.append(f"{tag}: unknown scene_id {seg.scene_id}")
         for c in seg.character_ids:

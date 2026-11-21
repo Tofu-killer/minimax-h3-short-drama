@@ -15,6 +15,7 @@ built - use --allow-planned for drafts, and --only s03,s04 to (re)build single s
 """
 import argparse, json, sys
 from pathlib import Path
+sys.dont_write_bytecode = True      # keep the skill folder free of __pycache__
 sys.path.insert(0, str(Path(__file__).parent / "h3lib"))
 from storyboard import load_episode, validate_episode, effective_continuity  # noqa: E402
 import prompt_builder  # noqa: E402
