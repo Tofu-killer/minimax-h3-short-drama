@@ -65,6 +65,8 @@
 
 ## 5. 续接段提示词写法
 
+- **硬切段与续接段的段尾写法相反，别混用**：硬切段末尾写 0.5 s 收束 + 1 s 定格（拼接时剪掉）；要被续接的段以**动作仍在进行**收尾（行走中、转身中途），接缝放在动作中途而不是门槛、落座这类停顿点。续接只在同一场内做，换场一律从角色参考与场景母版重新锚定、链深清零。
+- 续接段开头约 2 s 不进新元素，主体不停、不转身、不伸手；推镜和环绕不跨接缝；配乐写「同一段、同一速度延续」。
 - 第二段起 `[Shot 1]` 逐项复现上段最后 overlap 秒的画面与声音（人物位置、动作相位、镜头、灯光、环境声），不加台词、不换调度，写一个微动作（呼吸 / 重心 / 视线）防定格；时间码整体减去钉头 0.917 s。
 - 可直接插入 WhaleTrans 原句：`The opening 00:00.000-00:00.917 is a fixed latent continuation from the preceding segment. Describe this opening as the preceding segment's final shot, preserving character positions, environment, motion, camera path, lighting, color, and sound before introducing new action.`
 - 重叠结束后不切镜写 `From 00:00.917, without a cut, …`；切镜则 `[Shot 2] At 00:00.917, the shot cuts to …`。
