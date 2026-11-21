@@ -2,11 +2,11 @@
 """Technical QC for generated clips: container facts, audio peak, black / frozen spans, and whether the
 clip cut where the storyboard said it should (needs ffprobe / ffmpeg on PATH; standard library only).
 
-    python3 qc_probe.py "takes/ep01/s03/*.mp4" --expect-seconds 10 --expect-size 1344x768 --freeze-tail 1.0
+    python3 qc_probe.py "takes/ep01/s03/**/*.mp4" --expect-seconds 10 --expect-size 1344x768 --freeze-tail 1.0
     python3 qc_probe.py "takes/ep01/**/*.mp4" --episode episodes/ep01.json --freeze-tail 1.0 --out qc/probe
 
 Hard checks (FAIL, exit 1): no video / no audio stream, wrong size (with --expect-size), wrong frame rate,
-duration off by more than --tolerance, clipped audio (samples stuck at full scale), frozen span > 1 s or
+duration off by more than --tolerance from the requested length on the 17k+5 frame grid, clipped audio (samples stuck at full scale), frozen span > 1 s or
 black span > 0.25 s outside the declared freeze tail.
 Warnings: a sample peak above -1 dBFS that is not clipped (the mix re-levels it), a picture whose aspect does
 not match the storyboard's ratio, caption-like text burned into the lower third (needs numpy; a heuristic
@@ -60,6 +60,13 @@ def declared_hold(seg: dict | None) -> bool:
     """Does the storyboard say this segment ends in a freeze that is cut off later? (last shot has end_hold)"""
     shots = (seg or {}).get("shots") or []
     return bool(shots and shots[-1].get("end_hold"))
+
+
+def grid_seconds(seconds: float, fps: float = 24.0) -> float:
+    """Length H3 really produces for a requested length: the frame count is rounded up to 17k+5."""
+    n = int(round(seconds * fps))
+    k = max(0, -(-(n - 5) // 17))
+    return (17 * k + 5) / fps
 
 
 def main():
@@ -117,10 +124,11 @@ def main():
         seg = segs.get(sid) if sid else None
         if segs and not seg:
             warns.append("no segment id in the path: storyboard checks skipped (use --segment)")
-        expect_s = a.expect_seconds if a.expect_seconds else (float(seg["duration"]) if seg else None)
+        asked = a.expect_seconds if a.expect_seconds else (float(seg["duration"]) if seg else None)
+        expect_s = grid_seconds(asked) if asked else None    # H3 snaps to 17k+5 frames: 13 s is generated as 13.667 s
         dur = info["duration"]
         if expect_s and abs(dur - expect_s) > a.tolerance:
-            problems.append(f"duration {dur:.2f}s != {expect_s:g}")
+            problems.append(f"duration {dur:.2f}s != {expect_s:.2f}s ({asked:g} s requested, on the 17k+5 frame grid)")
         if a.expect_size and row["size"] != a.expect_size:
             problems.append(f"size {row['size']} != {a.expect_size}")
         if abs(info["fps"] - a.expect_fps) > 0.5:

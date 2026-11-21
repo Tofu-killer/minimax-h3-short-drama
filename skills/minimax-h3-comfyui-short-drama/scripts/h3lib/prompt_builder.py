@@ -272,7 +272,7 @@ def _shot_parts(seg: Segment, sh: Shot, is_first: bool, labels: dict[str, str], 
 
 def only_these_words(seg: Segment) -> str:
     """Closing sentence of a segment with lines. Measured by a community test (egguy886, see
-    references/camera-and-performance.md 5b/5c): "Speak only the quoted dialogue lines" cut improvised extra
+    references/camera-and-performance.md sections 5 and 5c): "Speak only the quoted dialogue lines" cut improvised extra
     words from 9.3% of takes to 1.3%."""
     lines = [d for sh in seg.shots for d in sh.dialogue]
     if not lines:

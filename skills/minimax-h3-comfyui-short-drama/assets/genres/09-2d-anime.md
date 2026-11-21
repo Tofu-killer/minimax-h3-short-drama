@@ -14,7 +14,7 @@
 |----|------|
 | 模式 | Ref2VA 直出（2D 不需要先出首帧）；子镜头钉帧用官方 multiframe_reference 工作流 |
 | 段长 / 镜数 | 8–12 s，对白 2 镜；动作 / 日常 2–3 镜 |
-| 步数 | Turbo 4 步抽卡、8 步成片，shift 12/3；二采按需 |
+| 步数 | 草稿 Turbo 8 步（没有运镜的镜头可以 4 步），有运镜的镜头精修 20 步、关 Turbo，shift 12/3；二采按需 |
 | LoRA | `Inner-Reflections/MiniMax-H3-Looping-Sketch-Anime` 0.75–1.25（叠 Turbo 再加），提示含 `hand-drawn 2D anime art style, rough textured outlines, flat colors, white outline`；adf99 Anime Slider 正值更 2D（小幅）（`lora-and-style.md` §3） |
 
 ## 风格句
@@ -40,7 +40,7 @@
 
 ## 参考素材准备
 
-角色设定板（正面 + 3/4，干净线稿 + 平涂，白底）；背景用动画背景画风格出（`anime background painting, … no characters`）——注意这是**图像模型**提示词，视频提示词里只写正向；参考图全部同一画风。
+角色的 `face.png` + 正面全身（单人单视图，干净线稿 + 平涂，白底）；背景用动画背景画风格出（模板见 `image-prompts.md` §4，写「空无一人的…」这样的正向描述，不写 `no characters`）；参考图全部同一画风。
 
 ## 示例提示词（Ref2VA，10 s，3 图 + 2 音频）
 

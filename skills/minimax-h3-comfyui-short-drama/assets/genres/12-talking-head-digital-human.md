@@ -6,7 +6,7 @@
 
 - **强**：一张定稿脸 + 一段音色即可出带口型的胸像口播；原生音频与口型同步出；可做 1 分钟片的分段拼接（mcoblackmore `digital-human-16gb`，`11-fresh-repos`）。
 - **弱**：嘴动幅度偏小；镜头会自己轻微漂移 / 呼吸（实测中心抖动约 11 px）；胸像下缘凭空长出手指，提示词压不住；把配音塞进 `ref_audios` 只影响音色，模型会自编语音与时序（嘴型与配音相关性 0.04）；16 GB 卡单段约 192 帧（8 s）见顶（以上均 mcoblackmore 实测）；原生音色每段漂约 1.7 半音（egguy886）。
-- **绕法**：要逐字对现成配音走 `PixaromaH3AudioSync`（ComfyUI-Pixaroma）而不是 `ref_audios`；写 `clear, pronounced lip movements … on every syllable` 加大嘴型；拼接前裁掉底部 12%、按最大脸对齐只放不缩（≤ 1.35×）、按语音边界裁段头（mcoblackmore `join_clips.py`）。
+- **绕法**：要逐字对现成配音就锁音频，而不是把配音当 `ref_audios`：接法见 `audio-and-post.md` 链路 B（`ComfyUI-H3-ExactAudioLock`），社区里另一个做这件事的节点是 `PixaromaH3AudioSync`（ComfyUI-Pixaroma）；写 `clear, pronounced lip movements … on every syllable` 加大嘴型；拼接前裁掉底部 12%、按最大脸对齐只放不缩（≤ 1.35×）、按语音边界裁段头（mcoblackmore `join_clips.py`）。
 
 ## 推荐模式与参数
 

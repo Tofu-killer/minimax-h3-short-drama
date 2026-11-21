@@ -59,6 +59,7 @@ class Dialogue:
     text: str
     delivery: str = ""              # "softly", "calm and quiet", ...
     offscreen: bool = False         # voice-over -> lips closed
+    en: str = ""                    # optional English subtitle for this line (--bilingual); never spoken, never in the prompt
     after_line: str = ""            # optional sentence: what the speaker does right after the words end
                                     # ("He closes his lips and looks down at {prop_folder}."); default: closes the lips
 
@@ -98,7 +99,7 @@ class Segment:
     hook_type: str = ""             # hook / setup / turn / cliffhanger (planning label, never written into the prompt)
     summary: str = ""               # optional: one English sentence saying what happens, {asset_id} placeholders allowed
     use_scene_reference: bool = True   # False: do not attach the scene picture (it halves camera movement); the description carries the place
-    negatives: str = ""             # "no other people, no signage"
+    negatives: str = ""             # one positive lock ("The corridor behind them stays empty."), never a bare "no X"
     # -- written back after generation (observe_take.py); optional ------------------------------------
     status: str = "planned"         # planned | generated | accepted | accepted_with_deviation | rejected
     observed_end_state: str = ""    # where the ACCEPTED take really ends, read from its frames - never copied from the plan

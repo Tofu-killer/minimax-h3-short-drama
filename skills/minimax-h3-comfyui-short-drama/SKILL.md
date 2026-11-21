@@ -23,10 +23,10 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 |----|--------|----|
 | 0 | 列出 GPU / ComfyUI 版本 / 已有模型与 LoRA / 自定义节点 / 现有工作流；用 `assets/local-inventory-checklist.md` 的清单；跑一次 `scripts/selfcheck.py` 确认 ffmpeg 与后期脚本在这台机器上能用 | `references/local-stack-and-acceleration.md` |
 | 1 | 确认类型（`assets/genres/README.md` 选一个类型包，看 H3 适配度与绕法）与风格（电影质感 / 漫剧）、画幅（16:9：训练格点 1344×768 其实是 7:4。默认就用 1344×768 生成——Turbo LoRA 有对应的 768p 版、速度也有实测——交付时上下各裁 6 px 再缩放到 1920×1080；只有画面里有不能裁、不能拉伸的东西（贴边的圆形、文字）才改用真 16:9 的 1536×864，像素多三成、没有配套的 LoRA 档位，先单独试一段）、单集时长、每段时长 | `assets/genres/`、`assets/style-*.md`、`references/model-and-modes.md` 分辨率格点 |
-| 2 | 生图：定妆照（锚点，选定后冻结）→ 正面全身 + `face.png` 等单人单视图（拼成的 16:9 角色板只给人审）→ 场景无人母版 + 九宫格 → 道具白底图；再备 2–15 s 干净音色；每个角色写三样：进视频提示词的短外貌 `identity_phrase`（发型、主服装、一个标志物，上限约 25 词，有几样写几样）、短称 `short_phrase`、声音短语 `voice_phrase`（完整外貌 `sheet_phrase` 只给生图用） | `references/image-stage.md`、`assets/image-prompts.md`、`references/storyboard-and-assets.md` §3 |
+| 2 | 生图：定妆照（锚点，选定后冻结）→ 正面全身 + `face.png` 等单人单视图（拼成的 16:9 角色板只给人审）→ 场景无人母版 + 九宫格 → 道具白底图；再备 2–15 s 干净音色；每个角色写三样：进视频提示词的短外貌 `identity_phrase`（发型、主服装、一个标志物，约 12–25 词，有几样写几样；超过 30 词校验器会提醒）、短称 `short_phrase`、声音短语 `voice_phrase`（完整外貌 `sheet_phrase` 只给生图用） | `references/image-stage.md`、`assets/image-prompts.md`、`references/storyboard-and-assets.md` §3 |
 | 3 | 用 `assets/agent-prompts/01-outline.md` → `02-storyboard.md` 让 LLM 把剧本切成 5–13 s 的段（对白段 8–12 s，动作 / 硬切镜头 5–8 s；模型支持 4–15 s，但 4 s 低于训练帧数、14–15 s 在 24 GB 上明显变慢），每段 1–4 个子镜头（按段长分档），每镜写景别 / 焦段 / 运镜 / 动作 / 表演 / 台词 / 声音；多人场景的第一段在 `stagings` 里登记开场站位（脚本据此生成固定的走位句）；跑 `scripts/validate_episode.py --rhythm`，再用 `scripts/render_storyboard.py` 出分镜表给用户审，`03-rhythm-audit.md` 做节奏审计 | `references/storyboard-and-assets.md` §1–2 |
-| 4 | 真人中文对白段和关键道具特写先做首帧（编辑模型 + face.png + 场景裁切，`image-stage.md` §⑤）：首帧和参考图都给 → `ref2va` + `first_frame`；多人画面只给首帧 → `i2va`；做不出首帧就 `ref2va` 直出并告诉用户命中率会低。`scripts/build_prompts.py` 生成每段提示词与 `.media.json`（帧数 + 参考的接线顺序）——版式照官方完整示例，人物首次出场的外貌、切镜后的短提醒、台词后的闭嘴、音色引用都由脚本写入，分镜里不要重复；`scripts/lint_prompt.py <提示词>` 机检，FAIL 不提交；本地 Ollama 改写只用于三段式，六段式由脚本生成 | `references/prompt-format.md` |
-| 5 | 草稿档（Turbo 8 步 + Sage；分辨率与 Turbo LoRA 的档位配对——求快用 544p 档，要和成片同构图、同 seed 精修就用 1344×768 配 768p 版，见 local-stack §2）每段 2–4 个 seed。用你本机能跑通的工作流导出 API 版（skill 不附带工作流），`scripts/comfy_submit.py <工作流> --media prompts/ep01/s03.media.json --batch 3 --dry-run` 出批次预览（接了哪些参考、分辨率、步数、输出目录，有历史耗时就给预计时长，另有几条「advice」提示工作流里常见的漏接和错配）给用户确认，再带 `--confirm <批次号>` 提交；中断了原样重跑即可续取。同场景动作接续的段按顺序做：上一段采纳 → `scripts/observe_take.py` 把实拍末态写回分镜 → `build_prompts.py --only <下一段>` | `references/local-stack-and-acceleration.md`、`references/comfyui-nodes.md` |
+| 4 | 真人中文对白段和关键道具特写先做首帧（编辑模型 + face.png + 场景裁切，`image-stage.md` §4 第 4 步「逐镜首帧」）。首帧里只有一张清楚的脸（单人、过肩）→ `ref2va` + `first_frame`，参考图和音色照带；首帧里有两张以上清楚的正脸 → 只给首帧，用 `i2va`（再挂身份参考会多出一个人；`i2va` 接不了音色参考，音色靠后期统一）；做不出首帧就 `ref2va` 直出并告诉用户命中率会低。`scripts/build_prompts.py` 生成每段提示词与 `.media.json`（帧数 + 参考的接线顺序）——版式照官方完整示例，人物首次出场的外貌、切镜后的短提醒、台词后的闭嘴、音色引用都由脚本写入，分镜里不要重复；`scripts/lint_prompt.py <提示词>` 机检，FAIL 不提交；本流程的提示词一律由脚本生成；本地 LLM 改写器（`prompt-format.md` §9）是不走分镜 JSON 时的另一条路，其中改写 LoRA 只覆盖三段式 | `references/prompt-format.md` |
+| 5 | 草稿档（Turbo 8 步 + Sage；分辨率与 Turbo LoRA 的档位配对——求快用 544p 档，要和成片同构图、同 seed 精修就用 1344×768 配 768p 版，见 local-stack §2）每段 2–3 个 seed（有台词的段 3 个）。用你本机能跑通的工作流导出 API 版（skill 不附带工作流），`scripts/comfy_submit.py <工作流> --media prompts/ep01/s03.media.json --batch 3 --dry-run` 出批次预览（接了哪些参考、分辨率、步数、输出目录，有历史耗时就给预计时长，另有几条「advice」提示工作流里常见的漏接和错配）给用户确认，再带 `--confirm <批次号>` 提交；中断了原样重跑即可续取。同场景动作接续的段按顺序做：上一段采纳 → `scripts/observe_take.py` 把实拍末态写回分镜 → `build_prompts.py --only <下一段>` | `references/local-stack-and-acceleration.md`、`references/comfyui-nodes.md` |
 | 6 | 中选段**同 seed** 精修：LBH latent 放大 + σ 0.45 二采（音频钉死）→ 1920×1088（交付时裁到 1920×1080）；小脸先修再放大；只有单镜 > 15 s 才续接 | `references/quality-pipeline.md`、`references/continuity-long-video.md` |
 | 7 | QC：`qc_probe.py`（含镜头数对账）→ `qc_dialogue.py` → `identity_gate.py`（真人）/ `identity_gate_anime.py`（漫剧）→ `contact_sheet.py` + 人眼；后期：`make_edl.py` → `retime_subtitles.py` → `mix_episode.py`（帧精确拼接、逐段电平、配乐压低、成片响度、验收；段间音色不齐先用 `voice_check.py` 量出是哪几句）→ 需要人工精修时 `export_capcut_draft.py` / `export_otio.py` | `references/qc-and-assembly.md`、`references/audio-and-post.md` |
 
@@ -34,12 +34,12 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 
 **只做质检和后期**（片段已经生成好了）：直接看 `references/qc-and-assembly.md` §0——只需要一份带段 id、镜头起点和锁定台词的精简分镜，不必先让 `validate_episode.py` 通过。
 
-**命令约定**：所有脚本都在项目根目录下运行，写作 `python <本 skill 目录>/scripts/xxx.py …`（下文与各 reference 里简写成 `scripts/xxx.py`）；通配符放进引号由脚本自己展开；每个脚本都有 `--help`。references 里引用的 `docs/13-…`、`docs/14-…`，以及只写了文件名的 `NN-xxx.md`（如 `04-prompting-tools.md`、`12-fresh-followup.md`），都是仓库里的调研底稿，不随 skill 安装：<https://github.com/Tofu-killer/minimax-h3-short-drama/tree/main/docs>。
+**命令约定**：所有脚本都在项目根目录下运行，写作 `python <本 skill 目录>/scripts/xxx.py …`（下文与各 reference 里简写成 `scripts/xxx.py`）；通配符放进引号由脚本自己展开；每个脚本都有 `--help`。references 里引用的 `docs/…`、`workflows/…`、`templates/…`，以及只写了文件名的 `NN-xxx.md`（如 `04-prompting-tools.md`、`12-fresh-followup.md`），都在仓库里、不随 skill 安装：<https://github.com/Tofu-killer/minimax-h3-short-drama/tree/main/docs>。
 
 ## 必须遵守的铁律
 
 1. **描述英文、台词原语言**，台词只放在 `<d>[Chinese] …</d>` 里。
-2. **没有自由否定句**。开源权重无负向分支，`no X` 会被画出来；写正向锁定。仅允许：官方保留句式（`no other item is substituted`、`never transfer facial traits from <Picture N>`）、`Exactly N people` 式正向计数、至多一句具体失败词（`NO black letterbox bars`）。真要排除某物用 NegPiP 节点（`(red glow:-3)`）而不是文字。
+2. **没有自由否定句**。开源权重无负向分支，`no X` 会被画出来；写正向锁定。仅允许：官方保留句式（`no other item is substituted`、`never transfer facial traits from <Picture N>`）、`Exactly N people` 式正向计数、摄影机静止那一句（`with no camera movement whatsoever`）、至多一句具体失败词（`NO black letterbox bars`）。真要排除某物用 NegPiP 节点（`(red glow:-3)`）而不是文字。
 3. **一镜一人开口、一镜一个运镜**；听者写 `listens with mouth closed`。
 4. **台词预算**：硬上限 ≤ (段长−2 s)×4.5 字（校验器口径），目标语速 3.3–4 字/s，快档 ≤ 5 字/s 且连续不超 3 s；超了拆段，不要让角色说快。
 5. **参考媒体一职责一张图**：脸 / 服装 / 环境 / 道具 / 音色分开；编号用脚本替换，不手写 `<Picture N>`。
@@ -47,10 +47,10 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 7. **CFG 固定 1.0**；Turbo LoRA 用与分辨率匹配的版本（1344×768 用 `_768p_` 版）；SigmaShift：FL2V 768p 版视频 6 / 音频 3，Ref2V 与 544p 版 12 / 3（lightx2v 官方只对 FL2V 推荐 6）。
 8. **加速只叠「无损 + 一个蒸馏」**：SageAttention（或 Sol-Attn 稠密核）+ 一个 Turbo/PDD LoRA；不叠加两个蒸馏 LoRA，不把 SageAttention 与 `MiniMaxLowVRAMAttention` 同开，不在精修档开 Spectrum / BlockSparse 等有损方案。
 9. **先关掉所有加速跑一次基线**，再逐个打开，一次只改一个变量。`comfy_submit.py --log logs/takes.csv` 会记下每个 take 的耗时、seed、帧数和设置摘要（分辨率 / 步数 / 模型 / LoRA）；评分自己填在 `score` 列，显存峰值看 ComfyUI 控制台。
-10. **抽卡有上限**：同一提示词 3 次同样问题 = 改提示词或分镜，不是换 seed。
+10. **抽卡有上限**：一批 2–3 个 seed；同一个问题连续两批都在 = 改提示词或分镜，不是继续换 seed。偶发的技术故障（黑场、无声、任务报错）原样重试一次。
 11. **每段写 `end_state` 与 `continuity`**，下一段从上一段终态开场——同场景接续的段从**已采纳片段的实拍末态**开场（`observe_take.py` 写回，`continuity` 写 `"@observed"`），不是从计划的 `end_state`；不写「continue the previous video」。段与段的三种接法按这个顺序选：① 硬切，状态靠文字 + 同一组参考图带过去（默认）；② 同一机位的连续动作，把上一段尾帧（`extract_tail_frame.py --size <生成画布>`）当下一段的 `first_frame`；③ 单个镜头超过 15 s 才用 latent 续接。
 12. **可复现**：任何一段都能从 `prompts/ + bible/ + project.yaml` 重生成（`project.yaml` 是给人看的项目记录，模板与目录布局见 `qc-and-assembly.md` §4）；参数写进 `logs/takes.csv`。
-13. **短剧默认硬切，不续接**：每段 5–12 s 独立 Ref2VA + 同一组参考图 + 音色锚；一条续接链 ≤ 4 段，链上关 Spectrum、不改分辨率 / LoRA / shift。
+13. **短剧默认硬切，不续接**：每段 5–13 s 独立 Ref2VA + 同一组参考图 + 音色锚；一条续接链 ≤ 4 段，链上关 Spectrum、不改分辨率 / LoRA / shift。
 14. **段尾写 0.5 s 收束 + 1 s 定格，拼接时剪掉**（末镜标 `"end_hold": true`——提示词、质检和剪辑单都靠这个字段知道这一秒是定格）。硬切的下一段首镜换景别或角度；只有用尾帧接（上条 ②）时才同档景别起手，并同时带角色参考——此时参考图容易超过 6 张，去掉场景图或一张细节图。
 15. **有台词的镜头整镜只做说话**（动作放前一个镜头）；单段说话人 ≤ 2；台词在定稿前可以和用户商量着改顺口，**锁定后永不改写**（LLM、ASR 都不许动它）；说话重讲 / 含糊先换 seed。
 16. **有运镜的镜头精修用 20 步、关 Turbo**（4 步 Turbo 几乎抹掉运镜；8 步可做草稿）；场景参考图会让运镜减半——运镜是主体的段在分镜里写 `"use_scene_reference": false`，只挂身份参考，地点靠文字描述；需要锁环境的段照常挂。
@@ -84,7 +84,7 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 | `scripts/comfy_submit.py <wf.api.json> --media prompts/ep01/s03.media.json --batch N [--dry-run \| --confirm <批次号>] [--out takes/ep01/s03 --tag s03] [--set …] [--free-every 3] [--log logs/takes.csv]`（`--out` / `--tag` 不给时按 `--media` 推出 `takes/<提示词文件夹名>/<段 id>`） | 向本地 ComfyUI 提交你导出的 API 格式工作流。`--media` 把这一段的提示词、帧数和全部参考图 / 音色**按提示词里的编号顺序自动接进工作流**（不用手改 JSON）；`--set 节点id.输入=值` 再覆盖个别参数。提交前**预检**（节点是否安装、模型 / LoRA 文件名是否在服务器列表里并给出最接近的名字、必填输入、H3 帧数 17k+5、宽高 32 倍数、参考的键名写法、提示词提到的 `<Picture N>` 是否真的接了图）；`--dry-run` 打印接线表与关键设置。每个 take 按「最终工作流 + 上传文件内容」算指纹，**相同的已完成 take 自动跳过**；任务被受理就把 `prompt_id` 落盘，脚本中断后原样重跑会**接回原任务**而不是重复提交；同一目录里旧结果移到 `_prev_*` 不覆盖。轮询 ≥ 20 s |
 | `scripts/qc_probe.py "takes/ep01/**/*.mp4" --episode ep.json --freeze-tail 1.0 --out qc/probe` | 技术 QC。FAIL：缺音轨 / 帧率 / 时长不符、音频削波、冻结 > 1 s、黑场 > 0.25 s；WARN：**镜头数与分镜对不上**（少切、多切、切点偏移）、首尾跳帧、**画面里烧着字**、近乎静止、峰值偏高、画幅不符。定格尾只在标了 `end_hold` 的段上排除。没有分镜时用 `--expect-seconds / --expect-size / --shots 0,3.5` |
 | `scripts/qc_dialogue.py --episode ep.json --targets "takes/ep01/**/*.mp4" --out qc/dialogue` | 台词质检：每句是否说了、说全、只说一次、何时说；无台词段是否擅自说话；输出首 / 末字时间与语速（需 `faster-whisper`） |
-| `scripts/contact_sheet.py "takes/ep01/s03/*.mp4" --episode ep.json --freeze-tail 1.0 [--out-dir qc/sheets]` | 联络表：首帧、末尾可用帧、最后一帧、跳变帧、每个切点前后各一帧、每镜中段，帧下印秒数 |
+| `scripts/contact_sheet.py "takes/ep01/s03/**/*.mp4" --episode ep.json [--out-dir qc/sheets]`（每个候选在自己的子文件夹里，所以用 `**`） | 联络表：首帧、末尾可用帧、最后一帧、跳变帧、每个切点前后各一帧、每镜中段，帧下印秒数 |
 | `scripts/identity_gate.py --episode ep.json --targets "takes/**/*.mp4" --out qc/identity` | 真人脸身份门禁（YuNet + SFace，CPU 可跑，首次自动从 HuggingFace 下模型）：逐帧把脸指派给本段应出现的角色，报换人 / 克隆脸 / 多出的人，并先自检角色之间是否撞脸；默认只警告，`--strict` 才拦截。动漫脸检测不到，改用下一行的动漫轨 |
 | `scripts/identity_gate_anime.py --episode ep.json --targets "first/*.png" "takes/**/*.mp4" --out qc/identity_anime` | 动漫 / 手绘 / 3D 国漫的身份门禁（CCIP 动漫角色相似度模型，CPU 可跑，首次从 HuggingFace 下 150 MB）：整张图与角色参考比，差异 ≤ 0.178 同一角色、0.178–0.30 去看、> 0.30 换人；先自检角色库（两个角色差异 ≤ 0.178 = 撞脸）。**只判单角色画面**（派生视图、单人首帧、单人段），多人画面列出数值但不判，交给 `assets/judge-take-prompt.md` |
 | `scripts/extract_tail_frame.py <mp4> --out tail.png --trim-freeze 1.0 [--size 1344x768] [--after-cut N]` | 截末帧（duration−0.2 s）作下一段首帧 / 参考（`--size` 缩放裁切到生成画布；带 `--trim-freeze` 时还会在片段旁写一个去掉定格尾的 `<片段>_trimmed.mp4`，`--no-trimmed-clip` 关闭）；`--after-cut N` 取第 N 个硬切后的第一帧（给反打 / 特写出同一空间的首帧） |

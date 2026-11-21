@@ -16,7 +16,7 @@
 | 长镜头 > 15 s | 有对白：核心 `MiniMaxH3ContextWindows`（≥ 0.44；124 / 39 / pyramid）与现有 Motion-Context 路线 A/B；再测 LTX-2.5（单次到 20 s） | 无对白：Wan 2.2 + SVI 2.0 Pro（每段 81 帧、换种子、锚点固定为首帧） | 分块估时：块数 = ⌈(总帧 − 重叠) / (窗口 − 重叠)⌉，重叠区算两遍；带参考 / 引导的窗口几乎不漂，纯 I2V 分块会漂 | LTX 中文对白未验证；SVI 易慢动作 |
 | 精确口型 / 现成配音 | **InfiniteTalk**（`WanInfiniteTalkToVideo`：length 81、motion_frame_count 9、6 步、CFG 1、25 fps、`wav2vec2-chinese-base_fp16`；配音先做人声分离）；对已出的 H3 片段补口型用 kijai 的 V2V 版（4 步、shift 11、start_step 2） | LTX-2.5 A2V（冻结音频 latent、成片直接封装原波形）；Wan 2.2 S2V；H3 自己的音频锁节点（见 `quality-pipeline.md`） | 双人镜画遮罩各接一路音频；每多 3.24 s 接一个 Extend 组 | 480p 起步需超分；V2V 的运镜与原片不完全一致 |
 | 换装 / 换道具 / 去穿帮 | **Bernini-R** rv2v（`BerniniConditioning`，关 Turbo 跑 40 步） | VACE 遮罩重绘；LanPaint（H3 自身局部重绘） | 只改问题区域，不重抽整段 | 81 帧一段 |
-| 段缝跳变、不想重生成 | **VACE Joiner**（`stuttlepress/ComfyUI-Wan-VACE-Video-Joiner`，MIT）：在任意来源的两段之间重生成过渡帧 | 4 帧叠化（现方案） | 片段先降到 16 fps、分辨率取 16 的倍数，过渡帧生成后插帧回 24 fps，接 KJNodes `ColorMatch` | 过渡段无原生音频，音频照旧交叉淡化 |
+| 段缝跳变、不想重生成 | **VACE Joiner**（`stuttlepress/ComfyUI-Wan-VACE-Video-Joiner`，MIT）：在任意来源的两段之间重生成过渡帧 | 硬切 + 剪辑单里的 `l_cut`（现方案，`mix_episode.py`） | 片段先降到 16 fps、分辨率取 16 的倍数，过渡帧生成后插帧回 24 fps，接 KJNodes `ColorMatch` | 过渡段无原生音频，音频照旧交叉淡化 |
 
 共同约束：换模型出的片段必须回到同一条后期链——统一 24 fps（Wan 14B 是 16 fps，InfiniteTalk 25 fps，Animate / SCAIL 模板 30 fps）、同一个超分、`ColorMatch` 对齐相邻 H3 段；对白与音色仍由 H3（或配音 + 口型模型）负责。
 
@@ -26,7 +26,7 @@
 - 帧数网格：Wan 4n+1（81）、LTX 8n+1（121 / 241）、H3 17k+5；宽高 Wan 取 16 的倍数、LTX 取 32 的倍数。
 - Wan 2.2 14B 用 `wan_2.1_vae`，5B 用 `wan2.2_vae`，不可互换。草稿档：`wan2.2_i2v_lightx2v_4steps_lora_v1_{high,low}_noise` 1.0，4 步（高噪 2 + 低噪 2），CFG 1，shift 5；定稿档关 LoRA、20 步、CFG 3.5、第 10 步交接。蒸馏件与「T2V / I2V × high / low」逐一对应，不叠两个。
 - 24 GB 跑 LTX-2.5：`ltx-2.5-22b-distilled-transformer-comfy-int8-convrot`（21.5 GB），文本编码后先卸载 Gemma 4 再采样，`VAEDecodeTiled` 解码；蒸馏档固定用模板 sigma 与 CFG 1，不改步数。
-- RTX 4090 不下 NVFP4 权重（只有 50 系有原生加速）；GGUF 只在装不下时用，它不提速。
+- 这里说的 Wan / LTX 等替补模型：RTX 4090 不下它们的 NVFP4 扩散权重（只有 50 系有原生加速）；H3 的文本编码器照常用 `nvfp4_awq` 版；GGUF 只在装不下时用，它不提速。
 - 许可：Wan 系 Apache-2.0；LTX-2.x 要求年营收 < 1000 万美元；HunyuanVideo 不适用于欧盟 / 英国 / 韩国；MoCha（AGPL）、SkyReels（skywork-license）、依赖 InsightFace buffalo 的模型（非商用）进商用管线前先读原文。
 - 报耗时带齐口径：分辨率 × 帧数 × 步数 × 权重精度 × 硬件 × 首跑还是热跑；计时取 ComfyUI 服务端 `execution_start → execution_success`，复测换 seed。
 
@@ -57,7 +57,7 @@
 
 **接入与纪律**
 
-1. 默认所有段留在本地；只有命中上表触发条件，或同一段连续 3 次出现同样问题才改云端。分镜 JSON 里给该段记 `route`（`local_h3` 或 `cloud:<模型>`）与 `cloud_reason`，`logs/takes.csv` 记模型、分辨率、计费秒数、单价（这两个字段脚本会原样忽略，仅作记录）。
+1. 默认所有段留在本地；只有命中上表触发条件，且同一段按 `pitfalls.md` 改过之后仍连续两批出现同样问题，才改云端（与 SKILL.md 铁律 18 同一口径）。分镜 JSON 里给该段记 `route`（`local_h3` 或 `cloud:<模型>`）与 `cloud_reason`，`logs/takes.csv` 记模型、分辨率、计费秒数、单价（这两个字段脚本会原样忽略，仅作记录）。
 2. **草稿永远在本地**：云端只重拍已在本地确认过构图、台词、节奏的段，并把本地中选 take 的首帧作为云端的首帧或参考，保证接得上。
 3. 三条调用路径，改动量从小到大：① ComfyUI Partner Nodes（Kling 4.0、Seedance 2.5、Wan 3.0、H3 Max 全家都有节点，继续用 `comfy_submit.py` 提交；需要 Comfy 账号积分，从脚本提交如何带鉴权未实测；计价以节点徽标的积分为准，可能比官方标价贵）；② 官方 agent 工具（可灵 MCP / CLI、即梦 `dreamina` CLI）；③ 直连异步 API（BytePlus ModelArk、DashScope、fal、Gemini API、Runway API），都是「提交 → 轮询」，与仓库 `docs/02-api-reference.md` 的写法一致。
 4. 同一份分镜编译到云端时按目标模型改语法，台词文字原样透传：Seedance 用 `@Image N` + `0-5秒` + `{台词}`；Kling 4.0 用 `[Asset Roles] / [Overall Settings] / [Sequence of Events] / [Audio]`；Wan 3.0 用「图N + 第N个镜头[0-3秒] + xx 说："…"」；Omni 加 `In a single continuous shot`。只有送云端时才写 `Do not use…` 排除句，本地 H3 仍靠预处理参考图（白底、裁背景、去文字）。

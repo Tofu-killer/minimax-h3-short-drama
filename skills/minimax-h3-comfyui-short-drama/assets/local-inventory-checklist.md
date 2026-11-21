@@ -16,6 +16,7 @@
 ## 1. 硬件与系统
 - 操作系统与版本、Python 版本、PyTorch 版本、CUDA / ROCm 版本
 - GPU 型号、显存总量、当前空闲显存（nvidia-smi 或 rocm-smi）
+- 显卡驱动版本；Windows 上再看 NVIDIA 控制面板「CUDA - 系统内存回退策略」是不是「首选无系统内存回退」（开着回退时显存一满就掉到内存里跑，会慢几倍；看不到就写「未知，需要我自己去控制面板确认」）
 - CPU、内存、模型所在磁盘的剩余空间
 
 ## 2. ComfyUI 本体
@@ -42,13 +43,14 @@
 - 音频锁定或多说话人节点
 - 提示词改写 / LLM 节点（本地 GGUF 或在线 API）
 - 视频拼接、字幕、超分节点
+- 注意力 / 缓存 / 稀疏加速节点：KJNodes 的两个 Sage 节点、comfy-kitchen、Spectrum / FirstBlockCache / BlockSparse / Veda / Spark / Sol 等，逐个写明装没装；另外报出 ComfyUI 的 Python 环境里 `sageattention` 包的版本，以及启动参数里有没有 `--use-ck-attention`
 
 ## 5. 我的工作流
 逐个打开工作流目录里的每个 JSON，为每个文件写一张卡片：
 - 文件名、最后修改时间、格式（UI 格式还是 API 格式）
 - 用途推断：T2V / I2V / FL2V / R2V / 纯音频 / 图像一致性 / 打戏润色 / 其他
 - 输入槽位：提示词节点、参考图数量与节点、参考视频、参考音频、首帧 / 尾帧
-- 关键参数默认值：宽高、时长或帧数、帧率、步数、采样器、调度器、CFG、seed、LoRA 及强度
+- 关键参数默认值：宽高、时长或帧数、帧率、步数、采样器、调度器、CFG、seed、LoRA 及强度、`MiniMaxH3SigmaShift` 的两个值（没有这个节点也写明）、挂了哪个注意力补丁、参考节点有没有接 `vae` 和 `audio_vae`
 - 输出节点与输出目录
 - 依赖的节点包，是否全部已安装
 - 你判断它能否通过 ComfyUI /prompt API 直接调用；若不能，说明缺什么

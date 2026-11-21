@@ -55,11 +55,11 @@ qc_dialogue.py（逐 take 台词把关）→ 精修 → make_edl.py → retime_s
 | 字幕 / 质检的词级时间 | faster-whisper（skill 脚本默认）；`Qwen/Qwen3-ForcedAligner-0.6B`（已知文本强制对齐，更准） | MIT / Apache-2.0 | 采用。强制对齐器装在自己的环境里，包一个输出 `[{"text","start","end"}]` JSON 的小脚本，用 `--aligner cmd --aligner-cmd "python align.py {audio} {text}"` 接进 `retime_subtitles.py` / `qc_dialogue.py`（包装脚本需自写，未随 skill 提供） |
 | 中文配音（默认） | IndexTTS-2.5（`IndexTeam/IndexTTS-2.5`，代码 `index-tts/index-tts`） | bilibili 模型许可：可商用，超大体量另授权 | 采用：音色与情感分开给（`spk_audio_prompt` = 锚点，`emo_audio_prompt` = 情绪样本，`emo_alpha 0.6–0.8`），多音字 `<行\|HANG2>` |
 | 配音备选 / 方言 | Fun-CosyVoice3（`FunAudioLLM/Fun-CosyVoice3-0.5B-2512`）；VoxCPM2（`openbmb/VoxCPM2`，48 kHz） | Apache-2.0 | 采用 |
-| 造声线 | Qwen3-TTS VoiceDesign → Clone | Apache-2.0 | 采用：出 6–10 s 单人干声，既作 H3 `<Audio N>` 又作克隆参考 |
+| 造声线 | Qwen3-TTS VoiceDesign → Clone | Apache-2.0 | 采用：出 6–8 s 单人干声（模型接受 2–15 s，短样本更稳），既作 H3 `<Audio N>` 又作克隆参考 |
 | 定长配音 | OmniVoice（`k2-fsa/OmniVoice`） | 见仓库 | 试用 |
 | 变声统一 | seed-vc；长连载 RVC / GPT-SoVITS V5 | 见仓库 | 采用（只转漂移句） |
 | 拟音 | HunyuanVideo-Foley XL（`--enable_offload` 约 8 GB） | 见仓库 | 试用；商单别用 MMAudio（权重 CC-BY-NC） |
-| 口播 / 唱歌整段重生成 | InfiniteTalk（`MeiGen-AI/InfiniteTalk`）、LongCat-Video-Avatar 1.6 | Apache-2.0 / MIT | 见 `beyond-h3.md` |
+| 口播 / 唱歌整段重生成 | InfiniteTalk（`MeiGen-AI/InfiniteTalk`）、LongCat-Video-Avatar 1.6 | Apache-2.0 / MIT | InfiniteTalk 的用法见 `beyond-h3.md`；LongCat 只记了名字，没有评估 |
 
 许可陷阱：MMAudio、F5-TTS 权重 CC-BY-NC；Fish S2-Pro 为 Research License；Fish Audio Drama 3 表演最强但 int4 也要 22 GB、商用限年收入 < 50 万美元——不在本机跑。
 

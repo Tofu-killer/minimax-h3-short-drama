@@ -52,7 +52,7 @@ ComfyUI 0.37.2 已内置 Qwen-Image 2.1（`TextEncodeQwenImage21`、`QwenImage21
 |------|------|------|
 | Fizgig H3 Still（custom node，≥ 0.37 可用） | fl2va pruned int8 + `larryvrh/MiniMax-H3-Turbo-Lora` 的 `minimax_h3_turbo_v4_step600_ema.safetensors` **0.38** + er_sde / simple **20 步**，≥ 3 MP（如 2304×1296）；8 MP 无 Turbo 50 步；编辑走 `MiniMaxH3ReferenceToVideo` `<Picture 1>` 在 2.5 MP（Fizgig README） | 不想再下 30 GB 图像模型时出剧照、海报、关键帧；小于 3 MP 明显变弱 |
 | Contact Sheet 五视图（MAINodes） | `matlod/minimax-h3-turnaround`：`minimax_h3_five_view_512_s1500.safetensors` 1.0（转角好）或 `_1024cont_s600` 0.75，res_multistep / simple 28 步 denoise 1.0，一张 `<Picture 1>`；消费卡靠内存卸载，需 ~50 GB 内存镜像（07 survey）；**用完立刻卸 LoRA**（T8：留着会毁运动） | 已有一张定妆照，要同一次生成里出 5 个角度（借时间一致性保身份） |
-| OrbitSheets | 硬切 6 视图、每视图 0.75 s、124 帧，`[Shot N] At 00:MM.mmm, the shot cuts to … locked-off static camera`（lumosai8） | 要带表情 + 顺带一段音色样本的角色页 |
+| OrbitSheets | 硬切 6 视图、每视图 0.75 s、124 帧，`[Shot N] At 00:MM.mmm, the shot cuts to … locked-off static camera`（lumosai8；出图用的特例，每视图不到 1.2 s，不过 `lint_prompt.py` 的机检） | 要带表情 + 顺带一段音色样本的角色页 |
 | P-H3-Image（`PH3ImageConditioning`，ComfyUI ≥ 0.44） | `PrunaAI/P-H3-Image-Comfy`（HF 上该仓库现重定向到 `PrunaAI/P-Image-OSS-Comfy`，`p-h3-image_*` 文件仍在，2026-11-21）：在 fl2va 上挂 `loras/p-h3-image_lora_bf16.safetensors`（2 GB，Load LoRA Bypass 1.0）+ 专用的 `text_encoders/p-h3-image_text_encoder_int8_convrot.safetensors` 与 `vae/p-h3-image_vae_int8_convrot.safetensors` + `ModelSamplingMiniMaxH3` 1.0 / 1.0；8 步 **er_sde** + ManualSigmas `1.0, 0.984753, 0.967905, 0.951688, 0.925372, 0.881923, 0.810083, 0.528718, 0.0`、无 CFG（官方模板 `image_p_h3_image_edit`、`image_p_h3_t2i`，2026-11-03；不是 euler）；文生图 8 MP（16:9 = 3872×2176），编辑 4 MP（2720×1536）；节点 `image_1`–`image_9`（模型卡写最多 8 张）；最小整套峰值 21 GB @ 8 MP（模型卡） | **需 ComfyUI ≥ 0.44**（0.37.2 无此节点，不必上 master）；MiniMax H3 社区许可排除欧盟 / 英国 / 韩国 / 美国（澳洲不在排除列表） |
 
 ## 2. 版式与分辨率
@@ -115,13 +115,13 @@ ComfyUI 0.37.2 已内置 Qwen-Image 2.1（`TextEncodeQwenImage21`、`QwenImage21
 
 1. **定妆照**（Qwen 2.1 50 步，或 Z-Image-Turbo）：同一外观文字跑 4–8 个 seed，人挑一张，存 `bible/chars/<id>_bust.png`，之后不再换（mathruffian）；「冻结」要落成机器可读，记进 `bible/assets.json`（布局见本节「冻结与过期记录」）。外观文字（LOOK）存进系列圣经，**每一镜首帧原样照抄**，少写一次就掉眼镜换发型（mathruffian `frames()`）。
 2. **正面全身 + 派生视图**：Edit 2511 以 bust 为 Picture 1 套【派生视图】模板出一张**正面全身**（`<id>_full.png`），人确认后与 bust 一起冻结（待 A/B）；再逐张出 face.png（参考 bust）、纯 90° 侧与背（参考正面全身），每张单人单视图、只参考锚点、互不引用（编辑模型保脸，mathruffian「長相像」；shuohao character-refs）。16:9 角色板用脚本把这几张拼起来（`<id>_sheet.png`）只给人审。备选：Contact Sheet 从 bust 出五视图，逐视图存成单人图再拼板。infinite-creation 的做法是把一张现成三视图板当第 1 张参考让 2511 照「排版格式」出新人物（它的 2511 工作流示例提示）；这条路把版式当参考，身份另靠文字，出的是合成板，只作备选且只给人审。
-3. **变体**：换装 / 年龄变体用【换装子资产】从冻结的正面全身编辑（侧 / 背再从变体全身派生），每套变体也是一组单人单视图，优先级 `costume > age > 原图`（本 skill §3 资产表）。
+3. **变体**：换装 / 年龄变体用【换装子资产】从冻结的正面全身编辑（侧 / 背再从变体全身派生），每套变体也是一组单人单视图，优先级 `costume > age > 原图`（`storyboard-and-assets.md` §3 资产表）。
 4. **逐镜首帧**：Edit 2511，参考合计 ≤ 3 张（节点只有 `image1`–`image3`），顺序 = 每个入画角色的 bust / face.png（2 人实测可行）→ 最后一张场景裁切（mathruffian）；超槽（≥ 3 个具名角色 + 场景）就停下来，不静默丢图（AIMovieStudiov2）——非商用可换 10 图的 Qwen-Image 2.1，或按本节「什么时候花钱用云端出关键帧」的条件走云端；把几张身份图 `ImageStitch` 拼成一张等于多格板（§6 第 1 条），不用。1344×768 直接出。
    - **同场多机位**：同一场的不同机位从**同一张底图**编辑，首尾帧也从同一张图改（mathruffian docs/03：换机位背景会跑）；转机位用 Multiple-Angles LoRA 的 96 机位语法（§3【多机位】），正反打两张都从同一张双人底图转（官方模板 `templates-1_click_multiple_character_angles-v1.0`、`template_rob_split_stack_qwen_multi_wan22` 都是一张输入图出多个机位）。转完人审 + 过门禁。
    - **姿势**：靠文字写不稳时，接一张 3D 假人渲染或深度图当姿势参考并在提示词里点名（占一个槽；编辑模型吃假人 / 深度图比吃 OpenPose 骨架稳，AnyPose 作者、PoseAtlas 的经验，未在 4090 验证）；写实单人可用【姿势迁移】，漫剧不用。
-   - **不过怎么办**：每镜最多 2 个 seed，仍不对就改提示词或换参考裁切（本 skill 铁律 10 的同一逻辑）；第三条出路——构图 / 光线 / 姿势都对、只有脸不像 → 用【换头】修复，不重抽，修完重新过门禁。换头的量化只有一组单机实测，且测的是 Qwen 2.1 + BFS：InsightFace 余弦原图 0.129、ReActor 0.216、换头 0.735、先放大到 1536×2048 再换 0.783，同人上限约 0.94（moss-qwen-faceswap）；2511 + v5 无量化。多人镜只有一个人不对：SAM3 把他涂成 `#FF00FF`，用 `bfs_body_swap_selective_magenta_v1.0_qwen_2.1` 只换这一个人（BFS 工作流；Qwen 2.1，非商用）。
-5. **身份门禁**（分轨，阈值见本节「门禁分轨与阈值」）：**真人轨默认** YuNet 检测置信 0.6 + SFace 余弦（OpenCV Zoo，Apache-2.0，真人轨里唯一许可干净的一套），对比 bust（这一轨对应 SKILL.md 脚本表里的 `scripts/identity_gate.py`，基准取 episode JSON 的 `reference_images` 或 `--ref`）：≥ 0.363 = 同人（SFace 官方阈值），交付 keep ≥ 0.55、严格 0.65；只信 ≥ 40 px 正脸、逐张独立比（Zowwan `facematch.py`；fuzzballb 实测本人 0.35–0.59、旁人 −0.01–0.13）。**漫剧 / 手绘 / 兽设走动漫轨**：`scripts/identity_gate_anime.py`（CCIP，整张图比对，已实现；只判单角色画面，多人画面仍用 `assets/judge-take-prompt.md` 的 VLM 评审 + 人审；头部检测 + DINOv2 的逐人轨仍在规划中）；3D 国漫先试 SFace，检不出脸再切动漫轨。多人镜做匈牙利匹配查串脸。分数是警告不是门禁，与真实感冲突时真实感优先（Zowwan）。
-6. **人审联络表**（每格 ≥ 720 px）：脸、服装、手指数、背景有没有字、窗户 / 光向对不对；背对镜头查左右手（mathruffian review-checklist / checklists）。审过才写 `frames_ok`、才进 H3（mathruffian docs/02）。
+   - **不过怎么办**：每镜一批 2 个 seed，连续两批仍不对就改提示词或换参考裁切（本 skill 铁律 10 的同一逻辑）；第三条出路——构图 / 光线 / 姿势都对、只有脸不像 → 用【换头】修复，不重抽，修完重新过门禁。换头的量化只有一组单机实测，且测的是 Qwen 2.1 + BFS：InsightFace 余弦原图 0.129、ReActor 0.216、换头 0.735、先放大到 1536×2048 再换 0.783，同人上限约 0.94（moss-qwen-faceswap）；2511 + v5 无量化。多人镜只有一个人不对：SAM3 把他涂成 `#FF00FF`，用 `bfs_body_swap_selective_magenta_v1.0_qwen_2.1` 只换这一个人（BFS 工作流；Qwen 2.1，非商用）。
+5. **身份门禁**（分轨，阈值见本节「门禁分轨与阈值」）：**真人轨默认** YuNet 检测置信 0.6 + SFace 余弦（OpenCV Zoo，Apache-2.0，真人轨里唯一许可干净的一套），基准是 episode JSON 里该角色的 `reference_images`（face.png 与全身都会比），或用 `--ref` 单独指定头肩特写（这一轨对应 SKILL.md 脚本表里的 `scripts/identity_gate.py`）：≥ 0.363 = 同人（SFace 官方阈值），交付 keep ≥ 0.55、严格 0.65；只信 ≥ 40 px 正脸、逐张独立比（Zowwan `facematch.py`；fuzzballb 实测本人 0.35–0.59、旁人 −0.01–0.13）。**漫剧 / 手绘 / 兽设走动漫轨**：`scripts/identity_gate_anime.py`（CCIP，整张图比对，已实现；只判单角色画面，多人画面仍用 `assets/judge-take-prompt.md` 的 VLM 评审 + 人审；头部检测 + DINOv2 的逐人轨仍在规划中）；3D 国漫默认走动漫轨；脸接近真人比例的可以先试真人轨，报 `no_usable_face` 就回动漫轨。多人镜做匈牙利匹配查串脸。分数是警告不是门禁，与真实感冲突时真实感优先（Zowwan）。
+6. **人审联络表**（每格 ≥ 720 px）：脸、服装、手指数、背景有没有字、窗户 / 光向对不对；背对镜头查左右手（mathruffian review-checklist / checklists）。审过才进 H3（mathruffian docs/02；这一步没有脚本和字段，自己在 `qc/review.md` 里记一笔——`contact_sheet.py` 只收视频，静帧用看图软件并排看）。
 
 **冻结与过期记录 `bible/assets.json`**（shuohao character-refs、wind-comic 的做法；布局是本 skill 的约定，**现有脚本都不读写它**，先手工或自写脚本维护；`scripts/identity_gate.py` 读取它属于 `docs/14-ai-video-workflows/05` §7 规格里的规划中部分）：
 
@@ -167,7 +167,7 @@ ComfyUI 0.37.2 已内置 Qwen-Image 2.1（`TextEncodeQwenImage21`、`QwenImage21
 | 模式 | 首帧怎么用 | 用在 |
 |------|-----------|------|
 | `ref2va` + `first_frame` | 首帧成为 `<Picture 1>` 开场锚，`fully_preserved`，后接角色 / 场景 / 道具参考（`prompt_builder.py`） | 需要身份参考又要钉开场构图；上一段末帧续接 |
-| `i2va` | 首帧钉在第 0 帧（FL2VA 权重 `MiniMaxH3ImageToVideo.first_frame`），三段式提示词，不挂身份参考 | **真人对白段**、关键脸部 / 道具交接镜（本 skill §5）；**多人镜只给首帧**，再加身份参考会多出一个人（mathruffian docs/03） |
+| `i2va` | 首帧钉在第 0 帧（FL2VA 权重 `MiniMaxH3ImageToVideo.first_frame`），三段式提示词，不挂身份参考 | **真人对白段**、关键脸部 / 道具交接镜（`storyboard-and-assets.md` §5）；**首帧里有两张以上清楚的正脸时只给首帧**，再加身份参考会多出一个人（mathruffian docs/03）；这个模式接不了音色参考 |
 | `fl2va` | 首尾帧都要；两张同构图、**不同姿势**；同一张图当首尾帧整镜 100% 静止（mathruffian 三次实测） | 必须演到某个结果的动作 / 特效 |
 | `ref2va` 无首帧 | — | 漫剧可直出（本 skill 铁律 17） |
 

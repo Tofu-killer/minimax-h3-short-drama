@@ -9,8 +9,8 @@
         --write "{lin_lan} sits at the left end of the sofa facing {dr_zhou}, the envelope open on her knees; {dr_zhou} stands by the door with one hand on the door frame." \
         --confidence high --deviation "she sat down instead of staying on her feet"
 
-Which take, which segment: the take is the one you ACCEPTED for a segment (the draft take is fine - refining the
-same seed keeps the composition), given where comfy_submit.py saved it; --segment is the segment that take belongs
+Which take, which segment: the take is the one you ACCEPTED for a segment (the draft take is fine as long as it is only refined by a latent second pass,
+which keeps the composition; a re-run with other steps, LoRA or resolution is a new take - observe that one), given where comfy_submit.py saved it; --segment is the segment that take belongs
 to, not the one that follows.
 
 Why: a storyboard's end_state is a plan. The take that gets accepted often ends a little differently (someone

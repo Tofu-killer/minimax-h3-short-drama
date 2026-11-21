@@ -28,7 +28,7 @@
 | 错人张嘴 | 一镜两人开口；听者没写闭嘴 | 一镜一人；`listens with mouth closed` |
 | 字幕重复/乱码 | 让模型画字幕 | 后期烧录 |
 | 画幅不对 | 把 16:9 写进文字 | 用节点/参数设定宽高 |
-| 跨段空间不连续、背景人物移位 | 用「continue the previous video」做续写 | 尾帧→首帧 I2VA，或 latent 续接节点（Motion-Context 类），或 FL2VA 2–4 s 转场段 |
+| 跨段空间不连续、背景人物移位 | 用「continue the previous video」做续写 | 默认硬切 + 文字交接（`observe_take.py` + `"@observed"`）；同机位连续动作才用尾帧作 `first_frame`（`ref2va`，同时带角色参考）、latent 续接节点（Motion-Context 类）或 FL2VA 2–4 s 转场段 |
 | 拼接处闪帧 | 边界帧重复 / 不同编码参数 concat | 统一转码后 concat；检查首尾重复帧 |
 
 ## B2. 性能悬崖与隐性错误

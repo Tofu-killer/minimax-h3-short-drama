@@ -13,10 +13,10 @@
 
 | 顺序 | 门 | 命令 | 拦什么 |
 |------|----|------|--------|
-| 1 | 技术 | `scripts/qc_probe.py "takes/ep01/**/*.mp4" --episode episodes/ep01.json --freeze-tail 1.0 --out qc/probe` | FAIL（退出码 1）：缺视频 / 音轨、帧率不符、时长偏差 > 0.6 s、**音频削波**（采样卡在满幅）、定格尾之外冻结 > 1 s 或黑场 > 0.25 s；给了 `--expect-size` 时尺寸不符也算。WARN：**镜头数与分镜不符**（少切 = 两镜糊成一镜，多切 = 自己加了镜头）、切点偏移 > 0.3 s、首尾 8 帧内的跳帧（拼接处会闪）、**画面下三分之一烧着字**、动作量 < 1.2、峰值高于 −1 dB 但没削波、画幅与分镜的 `ratio` 不符 |
+| 1 | 技术 | `scripts/qc_probe.py "takes/ep01/**/*.mp4" --episode episodes/ep01.json --freeze-tail 1.0 --out qc/probe` | FAIL（退出码 1）：缺视频 / 音轨、帧率不符、时长与「请求秒数对齐到 17k+5 帧格后的长度」偏差 > 0.6 s（13 s 的段实际是 13.67 s）、**音频削波**（采样卡在满幅）、定格尾之外冻结 > 1 s 或黑场 > 0.25 s；给了 `--expect-size` 时尺寸不符也算。WARN：**镜头数与分镜不符**（少切 = 两镜糊成一镜，多切 = 自己加了镜头）、切点偏移 > 0.3 s、首尾 8 帧内的跳帧（拼接处会闪）、**画面下三分之一烧着字**、动作量 < 1.2、峰值高于 −1 dB 但没削波、画幅与分镜的 `ratio` 不符 |
 | 2 | 台词 | `scripts/qc_dialogue.py --episode episodes/ep01.json --targets "takes/ep01/**/*.mp4" --out qc/dialogue` | FAIL（默认只报告，`--strict` 才退出 1）：整体相似度 < 0.72（`F-DIALOGUE-TEXT`）、句首 / 句尾 3 字没听到、识别字数 > 原文 × 1.15 + 2（复读 / 加词）、无台词段出现 ≥ 2 个词。WARN：首字晚于 2.5 s、末字离可用结尾 < 0.2 s、识别把握低（词概率均值 < 0.65）、只有一两个字的短句 |
 | 3 | 身份 | 真人：`scripts/identity_gate.py --episode episodes/ep01.json --targets "takes/ep01/**/*.mp4" --out qc/identity`；漫剧：`scripts/identity_gate_anime.py`（同样的参数） | 真人脸：换人、克隆脸、多出的人、缺席；先看自检（两个角色互相 ≥ 0.363 = 撞脸，回去改角色设计）。漫剧：整张图与角色参考的差异（CCIP），只判单角色画面。没有角色参考图就跳过这一步 |
-| 4 | 联络表 + 人眼 | `scripts/contact_sheet.py "takes/ep01/s03/*.mp4" --episode episodes/ep01.json --freeze-tail 1.0 [--out-dir qc/sheets]` | 下面的清单 |
+| 4 | 联络表 + 人眼 | `scripts/contact_sheet.py "takes/ep01/s03/**/*.mp4" --episode episodes/ep01.json [--out-dir qc/sheets]` | 下面的清单 |
 | 5 | VLM 评分（可选） | `assets/judge-take-prompt.md` | 事实 / 身份 / 画面三张小评分表 |
 
 - **`--freeze-tail` 的口径（三个脚本一致，也与 `make_edl.py` 一致）**：它是「声明的定格尾有多长」。给了 `--episode` 时，只有末镜写了 `"end_hold": true` 的段才把最后这一秒排除在检查之外——因为只有这些段在拼接时会裁掉它；其它段的最后一秒要进成片，照查不误。不给分镜时对每个片段都排除。输出里会注明「last 1s = declared freeze, not checked」。
@@ -30,7 +30,7 @@
 - **联络表**不再均匀抽 12 帧：首帧、末尾可用帧、**最后一帧**、`qc_probe` 报跳变的那一帧、每个切点前后各一帧、每镜中段、黑场 / 冻结起点，帧下印秒数与标签。人眼看：身份（是否换人）、服装道具（颜色 / 件数 / 是否被换成虚构物）、环境（布局 / 光向 / 色温是否接上一段）、动作（瞬移 / 多肢体 / 手崩）、镜头（是否按分镜切）、**画面里有没有自带的字**、下方 15% 字幕安全区。
 - **音频抽听**：语言对、没有错人开口、句尾没被截。
 
-硬门 = 文件不可解码、缺镜 / 缺节拍、帧率时长违约、身份 / 服装 / 道具 / 轴线显著错、音频削波、意外黑帧、冻结；软警 = 轻微拖影、背景小漂移、音量不均、峰值偏高。硬门不过只允许原样重试一次。用户明确要先用现有片段出一版时可以带着问题装配，结论记为 PROVISIONAL 并逐条写明（模板见 `assets/review-template.md`）。
+硬门 = 文件不可解码、缺节拍、缺镜（镜头数对账默认只警告，要人看联络表确认；加 `--strict-cuts` 才直接判 FAIL）、帧率时长违约、身份 / 服装 / 道具 / 轴线显著错、音频削波、意外黑帧、冻结；软警 = 轻微拖影、背景小漂移、音量不均、峰值偏高。硬门不过时怎么重抽，口径见 SKILL.md 铁律 10（偶发的技术故障原样重试一次；同一个问题连续两批都在就改提示词或分镜）。用户明确要先用现有片段出一版时可以带着问题装配，结论记为 PROVISIONAL 并逐条写明（模板见 `assets/review-template.md`）。
 
 ### 失败码 → 责任层 → 处置
 
@@ -44,13 +44,13 @@
 | F-REF-SCOPE | 照抄参考图背景 / 姿势 | 提示词：「参考图只继承身份发型服装」 | 建议重抽，可豁免 |
 | F-PROP | 道具虚构 / 替换 | 资产：道具图进参考包 + `the exact item shown in <Picture N>` | 关键道具必须重生成；一闪而过的裁切避让 |
 | F-LIPSYNC | 错人张嘴 / 口型不对 | 分镜：一镜一人开口；听者闭嘴；音色只给说话者 | 必须重生成 |
-| F-DIALOGUE-TEXT | 台词复读 / 漏句 / 含糊 | 提示词：台词只写一次、预算；步数 ≥ 8 或 12 | 换新 seed（说话节奏跟 seed 走）≤ 3 次 |
+| F-DIALOGUE-TEXT | 台词复读 / 漏句 / 含糊 | 提示词：台词只写一次、预算；步数 ≥ 8 或 12 | 换新 seed（说话节奏跟 seed 走）；连续两批都这样就改台词分镜 |
 | F-SHOTS | 镜头数与分镜不符 | 分镜 / 提示词：`[Shot N] At …` 时码、每镜 ≥ 1.2 s；一段 ≤ 4 镜 | 换 seed 很少有用：先改分镜（拆段或并镜） |
 | F-BURN-TEXT | 画面烧出字幕 | 提示词：正文太短（< 350 词）或要求了字幕 | 一闪而过裁掉，否则重生成 |
 | F-SEAM | 接缝闪帧 / 曝光跳 | 后期：首尾跳帧裁掉、统一转码；续接见 continuity | 后期修 |
 
 - **先分流再动手**：区间外的毛病裁掉，能后期修的后期修；只有漏关键动作 / 台词、换脸、轴线全反、关键文字乱码才必须重生成。先判是「参考图的毛病」还是「生成的毛病」——参考图错了重抽多少次都错。
-- 原因不明时一次只改一个变量；**一眼看清的多处错漏同一轮改完**。原样重抽 1–2 次仍是同一硬伤 → 改词或拆镜，不再抽。
+- 原因不明时一次只改一个变量；**一眼看清的多处错漏同一轮改完**。同一硬伤连续两批都在 → 改词或拆镜，不再抽（铁律 10）。
 - 仍不行给用户三条出路：留用并靠切点藏住 / 把这条信息挪到相邻段 / 删段（先把剧情信息转移走）。
 - 每集出一份 `qc/review.md`（模板 `assets/review-template.md`）：每条问题记 集‑时间码‑门‑现象‑失败码‑证据‑根因层‑处置‑复验状态。结论四选一——PASS：所有门都过；PROVISIONAL：可交付但带着列明的已知问题（WARN，或被豁免的 FAIL，写明理由）；REVISE：交付前必须重抽或改分镜；REJECT：从分镜 / 资产层重来。冷观众四问（想要什么 / 什么阻止 / 什么变了 / 为何结局）任一答错即 REVISE。
 
@@ -62,10 +62,10 @@
 
 ## 2. 抽卡策略
 
-- 草稿档每段 2 个 seed（关键镜 3），**看联络表挑**而不是看视频：先身份一致，再能量 / 表演。
+- 草稿档每段 2–3 个 seed（有台词的段 3 个），**看联络表挑**而不是看视频：先身份一致，再能量 / 表演。
 - 中选后**同 seed 精修 / 二采**，不换表演。
-- 记录每段「seed / 步数 / LoRA 版本 / 分辨率 / 耗时 / 显存 / 主观评分」到 `logs/takes.csv`，一周后用数据定默认值。
-- 同一提示词连抽 3 次都出同一问题 = 提示词问题，不是运气。
+- `comfy_submit.py --log logs/takes.csv` 会记下每个 take 的 seed、耗时、帧数和设置摘要（分辨率 / 步数 / 模型 / LoRA），主观评分自己填 `score` 列；一周后用数据定默认值。
+- 同一个问题连续两批都在 = 提示词或分镜的问题，不是运气（铁律 10）。
 - 仅对续接链（可选）：本段评分前二的 take 各出一条下一段草稿，按「本段分 + 下一段分」选——只在链首和情绪高点用。
 
 ## 3. 后期：一份剪辑单（EDL）走到底
@@ -98,6 +98,7 @@
 | `segments[].audio` | `"native"` = 用片段自带的声音；路径 = 单独的对白 stem；`null` = 静音 | 有音轨即 `native` |
 | `segments[].l_cut / j_cut` | 声音比画面晚收 / 早进的秒数 | 有台词的段 L-cut 0.25 s |
 | `segments[].lines[]` | 锁定的台词原文（字幕文字只从这里来）。`start / end` = **从该段入点算起的秒数**，由 `retime_subtitles.py` 填；手改某句时间后加 `"locked": true`，之后重跑不再覆盖它；`"gain_db": 6` 单独抬高（或压低）这一句 | 取自分镜 `dialogue[]` |
+| `segments[].lines[].en` | 可选的英文字幕文字，来自分镜台词的 `en` 字段；只有 `--bilingual` 时才用，不进提示词 |
 | `ambience{场景: {file, gain_db}}` | 每个场景一条循环环境声底，带限 150–6500 Hz | 空；`gain_db` 默认 −34 |
 | `music{file, gain_db, fade_in, fade_out, loop, duck{depth_db, …}}` | 全集配乐；按每句台词的起止时间自动压低（增益包络，不受片段里音效影响） | 空；默认压 9 dB。EDL 里没有台词时间时退回 sidechain（真实对白上只有约 3–6 dB） |
 | `loudness{dialogue_lufs, program_lufs, true_peak}` | 响度目标 | −16 / −14 LUFS / −1.5 dBTP |
@@ -114,7 +115,7 @@
 | 要什么 | 用哪个 | 注意 |
 |--------|--------|------|
 | 直接发布 | `mix_episode.py` 的 mp4（`--ass` 烧字幕，或平台另传 `.srt`） | 改任何东西都回 EDL 重跑 |
-| 在剪映里加花字 / 转场 / 调色 | `export_capcut_draft.py`（`pip install pyJianYingDraft`；国际版 CapCut 加 `--international`）。`--drafts` 是剪映「全局设置 → 草稿位置」那个文件夹，要在装着剪映、放着素材的那台机器上跑 | 片段自带的声音留在片段上（挪切点时跟着走），电平取混音报告；配乐按 −8 dB 静态垫着（草稿里不带自动压低）；成片混音作为**静音**参考轨——没动过切点时，解除它的静音并静音其余轨即得自动母带。素材按绝对路径引用，别移动 |
+| 在剪映里加花字 / 转场 / 调色 | `export_capcut_draft.py`（`pip install pyJianYingDraft`；国际版 CapCut 加 `--international`，并改装 `pip install pycapcut`）。`--drafts` 是剪映「全局设置 → 草稿位置」那个文件夹，要在装着剪映、放着素材的那台机器上跑 | 片段自带的声音留在片段上（挪切点时跟着走），电平取混音报告；配乐按 −8 dB 静态垫着（草稿里不带自动压低）；成片混音作为**静音**参考轨——没动过切点时，解除它的静音并静音其余轨即得自动母带。素材按绝对路径引用，别移动 |
 | 交给 Resolve / Premiere 或外部剪辑师 | `export_otio.py`（`.otio` + FCP7 XML + CMX3600，`pip install opentimelineio otio-fcp-adapter otio-cmx3600-adapter`） | 不带电平；每句台词是片段上的一个标记；字幕另导 `.srt` |
 
 不确定用哪个剪辑软件时先出 `export_otio.py`（FCP7 XML 在免费的 DaVinci Resolve 里就能打开）。生成成功 ≠ 在目标软件里打开播放过：第一次导出后先打开看一眼时间线。
@@ -139,7 +140,7 @@ project/
 ```
 
 - **资产表放哪**：就是分镜 JSON 里的 `characters` / `scenes` / `props`，这是唯一被脚本读取的一份。多集共用时另存一份 `bible/series_bible.json` 当母本，新一集从它复制——目前没有脚本做合并，改了母本要自己同步到各集。
-- **「采纳的片段」是哪个文件**：选片在草稿阶段做，采纳的就是 `takes/…/` 里那条草稿 mp4；`observe_take.py` 观测的也是它（记下路径和 sha256）。同 seed 精修不改构图，精修 / 超分后的文件才放进 `selects/`，剪辑单用的是 `selects/` 里的。
+- **「采纳的片段」是哪个文件**：选片在草稿阶段做，采纳的就是 `takes/…/` 里那条草稿 mp4；`observe_take.py` 观测的也是它（记下路径和 sha256）。之后的 latent 二采（LBH 放大 + σ 0.45）不改构图，末态不变；换步数、关 Turbo 或换分辨率重跑出来的是一条新片段，要对它重新选片、重新观测。精修 / 超分后的文件放进 `selects/`，剪辑单用的是 `selects/` 里的。
 - **`project.yaml`** 记下这个项目固定不变的东西，换机器或隔了几周回来能照着重建。没有固定格式，建议至少这些：
 
 ```yaml
@@ -152,7 +153,8 @@ models:
   unet: minimax_h3_ref2va_pruned_int8_convrot.safetensors
   text_encoder: qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors
 draft:   {workflow: workflows/draft.api.json,  steps: 8,  lora: "<Turbo 8 步 768p 版文件名>", shift: "12 / 3"}
-refine:  {workflow: workflows/refine.api.json, steps: 20, lora: none}
+refine:  {workflow: workflows/refine.api.json, note: "中选片段的 latent 二采：LBH 放大 + σ 0.45，音频钉死"}
+camera:  {workflow: workflows/final20.api.json, steps: 20, lora: none, note: "有运镜的镜头重出（铁律 16）；算新片段，要重新选片和观测"}
 ```
 
 任何一段都能从 `prompts/ + bible/ + project.yaml` 重新生成；成片能从 `selects/ + edit/` 重新装配。

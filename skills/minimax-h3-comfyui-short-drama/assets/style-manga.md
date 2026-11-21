@@ -12,11 +12,8 @@ Line quality, proportions and character colors stay identical in every frame. Mo
 ```
 
 ## 资产（定妆图）提示词模板
-```
-Anime character reference sheet, {角色描述}, front view and three-quarter view side by side, neutral expression, clean line art, flat cel colors, white background, consistent proportions, full outfit visible, high resolution.
-```
-场景图：`anime background painting, {场景}, no characters, painted style matching the character sheet, {时间与光线}`。
-**所有参考图必须是同一画风**，真人照片和动画图混用会漂。
+
+用 `image-prompts.md` §1–§5 的模板（定妆照 → 单人单视图 → 场景无人母版 → 道具白底图），规则见 `../references/image-stage.md`：参考图是单人单视图、不是多视图设定板；模板里不写 photorealistic / 4K / masterpiece 这类词，也不写 no people / no text（CFG 1 的模型会把名词召唤出来，要用正向写法）。**所有参考图必须是同一画风**，真人照片和动画图混用会漂。
 
 ## 衔接与口型
 - 漫剧对白口型宽容度高，一镜一人开口仍要守；台词写在 `<d>[Chinese] …</d>`。
@@ -24,10 +21,10 @@ Anime character reference sheet, {角色描述}, front view and three-quarter vi
 - 转场多用硬切，不要让模型做溶解。
 
 ## 可用的公开工作流
-- 官方 `workflows/official/video_minimax_h3_r2v.json`（参考图全部用动画风）；
-- 子镜头分镜图钉帧：`workflows/official/video_minimax_h3_multiframe_reference.json`；
+- ComfyUI 自带模板里的 MiniMax H3 Reference to Video（`comfyui-nodes.md` §2；参考图全部用动画风）；仓库 `workflows/official/` 里也有一份，不随 skill 安装；
+- 子镜头分镜图钉帧：ComfyUI 自带模板里的多帧参考（`MiniMaxH3AddGuide` 链，`comfyui-nodes.md`）；
 - 分镜图生成：Qwen‑Image‑Edit「人物多视角」「换装」工作流；
-- 参考 APIDot 的动画示例写法（docs/04 §8 示例 4）。
+- 动画示例写法见 `genres/09-2d-anime.md`。
 
 ## H3 配置
 ref2va，768P；草稿 Turbo 8 步（2D 风格对拖影不敏感，没有运镜的镜头可以用 4 步）；有运镜的镜头精修同样 20 步、关 Turbo；二采按需。

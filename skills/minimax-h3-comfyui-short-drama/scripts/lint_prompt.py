@@ -40,6 +40,7 @@ RETENTION = {"fully_preserved", "partially_preserved", "attribute_transfer", "we
 AUDIO_MARKERS = ("fully_copy", "partially_copy", "reference", "weak_reference")      # official markers for <Audio N> lines
 NEG = re.compile(r"\b(no|not|never|without|don't|doesn't|do not|does not|avoid|nothing)\b", re.I)
 NEG_OK = re.compile(r"with no camera movement whatsoever|no other (item|garment|person|people)|is not transferred|never transfer facial traits"
+                    r"|no black letterbox bars"
                     r"|without copying the original signal", re.I)
 STILL = re.compile(r"completely still|doing nothing|does not move at all|remains? (perfectly )?motionless", re.I)
 CUT = re.compile(r"\[Shot (\d+)\]\s*(?:At (\d{2}):(\d{2})\.(\d{3}),)?")
@@ -120,7 +121,8 @@ def main():
             if t >= eff - 1.2: errs.append(f"[Shot {n}] cut at {t:.3f}s is inside the last 1.2 s of the {eff:.3f}s clip")
             prev_t = t
     nshots = len(shots)
-    lo, hi = (1, 2) if a.seconds <= 6 else (2, 3) if a.seconds <= 10 else (3, 5)
+    lo, hi = (1, 2) if a.seconds <= 6 else (2, 3) if a.seconds <= 10 else (3, 4)
+    if "<d>" in text: lo = max(1, lo - 1)                # dialogue segments run one step lower (storyboard-and-assets.md section 1)
     if nshots and not (lo <= nshots <= hi): warns.append(f"{nshots} shots for {a.seconds}s (suggested {lo}-{hi})")
 
     d_open, d_close = text.count("<d>"), text.count("</d>")

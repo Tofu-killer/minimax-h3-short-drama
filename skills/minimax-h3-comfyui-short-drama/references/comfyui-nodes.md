@@ -53,21 +53,21 @@
 
 ```
 UNETLoader(ref2va_pruned_int8) → LoraLoaderModelOnly(ref2v_turbo_8step_v1.1_768p, 1.0)
-  → PathchSageAttentionKJ(auto) [KJNodes] → MiniMaxH3SigmaShift(12, 3)（FL2V 768p 用 6, 3）→ model
+  → PathchSageAttentionKJ(auto) → MiniMaxH3MemoryEfficientSageAttentionPatch [两个都是 KJNodes] → MiniMaxH3SigmaShift(12, 3)（FL2V 768p 用 6, 3）→ model
 CLIPLoader(qwen3vl nvfp4, minimax) → clip
 LoadImage ×N（按 media.json 顺序）→ MiniMaxH3ReferenceToVideo(prompt, 1344×768, 243, match) → positive, latent
 SamplerCustomAdvanced(noise seed, model, positive, res_multistep, simple 8, latent) → latent
 VAEDecode(video vae) + 音频解码(audio vae) → CreateVideo(24) → SaveVideo
 ```
-草稿档把分辨率降到 864×480 或 960×544 抽卡（Turbo LoRA 换成 544p 训练版，即文件名里**不带** `768p` 的那个），中选后用同 seed 在 1344×768 重跑或走 latent 二采（见 `quality-pipeline.md`）。
+草稿档把分辨率降到 864×480 或 960×544 抽卡（Turbo LoRA 换成 544p 训练版，即文件名里**不带** `768p` 的那个），中选后在 1344×768 重跑（换了分辨率就是一条新片段，同 seed 也不保证相同，要重新选片）；想保住中选的那一条就直接在 1344×768 出草稿、再走 latent 二采（见 `quality-pipeline.md`）。
 
 ## 4. 社区节点分类（详见各精读文件）
 
 | 需求 | 首选 | 备选 |
 |------|------|------|
 | 单节点多模式（T2V/I2V/FL/Ref 一个口） | `nkxx188/ComfyUI-MiniMaxH3-Easy` | `FX-FeiHou/ComfyUI-FeiHou-Easy-H3`（GPL） |
-| 时间线式多镜头编排 | 见 `01-directors-and-timelines.md` 结论 | — |
-| 段间续接 | 见 `02-long-video-continuation.md` 结论 | 原生 `MiniMaxH3AddGuide` 手搭 |
+| 时间线式多镜头编排 | 见 `ecosystem-map.md` 的导演台一栏（调研底稿 `01-directors-and-timelines.md` 不随 skill 安装） | — |
+| 段间续接 | 默认不续接（硬切）；确实要接见 `continuity-long-video.md` | 原生 `MiniMaxH3AddGuide` 手搭 |
 | 加速 | SageAttention（KJNodes patch）+ Turbo 8 步 | Sol-Attn（Blackwell） |
 | 超分 / 精修 | 原生 LatentUpscaleWithModel + LBH 权重二采 | Tr1dae 重加噪、SeedVR2 像素级 |
 | 提示词改写 | 本地 Qwen + 官方 skill 规则 | 见 `04-prompting-tools.md` |

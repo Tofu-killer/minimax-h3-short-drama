@@ -375,6 +375,10 @@
            "after_line": {
             "type": "string",
             "description": "Optional full sentence: what the speaker does right after the words end (\"He closes his lips and lowers his eyes to {prop_folder}.\"). Default: the speaker closes the lips."
+           },
+           "en": {
+            "type": "string",
+            "description": "Optional English subtitle for this line (used by retime_subtitles.py / export_capcut_draft.py --bilingual). Never spoken, never written into the prompt."
            }
           }
          }

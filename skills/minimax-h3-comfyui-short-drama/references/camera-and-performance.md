@@ -15,7 +15,7 @@
 - 推拉写「焦距全程锁定」+ 距离 / 时长双锚（`slides forward 12 cm over three seconds`）；摇镜不写焦距；横移不写「视线锁定主体」；升降写「姿态保持水平」；甩镜必须命名落点；跟拍写相对位移不写 `follow her`。
 - 单镜只一次运镜，分阶段拆成两个 `[Shot N]`；景别 / 角度 / 运镜三要素每镜给齐。
 - 不写升格 / Hit-Stop / 变速；要「顿」写受力结果（`his head snaps back; the camera holds still`）。
-- 打斗**每一击单独一镜 0.8–1.4 s、一镜一动作**，写一次 `All action plays at full real-time speed`（egguy886）。
+- 打斗**每一击单独一镜、一镜一动作**（egguy886 实测 0.8–1.4 s 一击最利落；但 `lint_prompt.py` 对短于 1.2 s 的镜头报错，所以提示词里每击写 1.2–1.6 s，更碎的切点后期剪），写一次 `All action plays at full real-time speed`（egguy886）。
 - 整圈环绕 / 子弹时间必须挂 pablodawson `minimax_h3_flf2v_lora_v1`，写圈数 + `At` 起止 + 「末了回到正面」收束句，不写速度词；荷兰角用 `H3_Dutch_Angle_Slider_v1`（权重 ≈ 倾角，1 ≈ 20°，常用 2.0）；Jojocodex camera_motion LoRA 默认不挂。
 - 不命名贴身装置（写 Snorricam rig 会被画出来）；音频字段里不提相机 / 机位。
 
@@ -23,7 +23,7 @@
 
 - 静止写「站在原地、呼吸、眨眼、衣发微动」，不写 `completely still`；表情写「变化 + 时序」不写状态。
 - 禁「刚性单一姿势」类不可能指令（运镜幅度掉 80%）。
-- 一镜 ≤ 2 人且只给一人写动作；第二人禁 `watches him go` 类跟随句。
+- 一镜最好 ≤ 2 人且只给一人写动作（校验器的硬上限是 3 人，见 `storyboard-and-assets.md` §1）；第二人禁 `watches him go` 类跟随句。
 
 ## 4. 空间层防崩（forest-laoli）
 
@@ -38,14 +38,14 @@
 - **对白段不要精简提示词**（人声会提前 1.5 s 开口）；动作段可用 < 400 词精简版（动作量 +60%）（egguy886）。
 - egguy886 的更保守做法：每镜 ≥ 2.5 s（含末尾停留），`max_shots = floor(duration / 2.5)`（本 skill 的硬下限是每镜 1.2 s、有台词的镜 3 s，镜头数按段长分档，见 `storyboard-and-assets.md` §1）；按台词估时：中文 4.3 字/s + 标点 0.4 字 + 0.25 s 起 + 0.55 s 收，收尾镜 +15%（egguy886 的估时公式；总字数硬上限仍以 `storyboard-and-assets.md` §1 的 (段长 − 2 s) × 4.5 为准）。
 - 每个 `<d>` 显式归属三选一：口型同步（露脸、`speaks to the camera`）/ 画外音（`says in an off-screen voiceover … while her lips remain completely closed`）/ 无台词；`<d>` 覆盖全程不留空档。
-- 末句与切点留 ≥ 0.2 s；弱读虚词（都 / 也 / 就 / 了）在**定稿台词之前**与用户商量着换成双字实义词——台词一旦锁定就不再改写；音色参考 ≤ 8 s 短音频；无台词片不接音频参考、不声明 `<Audio N>`（egguy886）。
+- 末句与切点留 ≥ 0.2 s；弱读虚词（都 / 也 / 就 / 了）在**定稿台词之前**与用户商量着换成双字实义词——台词一旦锁定就不再改写；音色参考用短样本（模型接受 2–15 s，实测 6–8 s 最稳）；无台词片不接音频参考、不声明 `<Audio N>`（egguy886）。
 - 台词里的 `...` 换成逗号（否则停顿处塞乱码插词，换 seed 无用）；总述只写动作不转述台词；英文氛围句删掉并加 `Speak only the quoted dialogue lines`（多说词 9.3% → 1.3%）；个别段被念出声线开头时只对该段去掉 `Name, a man of N:`（egguy886）。
 - 生成时声音行全集统一「安静房间底噪 + 动作声 + 干净人声」，环境声 / 音效 / 配乐后期按场景连续铺；原生对白音色每段漂 1.7 半音，用 seed-vc 统一而不是 TTS 重配（egguy886）。
 - `fully_copy` 语音有 ~0.45 s 系统位移；`reference` 音色迁移受角色表观性别强拉——`<Subject>` 描述与音色性别要一致；同一个说话人的 `<Subject>`、`(Sx)`、`<Audio>` 在定义行里绑在一起（`<Audio 1> is the voice-timbre reference for <Subject 2> (S1)`），编号各按各的规则，不要求相等；`<Picture N>` / `<Audio N>` 的编号必须与接线顺序一致。
 
 ## 5c. 补充（`12-fresh-followup.md`）
 
-- 多人对白段末尾加 `They speak naturally… Those are the only words.`，单人加 `After that nobody says anything else.`；无台词段写 `Nobody speaks, there are no words at all`。
+- 段末的「只说引号里的词」由 `build_prompts.py` 自动加：多人对白 `Speak only the quoted dialogue lines. Those are the only words in the video.`，单人 `… After that nobody says anything else.`；无台词段在 `[Shot 1]` 里写 `Nobody speaks in this video; every mouth stays closed …`（来源做法的原句是 `They speak naturally… Those are the only words.` / `Nobody speaks, there are no words at all`）。
 - 一段 ≤ 1 次 `turn / spin`；禁 wink / blow a kiss / raise eyebrow / lick（会切脸特写）；LoRA 触发词不进有台词段。
 - 长独白镜用**四分之三正面**，侧脸近景 ≤ 2 s；Dolly Zoom 单独出 6–7 s 单镜再裁 3.2 s 替入，不在 15 s 多镜段内做。
 - 动作镜用首尾帧时写 `Between these two frames the motion is continuous and physically connected, not a cut`。

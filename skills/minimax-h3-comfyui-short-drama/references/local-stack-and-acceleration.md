@@ -17,7 +17,7 @@
 **基线链**（所有加速都在它之上同 seed A/B）：
 `UNETLoader(int8_convrot)` → `LoraLoaderModelOnly(lightx2v *_turbo_8step_v1.1*_comfyui_bf16, 1.0)` → KJ `PathchSageAttentionKJ(auto)`（KJNodes 里这个节点名本身就拼成 Pathch，搜节点时照这个拼） → KJ `MiniMaxH3MemoryEfficientSageAttentionPatch` → `MiniMaxH3SigmaShift` → Guider。先全关跑一次基线，再逐个开，一次只改一个变量。同 seed 同参数重跑会命中 ComfyUI 结果缓存秒出，计时与对比用 seed+1。
 
-- **int8_convrot 底模上挂 LoRA 用运行时分支 / bypass，不反量化合并**：合并往返注入 ~1.5% 权重噪声而 H3 LoRA delta 只有 0.01–0.08%；多 LoRA 用 PowerLoraStack `quantized_layers=auto`，视频风格 LoRA 的 audio 模态缩到 0–0.25。装 LoRA 后日志必须出现 `208 patches attached`。
+- **int8_convrot 底模上挂 LoRA 默认用运行时分支 / bypass，不反量化合并**（也有人在 3090 上测到合并更快、皮肤更干净——见下「路线 A」，两种各跑一次同 seed，以自己机器的结果为准）：合并往返注入 ~1.5% 权重噪声而 H3 LoRA delta 只有 0.01–0.08%；多 LoRA 用 PowerLoraStack `quantized_layers=auto`，视频风格 LoRA 的 audio 模态缩到 0–0.25。装 LoRA 后日志必须出现 `208 patches attached`。
 - 8 步 Turbo 上叠风格 / 运镜 LoRA，**额外 LoRA 强度之和 ≤ 1.3**（0.6+0.3+0.4 实心；0.8+0.5+0.6 小物件透明重影）。
 
 ## 2. 推荐组合（RTX 4090 24 GB，Ref2VA 短剧）
@@ -26,21 +26,21 @@
 - 权重：`ref2va_pruned_int8_convrot`（或 fl2va）+ `qwen3vl_32b_minimax_h3_nvfp4_awq` + int8 视频 VAE + fp32 音频 VAE
 - LoRA：`minimax_h3_ref2v_turbo_8step_v1.1_768p_comfyui_bf16` 强度 1.0（抽卡可降 `ref2v_turbo_4step_v1.0_768p`；声音不稳降 0.75）
 - 采样：8 步 Euler + `simple`（或 `res_multistep`），CFG 1.0；`MiniMaxH3SigmaShift`：Ref2V 12 / 3，FL2V 768p 版 6 / 3
-- 注意力：KJ Sage 两节点；**不接** `MiniMaxLowVRAMAttention`（与 Sage 同开实测第一步 693 s）；旁路 kitchen / BlockSparse；省显存改 KJ `MiniMaxChunkFeedForward` 或 star7 分块（`chunk_tokens 8192 / mlp 4096 / qkv 4096`）
-- 分辨率：求快用 864×480 或 960×544（Turbo LoRA 换成同系列的 544p 训练版——文件名里**不带** `768p` 的那个；LoRA 档位要和分辨率配对，见 SKILL.md 铁律 7）；要和成片同构图、之后同 seed 精修就直接 1344×768 配上面的 768p 版。5–10 s；`ref_image_size = match`（参考 token 预算：2 张角色图 `match` ≈ 1,550 token、`max` ≈ 12,320；124 帧参考视频 14k–27k token——**重者胜**，否定句与「视频里的人就是 Subject 1」都压不过它）；每段 2–4 个 seed
+- 注意力：KJ Sage 两节点；**不接** `MiniMaxLowVRAMAttention`（与 Sage 同开实测第一步 693 s）；工作流里只留这一个注意力补丁，不再接 kitchen / BlockSparse 的注意力节点（启动参数 `--use-ck-attention` 是另一回事，见文末「出图与出视频分实例」；它和 KJ Sage 同开时谁生效以日志为准，配好后用同 seed 各跑一次计时）；省显存改 KJ `MiniMaxChunkFeedForward` 或 star7 分块（`chunk_tokens 8192 / mlp 4096 / qkv 4096`）
+- 分辨率：求快用 864×480 或 960×544（Turbo LoRA 换成同系列的 544p 训练版——文件名里**不带** `768p` 的那个；LoRA 档位要和分辨率配对，见 SKILL.md 铁律 7）；要和成片同构图、之后同 seed 精修就直接 1344×768 配上面的 768p 版。5–10 s；`ref_image_size = match`（参考 token 预算：2 张角色图 `match` ≈ 1,550 token、`max` ≈ 12,320；124 帧参考视频 14k–27k token——**重者胜**，否定句与「视频里的人就是 Subject 1」都压不过它）；每段 2–3 个 seed
 - 实测：864×480 × 10 s × 8 步 ≈ 134 s（4090）
 - 同一提示词多 seed 抽卡时把条件编码落盘复用（pepikir `H3SaveConditioning/LoadConditioning` 或 CLIPCached），采样图里不放 CLIPLoader；多段接力先编码所有段的条件再连续采样（E/E/E/S/S/S），避免 TE / VAE / DiT 往返加载，−25~45%；32 GB 内存机器单图 `--cache-none`；TE 与 DiT 放 NVMe（编码 90→25 s）
 - 可选（ComfyUI ≥ 0.38 后）：Veda `VedaSparseAttention` 放在 LoRA 与 Sage 补丁之后、Guider 之前，预测器只保证 1344×768 / 768×1344 / 768×768 / 1024×768 × 5/10/14 s × 8 步 Turbo；首次 Ctrl+B 旁路同 seed 对比再默认开；5090 实测（mathruffian）Veda 开着会在第 51/119/187 帧闪帧
 - 激进替代（仅 Ref2VA、放弃 Sage）：Kablex `Ref2VAVSAGatePatch(sparsity 0.5–0.75)` + ref2v 4 步 v0.1 + shift 12/3，1344×768 × 5 s ≈ 72 s（作者自报），模型分支上不得有任何 Sage/Sol 节点
 
 ### 精修档（中选段，1344×768）
-- **路线 A（默认）**：Turbo 8 步 v1.1 + Sage，其余加速全关；`low_vram`（合并）与 bypass 各跑一次同 seed 定默认（3090 实测合并反而快 25% 且皮肤更干净，勿照抄「bypass 最锐」）
+- **路线 A（默认的草稿档，中选后走 latent 二采；有运镜的镜头另按铁律 16 用 20 步关 Turbo 重出）**：Turbo 8 步 v1.1 + Sage，其余加速全关；`low_vram`（合并）与 bypass 各跑一次同 seed 定默认（3090 实测合并反而快 25% 且皮肤更干净，勿照抄「bypass 最锐」）
 - Turbo 无 CFG 链路的微调旋钮：Fizgig H3 Tweaks（LoRA 之后、采样器之前）`Detail & Contrast 0.15`、`Prompt Strength 0.2`、`Scene Variation ±0.1–0.3`；不与块跳过类节点同挂
 - **路线 B（画质优先 / 有运镜的镜头）**：无 Turbo 20 步 `res_multistep` + `simple` + Sage，**不叠任何缓存或稀疏注意力**（精修档铁律）。Spectrum（默认参数，SigmaShift 之后 Guider 之前，`history_storage=system_ram`）或 FirstBlockCache `H3 Fast`（5090 实测 −30%；hit 数为 0 就移除）只允许在「20 步草稿探索」时二选一试用；8 步链两者都不挂；若用核心 EasyCache：`end_percent` 封顶 0.70（默认 0.95 后期跳步造成织纹与色块），且定稿不开（5090 实测，mathruffian）
 - **草稿档 ≥ 10 s 长段可选（ComfyUI 0.38.x 后）**：Spark-H3（Windows SM89 CUDA-13 包，`fidelity`、`topk_ratio 0.2`，Ref2VA 带参考视频时 `sparse_scope joint-video`、`dense_backend sage`）或 Veda，二选一，不与核心 `Block Sparse Attention` 同链；稀疏注意力有损，**只用于抽卡，不进精修档**；Sol / 块稀疏只在 ≥ 768p 才有收益（1.23–1.27×），480p 档 1.03× 且高频 −13.8%；5 s 短片不值得折腾（3090 实测 Spark 与核心 Sol 同速 158 vs 152 s）
 - **二采精修（保 take）**：一采 latent → LBH 放大 → 1920×1088 从 **σ 0.45** 重采、音频钉死，见 `quality-pipeline.md` §4（权威）。Spark-H3 / FreeVideo 示例的「0.2–0.33 MP 4–8 步 → 放大 → 3 步 sigmas `0.9035, 0.6316, 0.3158, 0`」是**重生成式**二采（高 σ 会改脸），只在接受重绘时用
 - **写实 A/B**：alibaba-pai PDD Ref2VA 8 步替换 Turbo（`MiniMaxH3PDDAccApply nfe=8`，SIGMAS 接 `SamplerCustomAdvanced`，Euler、CFG 1、shift 恰好 12/3，不接任何缓存，不用 er_sde / res_multistep）；漫剧 / 插画风格保持 Turbo（PDD 4 NFE 会压平纹理）
-- **DMAD 4 步可做日常定稿**（5090 实测，mathruffian）：8 类镜头看不出差、快 49–58%；单镜 ≤ 12 s
+- **DMAD 4 步可做日常定稿**（5090 实测，mathruffian；指没有运镜的镜头，有运镜的仍按 SKILL.md 铁律 16 用 20 步）：8 类镜头看不出差、快 49–58%；单镜 ≤ 12 s
 - 预计：1344×768 × 10 s × 8 步 ≈ 5–8 min（4090，含 VAE）
 
 ### FL2VA（I2VA 首帧 / 尾帧衔接）

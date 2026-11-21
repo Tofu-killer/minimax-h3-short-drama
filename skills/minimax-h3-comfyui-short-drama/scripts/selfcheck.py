@@ -118,6 +118,25 @@ def main():
         if not ok:
             sys.exit(1)
 
+        # three scripts turn "seconds asked for" into "frames H3 really makes" (17k+5): they have to agree, or a
+        # correctly generated take is reported as the wrong length
+        try:
+            def load(name):
+                spec = importlib.util.spec_from_file_location(f"_selfcheck_{name}", Path(__file__).parent / f"{name}.py")
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                return mod
+            sys.path.insert(0, str(Path(__file__).parent / "h3lib"))
+            import storyboard as _sb
+            probe_mod, lint_mod = load("qc_probe"), load("lint_prompt")
+            bad = [sec for sec in range(4, 16)
+                   if not (abs(probe_mod.grid_seconds(sec) - _sb.frames_for_seconds(sec) / 24.0) < 1e-6
+                           and abs(lint_mod.effective_seconds(sec) - _sb.frames_for_seconds(sec) / 24.0) < 1e-6)]
+            record("frame grid (17k+5) agrees across validator, linter and qc_probe", "FAIL" if bad else "PASS",
+                   f"disagree at {bad} s" if bad else f"13 s -> {_sb.frames_for_seconds(13)} frames = {_sb.frames_for_seconds(13) / 24:.3f} s")
+        except Exception as e:  # noqa: BLE001
+            record("frame grid (17k+5) agrees across validator, linter and qc_probe", "FAIL", f"{type(e).__name__}: {e}")
+
         def shot(i, start, framing, action, text=None):
             d = {"index": i, "start": start, "framing": framing, "camera": "The camera holds a static shot",
                  "action": action, "on_screen_characters": ["hero"]}

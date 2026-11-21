@@ -78,7 +78,7 @@ N/A
 2. **首次清楚出场处把外貌再说一遍**（官方 §5.3：at the first clear appearance describe its referenced characteristics）：紧跟在这一镜里第一次提到它的标签后面，作同位语。「清楚出场」= 人在画面里、不是只露肩膀 / 手 / 背影，并且这一镜是中景或更宽（在场的人都看得清），或者景别写的就是他，或者景别没写任何人（建立镜头）；别人的特写镜头不算。在那之前的一瞥只给短称；之后每次切镜、该镜的主体会带一句 `…, the <短称> from Shot k`。道具同理，首次出现处带一遍描述。
 3. **台词后闭嘴。** 官方示例每句台词后面都跟一句 `She closes her lips and …`。`dialogue[].after_line` 写这句（说完之后这个人做什么）；不写则补 `<Subject N> closes his / her lips.`
 4. **音色参考每句都引用，并带上嗓音的文字描述**（官方 §5.3：在音频关系起作用的地方引用 `<Audio N>`；官方示例写的是 `using the clear youthful voice timbre referenced from <Audio 1>`）：首句 `using the voice timbre referenced from <Audio 1>, with a tired, gravelly voice and slow, measured delivery,`（后半句取自 `voice_phrase`），之后 `in the same voice referenced from <Audio 1>`。没有音色参考的人，首次开口处只写嗓音。该镜的景别里点到说话人时，`(S1)` 也跟在那里的标签后面。
-5. **只说引号里的词。** 有台词的段在末尾加 `Speak only the quoted dialogue lines.`（单人再加 `After that nobody says anything else.`，多人加 `Those are the only words in the video.`）——这句不是官方写法，是社区实测的防多说词手段（多说词 9.3% → 1.3%，`camera-and-performance.md` §5b）；没有台词的段在 `[Shot 1]` 里写 `Nobody speaks in this video; every mouth stays closed …`。
+5. **只说引号里的词。** 有台词的段在末尾加 `Speak only the quoted dialogue lines.`（单人再加 `After that nobody says anything else.`，多人加 `Those are the only words in the video.`）——这句不是官方写法，是社区实测的防多说词手段（多说词 9.3% → 1.3%，`camera-and-performance.md` §5）；没有台词的段在 `[Shot 1]` 里写 `Nobody speaks in this video; every mouth stays closed …`。
 6. **`appears in` 和 `the setting comes from` 自动对账**：保留行里的出场镜头是从写好的镜头正文里读出来的；人物行末尾的「场景取自」写的是场景的标签。
 
 **状态怎么进提示词**：
@@ -94,8 +94,8 @@ N/A
 - 每个参考文件一个职责：脸、服装、环境、道具分开给图。进提示词的 `identity_phrase` 只写一眼能把这个人和别人分开的不变量——年龄段、发型发色、主服装与颜色、一个标志物，12–25 词（官方示例的量级：`with long blonde hair and a light-pink button-down shirt with rolled-up sleeves`）；骨相、族裔、身高这类只对生图有用的细节放 `sheet_phrase`（不进视频提示词）。状态（湿头发、撕破的袖子）写在镜头描述里。
 - 每个镜头里第一次提到某人用 `<Subject N>`；同一镜头内紧接着的句子可以用代词（官方示例就是这样写的：`<Subject 3> (S1) … She closes her lips …`）；换了镜头重新用标签，同框有两个同性别的人时不用代词。
 - `<Subject N>` 只给可复用内容，`<Picture N>` 只给具体帧锚；不发明 `<Image N>` / `<Environment N>`；定义过的标签必须在正文引用且有 retention 行；接了图不提等于白占配额。
-- 参考图：目标画幅、短边 ~768、剪影分明，不画箭头 / 标签 / 网格。
-- 多人镜只给首帧，不加 `<Picture>` 身份参考（会多出一人）；单人镜加身份参考时写明「仅外观参考，不是要切过去的画面」；写 `Exactly N people`。
+- 参考图：短边 1024；角色图不必是目标画幅（头肩特写 1024×1024、全身 1024×1536，见 `image-stage.md` §2），场景图用目标画幅；剪影分明，不画箭头 / 标签 / 网格。
+- 首帧里只有一张清楚的脸（单人、过肩）时首帧 + 身份参考 + 音色一起给（`ref2va` + `first_frame`）；首帧里有两张以上清楚的正脸时只给首帧（`i2va`）——再挂身份参考会多出一个人，`i2va` 也接不了音色参考；单人镜加身份参考时写明「仅外观参考，不是要切过去的画面」；写 `Exactly N people`。
 - 长度：官方说生成任务的 `detailed_description` 通常 350–500 词，对白密的段以装下完整的说话时间线为先。脚本带上站位、外貌、收尾状态之后一般落在 450–600 词。`lint_prompt.py` 只警告：< 350 词（模型会自由发挥甚至烧字幕）、> 700 词、单镜 > 240 词（首镜带着开场交代、末镜带着结束状态，放宽到 300）。写分镜时每镜的 action + performance 合计 50–100 词比较合适；灯光只在这一镜的光和风格行不一样时才写。
 - 7000 字符是 MiniMax **云端 API** 的文本上限；本地 ComfyUI 节点没有长度限制（文本编码器是 Qwen3-VL-32B，直接读原文、不套对话模板，`comfy/text_encoders/minimax.py`）。`<d>` 与 `</d>` 在分词器里各是一个专用 token：必须原样写，中间不加空格、不换括号。
 - 多段（30 / 60 s）：每段自包含，把全局规则拼进每一段；上一段末帧 = 本段首态；BGM / 环境音「不重启」写进两段；相邻段最后 ~1.4 s 与开头 ~0.9 s 当一次呼吸设计。
@@ -129,7 +129,7 @@ N/A
 - 镜头数与时长以 `storyboard-and-assets.md` §1 为准：每镜 ≥ 1.2 s（含片头到第一刀、最后一刀到片尾），常规 2.5–6 s，有台词的镜 ≥ 3 s；≤ 6 s 1–2 镜，7–10 s 2–3 镜，11–13 s 3–4 镜；对白段 10 s 内 ≤ 2 镜、12–13 s ≤ 3 镜，禁 1 s 碎切（打斗每击一镜例外）。dramake 对对白段更保守（每内部镜 ≥ 4 s），片子节奏慢时可以照它来。超预算先减镜不加形容词；每段只放一个高风险物理事件并写 起始态 → 控制输入 → 方向 → 阶段 → 终态。
 - 正反打两镜都写视线方向与各自服装锁定；多人场只用一两颗同框中景交代站位，台词一律单人正反打，机位在听者视线上，说话对象偏离镜头轴 25–40°。
 - 单镜头内有动作/台词的人物 ≤ 3；双人同框写相对位置与身高。首镜只锚定一个具名主体，禁「X 与 Y 同框」并列句（实测出两张脸）。
-- 每个后续镜头重述主体服装关键词与身份锚点（发型、年龄、带颜色的服装、标志配饰）。
+- 每个后续镜头重述主体的身份锚点（六段式由 `build_prompts.py` 自动加「短称 + from Shot k」，分镜字段里不写；手写三段式时自己加：发型、年龄、带颜色的服装、标志配饰）。
 - 表演四拍：trigger → reception → one primary response → settled end state；每拍每角色 ≤ 3 个可观察线索；情绪词落成肌肉动作。
 - 不写 `completely still / his face is doing nothing`（会冻结整镜）；人的静止写呼吸、眨眼、重心微沉；物件静止写正面状态。
 - 瞬时效果（闪光、巨响）绑在「某动作完成的那一刻」而不是时间戳。

@@ -11,7 +11,7 @@
    "frames_total": 192,
    "src_fps": 24.0,
    "in_frame": 2,
-   "out_frame": 192,
+   "out_frame": 168,
    "audio": "native",
    "nondialogue": null,
    "l_cut": 0.25,

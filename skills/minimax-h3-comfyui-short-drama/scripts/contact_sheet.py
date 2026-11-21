@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Contact sheets for visual QC: frames picked where problems hide, each stamped with its time.
 
-    python3 contact_sheet.py "takes/ep01/s03/*.mp4" --freeze-tail 1.0
+    python3 contact_sheet.py "takes/ep01/s03/**/*.mp4" --episode episodes/ep01.json
     python3 contact_sheet.py final/ep01.mp4 --max 24 --cols 6 --out-dir qc/sheets
 
 Instead of 12 evenly spaced frames, each sheet holds: the first frame, the last moving frame and the very last

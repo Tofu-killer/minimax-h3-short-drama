@@ -13,7 +13,7 @@
 | 项 | 建议 |
 |----|------|
 | 模式 | Ref2VA 六段式 + 首帧锚（`<Picture 1>` = opening-frame anchor）；单人钩子镜可 I2VA |
-| 段长 / 镜数 | 8–12 s；10 s ≤ 2 镜、12–15 s ≤ 3 镜，内部镜 ≥ 4 s（dramake） |
+| 段长 / 镜数 | 8–12 s；有台词的镜头 10 s 内 ≤ 2 个、12–13 s ≤ 3 个，每个 ≥ 3 s（dramake 更保守：≥ 4 s） |
 | 台词 | ≤ (段长−2)×4.5 字，目标 3.3–4 字/s；单段说话人 ≤ 2 |
 | 步数 | 草稿 Turbo 8 步 v1.1 768p，shift 12/3，每段 2–3 seed（说话节奏绑 seed）；有推镜的定稿 20 步关 Turbo |
 | LoRA | 默认不挂；写实人物可 A/B `fal/research-mini-max-h3-realism-people-lora`（`lora-and-style.md` §3） |
@@ -26,7 +26,7 @@
 
 - 建立镜一颗同框中/全景交代站位，台词一律单人过肩正反打，机位在听者视线上、偏离镜头轴 25–40°（phileiny，`04` 规则 6）。
 - 每镜只一个运镜：说话人慢推（`pushes in … small amplitude at slow speed`），听者反应镜 Static；首镜只锚一个具名主体（JGRFW H12）。
-- 每镜重述服装关键词（open-h3-ir R15）；写空间锚点卡（门、灯、桌）每段复述（forest-laoli，`camera-and-performance.md` §4）。
+- 切镜后重述身份锚点（open-h3-ir R15；六段式由 `build_prompts.py` 自动加，分镜字段里不写）；写空间锚点卡（门、灯、桌）每段复述（forest-laoli，`camera-and-performance.md` §4）。
 
 ## 表演与台词要点
 
@@ -40,7 +40,7 @@
 
 ## 参考素材准备
 
-首帧锚（图像模型出，16:9，含两人站位与关键道具）→ 每人一张 16:9 角色设定板（脸 + 正侧背）→ 每个说话人 2–8 s 干净音色。首帧里的道具（杯子、行李箱）在文本中写 `already … in <Picture 1>`。
+首帧锚（图像模型出，16:9，含两人站位与关键道具）→ 每人两张单人单视图（`face.png` + 正面全身；拼成的设定板只给人审）→ 每个说话人 2–8 s 干净音色。首帧里的道具（杯子、行李箱）在文本中写 `already … in <Picture 1>`。
 
 ## 示例提示词（Ref2VA，10 s，3 图 + 2 音频）
 

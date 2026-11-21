@@ -2,7 +2,7 @@
 """Dialogue QC for takes: was every locked line actually spoken, completely, once, and when?
 
     python3 qc_dialogue.py --episode episodes/ep01.json --targets "takes/ep01/**/*.mp4" --out qc/dialogue
-    python3 qc_dialogue.py --episode episodes/ep01.json --targets takes/ep01/s03/*.mp4 --out qc/dialogue --strict
+    python3 qc_dialogue.py --episode episodes/ep01.json --targets "takes/ep01/s03/**/*.mp4" --out qc/dialogue --strict
 
 The segment a take belongs to is read from its path (a folder or file-name token equal to the segment id).
 Each take is transcribed WITHOUT any text hint (a hinted recogniser "hears" lines that were never spoken)

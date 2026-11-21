@@ -29,7 +29,7 @@ do not tune thresholds.
 
 Default is advisory (exit 0). `--strict` exits 1 when any target fails.
 Scores are a warning signal, not ground truth: stylised / anime faces are usually not detected at all
-(you will see `no_usable_face` everywhere - use the VLM judge prompt in assets/ instead), and thresholds
+(you will see `no_usable_face` everywhere - use identity_gate_anime.py for 2D / 3D-toon characters), and thresholds
 come from OpenCV's SFace defaults (0.363 same-identity) plus a stricter delivery bar (0.55).
 
 Needs: opencv-python(-headless) >= 4.8, numpy, ffmpeg/ffprobe on PATH for video targets.
@@ -279,8 +279,8 @@ def load_bible(a, engine: FaceEngine):
         ep_path = Path(a.episode)
         ep = json.loads(ep_path.read_text(encoding="utf-8"))
         for c in ep.get("characters", []):
-            refs[c["id"]] = [str((ep_path.parent / r) if not Path(r).is_absolute() else Path(r))
-                             for r in c.get("reference_images", [])]
+            refs[c["id"]] = [str(p if (p.is_absolute() or p.exists()) else ep_path.parent / p)      # JSON folder, or project root
+                             for p in map(Path, c.get("reference_images", []))]
         for s in ep.get("segments", []):
             seg_expect[s["id"]] = list(s.get("character_ids", []))
             seg_cuts[s["id"]] = [float(sh.get("start", 0)) for sh in s.get("shots", []) if float(sh.get("start", 0)) > 0]
