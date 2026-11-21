@@ -93,7 +93,7 @@
 8. 系统内存 ≥ 64 GB？32 GB 时加 `--disable-pinned-memory`，TE 可放 CPU（约 +27 s/次）
 9. PyTorch / CUDA 过旧 → 升到 cu128+ 后 int8 / nvfp4 核才快；显卡功耗墙拉满
 10. 单段超过 328 帧？**4090 单段帧数上限 328 帧**（19×17+5）：345 帧有 6/7 概率个别 step 停滞 2.5–4.8×、整段慢 3–17×；1280 宽改 **1216** 让 VAE 解码 tile 28→24、总时长 −15%；VAE tile 保持 256（512+ 不更快且 PSNR 40→21 dB 出格子）
-11. 采样期间在轮询 ComfyUI HTTP？每次停 18–43 s，`comfy_submit.py --poll` 设 ≥ 20 s；驱动 ComfyUI 时每 N 个任务 `POST /free {"unload_models":true,"free_memory":true}`（`comfy_submit.py --free-every N`）；`/history` 与 `/queue` 连续 3 次都查不到才判丢失；H3 不与其它 GPU 任务并行；计时读 `/history` 执行时间
+11. 采样期间在轮询 ComfyUI HTTP？每次停 18–43 s，`comfy_submit.py --poll` 设 ≥ 20 s；驱动 ComfyUI 时每 N 个任务 `POST /free {"unload_models":true,"free_memory":true}`（`comfy_submit.py --free-every N`）；`/history` 与 `/queue` 连续 3 次都查不到才判丢失（脚本已内置：受理后先把 `prompt_id` 写进 `<take>/handle.json`，中断后原样重跑会先查这两个接口再决定是否重提）；H3 不与其它 GPU 任务并行；计时读 `/history` 执行时间
 12. 同配置耗时涨到 1.8× 立即重启 ComfyUI（CUDA 崩溃前兆）；杀毒软件只对 ComfyUI 与模型目录加排除项，不要整体关闭
 
 ## 6. 升级 ComfyUI 前检查

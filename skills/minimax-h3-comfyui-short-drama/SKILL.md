@@ -26,7 +26,7 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 | 2 | 生图：定妆照（锚点，选定后冻结）→ 正面全身 + `face.png` 等单人单视图（拼成的 16:9 角色板只给人审）→ 场景无人母版 + 九宫格 → 道具白底图；再备 2–15 s 干净音色；写识别短语 + 声音短语 | `references/image-stage.md`、`assets/image-prompts.md`、`references/storyboard-and-assets.md` §3 |
 | 3 | 用 `assets/agent-prompts/01-outline.md` → `02-storyboard.md` 让 LLM 把剧本切成 4–15 s 段（对白段 8–12 s，动作 / 硬切镜头 5–8 s），每段 2–4 子镜头，每镜写景别 / 焦段 / 运镜 / 动作 / 表演 / 光线 / 台词 / 声音；跑 `scripts/validate_episode.py`，再用 `scripts/render_storyboard.py` 出分镜表给用户审，`03-rhythm-audit.md` 做节奏审计 | `references/storyboard-and-assets.md` §1–2 |
 | 4 | 需要首帧的段（中文真人对白、关键道具特写）用编辑模型 + face.png + 场景裁切出字面首帧（`image-stage.md` §⑤）；`scripts/build_prompts.py` 生成每段提示词与媒体顺序；`scripts/lint_prompt.py` 机检，FAIL 不提交；本地 Ollama 改写只用于三段式，六段式手写 | `references/prompt-format.md` |
-| 5 | 草稿档（Turbo 8 步 + Sage + 768P）每段 2–4 个 seed；`scripts/comfy_submit.py --batch` | `references/local-stack-and-acceleration.md`、`references/comfyui-nodes.md` |
+| 5 | 草稿档（Turbo 8 步 + Sage + 768P）每段 2–4 个 seed；先 `scripts/comfy_submit.py … --dry-run` 出批次预览给用户确认，再带 `--confirm <批次号>` 提交；中断了原样重跑即可续取 | `references/local-stack-and-acceleration.md`、`references/comfyui-nodes.md` |
 | 6 | 中选段**同 seed** 精修：LBH latent 放大 + σ 0.45 二采（音频钉死）→ 1920×1088；小脸先修再放大；只有单镜 > 15 s 才续接 | `references/quality-pipeline.md`、`references/continuity-long-video.md` |
 | 7 | QC：`qc_probe.py`（含镜头数对账）→ `qc_dialogue.py` → `identity_gate.py` → `contact_sheet.py` + 人眼；后期：`make_edl.py` → `retime_subtitles.py` → `mix_episode.py`（帧精确拼接、逐段电平、配乐压低、成片响度、验收）→ 需要人工精修时 `export_capcut_draft.py` / `export_otio.py` | `references/qc-and-assembly.md`、`references/audio-and-post.md` |
 
@@ -53,7 +53,7 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 17. **真人对白段先出首帧再生成**（盲评：直出 0:4 输，垫首帧 4:0 赢）；漫剧可直出。参考视频先重采到 24 fps（节点不重采样）。
 18. **默认留在本地 H3，换模型要有触发条件**：同一问题按 `pitfalls.md` 改过仍连续不过，且属于 `beyond-h3.md` 路由表里的镜头类型，才换本地替补（Wan-Animate-2、Fun Camera、InfiniteTalk、Bernini-R）或云端；草稿永远先在本地确认，换出去的片段回到同一条后期链（24 fps、同一超分、ColorMatch）。
 19. **后期只认一份剪辑单**：字幕文字永远取自分镜的锁定台词，识别 / 对齐只提供时间；台词质检不给识别器任何文字提示；切点、电平、配乐都改 `edit/<集>.edl.json` 后重跑，不手工拼 ffmpeg 命令；成片以 `mix_episode.py` 的验收（音画等长、帧数、响度、真峰）为准。
-20. **每步落盘 + 选择卡**：会花 GPU 时间的步骤前给用户一张选择卡（推荐项放第一），产物带 seed / 参数 / 哈希，重跑幂等跳过已完成段。
+20. **每步落盘 + 选择卡**：会花 GPU 时间的步骤前给用户一张选择卡（推荐项放第一）——卡上的内容来自 `comfy_submit.py --dry-run` 的批次预览（哪些要跑、哪些已完成、预计多久、批次号），用户确认后带 `--confirm <批次号>` 提交，输入变了批次号就变、确认随之失效；「继续」不等于确认了一个改过的批次。产物带 seed / 参数 / 指纹，重跑幂等跳过已完成段；一集的段全部过 QC 再开下一集。
 
 ## 单段样片先行
 
@@ -76,7 +76,7 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 | `scripts/validate_episode.py <ep.json> [--catalog props.json]` | 分镜校验：时长、台词预算、一镜一说话人、未知资产、道具无图、空终态 |
 | `scripts/render_storyboard.py <ep.json> --out ep01_storyboard.md` | 把分镜 JSON 渲染成人能审的分镜表（每镜时间、景别 / 焦段、运镜、动作、表演、光线、台词与语速、声音） |
 | `scripts/build_prompts.py <ep.json> --out prompts/ep01` | 生成每段最终提示词 `.txt` + 媒体顺序 `.media.json` + `cues.srt` |
-| `scripts/comfy_submit.py <wf.api.json> --set … --batch N --poll 20 --free-every 3 --out takes/…` | 向本地 ComfyUI 提交 API 格式工作流、上传媒体、按 seed 抽卡、下载产物、写 `run.json`；轮询 ≥ 20 s，可定期 `/free` 释放显存 |
+| `scripts/comfy_submit.py <wf.api.json> --set … --batch N --out takes/ep01/s03 --tag s03 [--dry-run \| --confirm <批次号>] [--free-every 3] [--log logs/takes.csv]` | 向本地 ComfyUI 提交 API 格式工作流、上传媒体、按 seed 抽卡、下载产物。提交前**预检**（节点是否安装、模型 / LoRA 文件名是否在服务器列表里并给出最接近的名字、必填输入、H3 帧数 17k+5、宽高 32 倍数、参考图接线格式）；每个 take 按「最终工作流 + 上传文件内容」算指纹，**相同的已完成 take 自动跳过**；任务被受理就把 `prompt_id` 落盘，脚本中断后原样重跑会**接回原任务**而不是重复提交；同一目录里旧结果移到 `_prev_*` 不覆盖。轮询 ≥ 20 s |
 | `scripts/qc_probe.py "takes/ep01/**/*.mp4" --episode ep.json --freeze-tail 1.0 --out qc/probe` | 技术 QC：分辨率 / 时长 / 帧率 / 音轨 / 峰值 > −1 dB / 冻结 > 1 s / 黑场 > 0.25 s（排除声明的定格尾）；**镜头数与分镜对账**（少切、多切、切点偏移）、首尾跳帧、动作量。没有分镜时用 `--expect-seconds / --expect-size / --shots 0,3.5` |
 | `scripts/qc_dialogue.py --episode ep.json --targets "takes/ep01/**/*.mp4" --out qc/dialogue` | 台词质检：每句是否说了、说全、只说一次、何时说；无台词段是否擅自说话；输出首 / 末字时间与语速（需 `faster-whisper`） |
 | `scripts/contact_sheet.py "takes/ep01/s03/*.mp4" --freeze-tail 1.0` | 联络表：首末帧、每个切点前后各一帧、每镜中段，帧下印秒数；Windows 直接可用 |

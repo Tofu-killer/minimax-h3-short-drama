@@ -20,7 +20,7 @@
 | 采样 | `KSamplerSelect(res_multistep)` → `BasicScheduler(simple, steps, denoise)` → `SamplerCustomAdvanced` | 官方模板的采样器组合；`cfg` 固定 1.0 |
 | 输出 | `CreateVideo(24 fps)` → `SaveVideo` | 24 fps 不要改 |
 
-**API 格式里的 Autogrow 键名**：`ref_images` / `ref_videos` / `ref_video_audios` / `ref_audios` 是嵌套对象，子键从 0 计：`"ref_images": {"ref_image_0": ["<LoadImage id>", 0], "ref_image_1": …}`。写成列表不报错但参考被**静默忽略、出图全黑**（两个独立项目踩到）。`comfy_submit.py --set` 无法直接写嵌套键，用导出的 API JSON 作模板、只替换 LoadImage 的 `image`。
+**API 格式里的 Autogrow 键名**：`ref_images` / `ref_videos` / `ref_video_audios` / `ref_audios` 是嵌套对象，子键从 0 计：`"ref_images": {"ref_image_0": ["<LoadImage id>", 0], "ref_image_1": …}`。写成列表不报错但参考被**静默忽略、出图全黑**（两个独立项目踩到）——`comfy_submit.py` 的预检会拦下列表写法。`--set` 无法直接写嵌套键，用导出的 API JSON 作模板、只替换 LoadImage 的 `image`。
 
 **FL2VA 链必须接 `VAEDecodeAudio`**：`MiniMaxH3ImageToVideo` 输出的是 AV latent，只接 `VAEDecode` 会误以为「FL2VA 没有音频」。
 
