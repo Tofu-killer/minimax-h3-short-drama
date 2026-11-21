@@ -699,3 +699,179 @@ NarratoAI 反过来：原片抽帧 → VLM 逐帧理解 → 解说词 → TTS �
 - **LTX Studio**（官网与帮助中心，访问日 2026‑11‑21；部分页面抓取失败）：脚本自动抽取角色 / 物件 / 地点存成 **Elements**，之后在镜头提示词里用 `@名字` 引用；Storyboard → 视频 → 时间线一条龙；**Retake** 选中已有镜头的一段只重生成该段；导出 MP4 / PDF pitch deck / XML。
 - **Flova**（PRNewswire 2026‑08‑24 通稿，公司自述未验证）：agent 承接脚本（最长 30 万字符）、分镜、资产管理、修订与粗剪，Seedance 2.5 出片；Skill Hub 号称 100+ 可复用「制作手册」。
 - 三家共同点与开源侧一致：**资产一次定义处处 `@` 引用 + 分镜先行 + 局部重拍**。局部重拍（LTX Retake、wind‑comic Segment retake）是开源流水线里普遍缺的一环。
+
+## 5. 与 H3 流水线对照
+
+### 5.1 别人用整条流水线解决、H3 已经原生解决的
+
+| 别人的做法 | H3 的原生能力 | 对我们的含义 |
+|---|---|---|
+| 链路 A / E 的「TTS → 口型对齐 → 混音」三步（wind‑comic 的 viseme 轨与对齐分、VideoClaw 的后期 agent、Coze 模板的「旁白 → 音画合并」） | 一次生成带立体声对白与音效 | 对白段不需要配音与口型环节；只在音色漂移、画外音、电话音质、首帧硬锁段回到后期（见 04） |
+| 逐镜头首帧 + I2V + 拼接（ViMax、MovieAgent、Higgsfield Popcorn → Cinema Studio） | 一段内 `[Shot N] At 时间码` 切 2–4 镜 | 生产单位保持「段」；逐镜头流水线只在需要每镜锁构图时才用（shuohao 的多图对齐就是这种情况） |
+| 平台的 `@名字` → 参考图槽位翻译（火宝、ArcReel、LTX Elements） | `<Subject N>` / `<Picture N>` + 9 图 / 3 视频 / 3 音频 | 我们 `build_prompts.py` 的占位符替换已是同一机制 |
+| 角色 LoRA / Soul ID 训练（MovieAgent、Higgsfield） | 多参考图 + 身份短语 | 默认不训 LoRA，与本簇活跃开源系统的选择一致 |
+| 「同一人物在 ≥ 2 镜说话先建稳定音色」（waoowaoo） | 音频参考槽 | 已有「音色只给本段说话者」规则；新增的是它与首帧硬锁互斥这一条（§4.1 zenstory） |
+| Seedance 的 extend / 首尾帧桥接 | latent 续接生态 + FL2VA | 续接提示词规则可直接用 Calliope 那八条 |
+
+### 5.2 可以直接搬进 skill 的做法（按总流程步骤）
+
+| 步 | 搬什么 | 来自 | 落点 |
+|---|---|---|---|
+| 0 盘点 | 开跑前预检工作流（节点类、模型文件）；工作流出处锁 | comfy‑mcp `validate_workflow`、artokun `lock / verify_lock` | `comfy_submit.py --preflight`、新 `scripts/lock_workflow.py` |
+| 1 定风格 | 「先生成最难的那一镜」作为样片选择标准的旁证；系列级风格 Inherit + Override | Higgsfield 博客、LumenX 设计文档 | `SKILL.md`「单段样片先行」已有，补一句来源；`project.yaml` 加 `series_style` |
+| 2 圣经 | 6 层身份锚里的「辨识标记精确到位置」「Hex 色彩锚」；连戏锁；正反两张场景母版 + 空间契约 | moyin、zenstory、DramaClaw | `01-outline.md` 的 identity_phrase 规则、`episode.schema.json` 的 `locks[]`、`image-stage.md` 场景节 |
+| 3 分镜 | 节拍认领、开场站位台账、三职责律、负载分、镜头 `cam_idx` | shuohao、smixs、Emily2040、ViMax | `episode.schema.json` + `validate_episode.py` + `02-storyboard.md` |
+| 4 提示词 | 反应镜公式、标秒必须填满、避开编辑类祈使词、声景随动作改、续接八条 | zenstory、ArcReel、shuohao、Calliope | `prompt-format.md`、`continuity-long-video.md`、`lint_prompt.py` 新增检查 |
+| 5 抽卡 | 批次预览 + 指纹确认 + prompt_id 先落盘 + 取回而非重提；一集做完再下一集 | zenstory、ArcReel、waoowaoo | 新 `scripts/plan_batch.py`、`comfy_submit.py --plan / --collect` |
+| 6 精修 | 局部重拍（只重出坏的几秒） | wind‑comic、LTX Retake | `continuity-long-video.md` 新增一节 + `scripts/splice_retake.py`（H3 上先做样本验证） |
+| 7 QC / 拼接 | 信号侧车 + 信号加密联络表 + 切点对账；VLM 三套小 rubric；六档分流；实拍状态回写；剪辑单；NLE / CapCut 导出 | ArcReel、DramaClaw、zenstory、Emily2040、video‑use、OpenFilm | §6 的 G1–G3、G7 |
+
+### 5.3 该换工具的场景（仅列本簇资料支持的）
+
+| 场景 | 换成什么 | 依据 |
+|---|---|---|
+| 大幅度全身动作、舞蹈、卡点打斗要照参考动作走 | 本地：Wan Animate；体型差大 / Q 版：DWPose 骨骼 + Wan VACE；云：Kling 动作控制、Seedance 2.5 全能参考 | rea‑video `docs/replicate.md` 选型表（"只给首尾帧生成，中间的动作全靠模型猜，编舞和卡点会丢"） |
+| 既要锁首帧构图又要跨镜同一音色 | 首帧模式出画面，音色后期统一（时长可控 TTS 或音色转换） | zenstory `minimax-h3.md` 模式互斥；工具见 04 |
+| 无对白的空镜 / 动作段缺拟音，或原声要整体替换 | 视频生音效（MMAudio、HunyuanVideo‑Foley） | rea‑video 能力矩阵标 ●；Maestro 内置 MMAudio |
+| 字卡、系统面板、角标、片头片尾、画面内必须正确的文字 | 代码渲染叠加（Remotion 图文层、OpenFilm、Maestro title cards） | zenstory `画面文字` 五种样式；我们已有「UI / 字幕后期叠」铁律 |
+| 解说、口播、图文科普 | 链路 E（MoneyPrinterTurbo、Pixelle‑Video）——音频先行、素材配画 | §2 链路 E |
+| 需要精确走位 / 多机位调度的群戏 | 先做 3D 白模预演出布局参考，再喂 H3 | DramaClaw 3D Previz、Calliope Build Scene、Toonflow 3D 导演台、wind‑comic 导演台 |
+| 单段 > 15 s、原生 2K、参考视频 + 参考音频同用 | 云端（H3 的 2K 模块只在 API；H3 Max；Seedance 2.5） | rea‑video 模型条目（第三方核对，置信度 medium） |
+| 不想维护 ComfyUI 节点图 | Maestro（Wan2GP 运行时，自带 Director 与 Editor；软件非商用许可） | §4.7 |
+
+## 6. 差距清单：我们的 skill 相比这些系统缺什么
+
+按对「4090 本地 H3 做 16:9 短剧」的价值排序。每条给出现状、谁做了、具体落地（脚本 / 参考文件 / 字段）。工作量 S ≈ 半天内、M ≈ 1–2 天、L ≈ 3 天以上（估计，未实现）。
+
+### G1 · QC 只有文字和一份评分提示词，没有脚本（价值最高，M）
+- **现状**：`qc_probe.py` 只管容器级指标与冻结 / 黑场；`contact_sheet.sh` 是固定 4×3 均匀抽帧；Whisper 台词检查、动作量、VLM 评分都只写在 `qc-and-assembly.md` 里；`judge-take-prompt.md` 是一份 6 维 0–5 的综合提示词。
+- **别人**：ArcReel 一次解码出三类信号并做信号加密联络表；DramaClaw 把审片拆成「事实 / 身份 / 画质」三套小 rubric 且各有通过线；ATAS 对照原始剧本；zenstory 的 verify 报切点亮度与音量跳变。
+- **落地**：
+  1. `scripts/qc_signals.py <mp4> [--shots 0,3.5,7.2] [--tail-hold 1.0]` → 侧车 `<take>.signals.json`：`{schema:1, fingerprint:[size, mtime_ns], duration, black:[[s,e]], freeze:[[s,e]], cuts:[t…], cut_check:{expected, detected, missing:[…], extra:[…]}}`；滤镜串照 ArcReel 的阈值；`--shots` 取自分镜的 `shots[].start`，容差 ±0.3 s——**H3 没按分镜切、或多切了，第一时间就能机检**。
+  2. `scripts/contact_sheet.py`（替换 `.sh`）：每镜头至少一帧、每个切点两侧各一帧、BLACK / FREEZE 区间首尾各一帧，每张 ≤ 12 帧，帧下印秒数与标签。
+  3. `scripts/qc_dialogue.py <mp4> --lines seg.dialogue.json`：本地逐词 ASR，对照 `<d>` 原文出 `similarity / head_missing / tail_missing / inserted_words / first_word_s / last_word_s`（阈值沿用 `qc-and-assembly.md` 现有数值）；`first_word_s / last_word_s` 直接喂给 G3 的入出点。
+  4. 把 `assets/judge-take-prompt.md` 拆成 `judge-facts.md`（人数 / 性别 / 核心动作 / 关键道具 / 左右站位 / 场景类型，≥ 6 分且无 critical）、`judge-identity.md`（face = 脸 + 发 + 肤，clothing = 款式 + 颜色 + 配饰，各 ≥ 7）、`judge-frame.md`（畸变 / 乱码文字 / 内容丢失）；三份都写明「不查表情到不到位、构图好不好看；不确定默认通过」，输入里放**剧本原句**而不是我们扩写的提示词；输出带 `suggested_action: none | regenerate | edit_prompt | edit_storyboard`。新 `scripts/judge_take.py` 调本地 VLM 并写 `qc/scorecard.csv`。
+  5. `logs/failures.jsonl`（每次 FAIL 记失败码）+ `scripts/failure_stats.py`：哪类失败最常见 → 该加哪句正向锁。对应 DramaClaw 的失败模式登记表与 shuohao 的 `.gates.jsonl`。
+
+### G2 · `end_state` 只有计划值，没有实拍回写（M）
+- **现状**：铁律 11 要求每段写 `end_state` / `continuity`，但采纳 take 之后没有任何步骤核对「实际停在哪」；下一段照计划写，偏差就一路传下去。
+- **别人**：Emily2040 的 clip‑contract / take‑review 双字段；Toonflow「不用计划末态冒充实际末态」；Calliope 的 REALIZED；ATAS 的 scene_observations。
+- **落地**：
+  1. `assets/episode.schema.json` 的 segment 增加：`status`（planned | ready | generated | reviewed | accepted | accepted_with_deviation | repair | rejected）、`accepted_take{path, seed, sha256}`、`observed_end_state`、`observation_confidence`（low | medium | high）、`accepted_deviations[]`、`already_happened[]`、`reserved_for_later[]`、`chain{relation: hard_cut | continuation | bridge | repair_tail | reanchor, depth}`。
+  2. 新 `scripts/observe_take.py <mp4> --segment s03 --episode ep01.json`：剪掉声明的定格后抽首帧 / 末帧 + 3 张中间帧，打印一份观测骨架（帧上读得到的：每人位置 / 朝向 / 姿态 / 持物 / 服装状态 / 道具位置 / 光线；帧上读不到的：未完成的动作、运镜相位、音频相位），agent 看图填写后 `--write-back`。新 `assets/observe-take-prompt.md` 写明「没从像素读到的不得以 medium / high 写入」。
+  3. `validate_episode.py`：`chain.relation = continuation` 的段，其前一段必须 `accepted*` 且 `observed_end_state` 非空；`continuity` 与前段 `observed_end_state` 不一致时报错并给出 diff；`build_prompts.py` 对未满足的段拒绝出提示词。
+  4. `references/storyboard-and-assets.md` §4 加一句：计划末态用来写分镜，实拍末态用来写下一段；偏差被采纳就改后续计划（`accepted_with_deviation`）。
+
+### G3 · 没有剪辑单、组装脚本和剪辑工程出口（M–L）
+- **现状**：skill 的 `scripts/` 里没有任何拼接脚本（仓库根 `pipeline/stitch.py` 不随 skill 安装），拼接规则全在 `qc-and-assembly.md` §3 的文字里；交付只有 mp4。
+- **别人**：zenstory 剪辑单 + `check / render / verify`；ArcReel 时间线 + 剪映草稿；video‑use `edl.json`；OpenFilm xmeml；story‑studio 的草稿提交流程。
+- **落地**：
+  1. `assets/cutlist.schema.json` + 示例：`{fps, size, loudness:{lufs:-14, tp:-1.5}, clips:[{id:"c1", segment_id, take, in_ms, out_ms, reason_in, reason_out, source_gain_db, hold_ms, transition_to_next:{type, duration_ms}, subtitles:[{start_ms, end_ms, text}]}], bgm:[{file, start_ms, in_ms, out_ms, gain_db:-18, fade_in_ms:1000, fade_out_ms:1000}], ambience:[…], unused:[{segment_id, take, reason}]}`。时间一律整数毫秒；转场 `type` 只收能同时映射到 ffmpeg `xfade` 与 CapCut 预设的几项（叠化 / 闪黑 / 闪白），默认硬切。
+  2. `scripts/assemble.py init | check | render | verify`：`init` 从已采纳 take 生成初稿——对白段入点 = 首词 − 0.25 s（不早于 0.08 s）、出点 = 末词 + 0.4 s，并扣掉声明的 1 s 定格；`check` 查数值自洽、每段要么入片要么在 `unused` 里有理由、字幕与分镜 JSON 的 `dialogue[].text` 逐字一致；`render` 逐段抽取 → 每个边界 30 ms 淡变 → 逐段归一到 −16 LUFS → 拼接 → 字幕最后烧 → 整片 −14 LUFS / −1.5 dBTP；`verify` 报实测时长 / LUFS / 真峰，并列出切点两帧亮度差 > 20、切点前后 0.4 s RMS 差 > 10 dB 的位置。片段边界按累计时长取整到帧。
+  3. `scripts/export_nle.py cutlist.json --format capcut | jianying | xmeml | srt`：CapCut 走 pyCapCut、剪映走 pyJianYingDraft（素材拷进草稿、按内容哈希命名、默认拒绝同名）；xmeml v4 自己写（单视频轨 + 对白 + 配乐，帧 = `round(t×fps)`）。在 `qc-and-assembly.md` §3 加一张「出口选择表」并写明：生成成功 ≠ 在目标软件里打开播放过。
+  4. 不想自己维护 ffmpeg 包装时，把 `kajisho5/ffmpeg-skill` 列为可选依赖（响度、联络表、切点波形、安全区）。
+
+### G4 · 花 GPU 前只有「选择卡」，没有可核对的批次计划与续跑语义（S–M）
+- **现状**：铁律 18 说「选择卡 + 幂等跳过」，`comfy_submit.py` 写 `run.json`，但没有批次预览文件、没有与内容绑定的确认、轮询中断后只能重提。
+- **别人**：zenstory `prepare-batch / CONFIRM / run-batch`；ArcReel 确认指纹与重启自愈；waoowaoo「受理结果未知禁止重提」；Maestro polish budget；ffmpeg‑skill `--plan`。
+- **落地**：
+  1. `scripts/plan_batch.py prepare <ep.json> --segments s01-s06 --seeds 2 --tier draft` → `plans/<batch>.json`：每项 `{segment_id, seed, workflow, steps, size, frames, est_minutes, out_dir, fingerprint}`，`fingerprint = sha256(覆盖后的工作流 JSON + 各媒体文件 sha256 + 提示词)`，`est_minutes` 取 `logs/takes.csv` 同档位中位数；同时打印人能读的表。`confirm` 记录用户确认的 batch 哈希；计划里任何一项指纹变了，确认即失效。
+  2. `comfy_submit.py --plan plans/<batch>.json`：跳过指纹相同且产物完好的项；`POST /prompt` 一返回就把 `prompt_id` 写进 `<out>/handle.json` 再开始轮询；新增 `--collect`：对有 handle 无产物的项只查 `/history/{prompt_id}` 与 `/queue`，仍在跑就等、已完成就下载、确认丢失才允许重提。
+  3. `SKILL.md` 铁律 18 补半句：按集深度优先，一集的段全部过 QC 再开下一集；每批写明最大重抽预算（每段 ≤ 3 次、整批 ≤ N 次），用完就停下报告。
+
+### G5 · 空间只有一句「空间锚点卡」，没有结构化站位（M）
+- **现状**：`camera-and-performance.md` 要求全片一张空间锚点卡、每段复述；场景有母版 + 九宫格。没有「每场开场谁在哪」的数据，也没有反打方向的场景参考契约。
+- **别人**：shuohao `novel-staging`；DramaClaw 空间契约；Toonflow A5 / A8；wind‑comic、Calliope、Toonflow 的 3D 预演。
+- **落地**：
+  1. `episode.schema.json`：`scenes[].items[{id, name, plan:{x,y}, sittable}]`（4–20 件，只收场景母版上**看得见**的东西）；顶层 `stagings[{scene_id, first_segment, places:[{character_id, present, item, side, posture, facing}], extras:{count, where}}]`。
+  2. `scripts/staging.py validate | blocking`：校验在场的人都落在已登记的东西旁、同一侧不叠人、后进场的人 `present:false`、剧本没写群演则 `extras.count = 0`；`blocking` 输出英文走位句（例：`{lin_lan} sits at the left end of the grey sofa, facing frame right; {dr_zhou} stands by the door on frame right, facing her; exactly two people are in the room, the other seats stay empty.`），`build_prompts.py` 把它逐字放进该场第一段的开头，并写入该段 `continuity`。
+  3. `image-stage.md` 场景节增加「反向母版」（同机位掉头 180°）与一份精简空间契约（每面墙 ≤ 8 个 must_preserve，带数量与尺度）；正反打段同时挂正、反两张母版。
+  4. `02-storyboard.md` 加 Toonflow 的两条：位置变化必须对应剧本里的移动事件；相邻段先判「连续 / 只继承持续状态 / 重新锚定」。
+
+### G6 · 没有连戏锁、节拍认领与门日志（M）
+- **现状**：身份靠 `identity_phrase` 逐字复用（靠自觉）；剧本 → 分镜没有可机械对账的映射；`validate_episode.py` / `lint_prompt.py` 的结果不留痕。
+- **别人**：zenstory 连戏锁与 118 KB 交叉校验；shuohao 节拍认领 + 18 门 + `.gates.jsonl` + `stats`。
+- **落地**：
+  1. `characters[].locks[]` / `props[].locks[]`：`{id:"LOCK-LINLAN-COAT", phrase:"camel wool double-breasted coat", scope:"on_screen"}`，短语 =「颜色 + 材质 / 款式 + 物件」；`lint_prompt.py` 新检查：该资产在本段出镜且**没挂它的参考图**时，短语必须原字出现（否定词后的不算）；挂了参考图则豁免。
+  2. `episode.beats[{id, scene_id, kind: action | dialogue, speaker, text, seconds}]`（`seconds` 由脚本按字数与停顿算，不让模型估）；`shots[].beats:[起, 止]`；`validate_episode.py` 查每拍恰好被认领一次、顺序不乱、`dialogue[].text` 与节拍原文逐字相同、段内台词秒数 ≤ 段长。
+  3. 两个校验器每次运行把门的结果追加到项目根 `.gates.jsonl`；`scripts/gate_stats.py` 汇总最常响的门与从没响过的门。
+
+### G7 · 返工只有失败码表，没有处置分流（S，纯文档）
+- **现状**：`qc-and-assembly.md` 有「失败码 → 责任层」表和「同一提示词 3 次同样问题 = 改提示词」。
+- **别人**：zenstory 六档分流 + 四种结论 + 三条出路；Emily2040 的 take 裁决。
+- **落地**：失败码表加一列「处置」（保留沿用 / 裁切避让 / 后期修补 / 建议重抽·可豁免 / 必须重生成 / 剪辑补回）；新增三条规则——先分「参考图毛病」还是「生成毛病」；原因不明的每次只改一个变量，**一眼看清的多处错漏同一轮修完**；重抽 1–2 次仍是同一硬伤就改词或拆镜，仍不行给用户三条出路（留用靠切点藏、把信息挪到相邻段、删段并先转移剧情信息）。每集出一份 `qc/review.md`，结论取 PASS / PROVISIONAL / REVISE / REJECT。
+
+### G8 · 驱动 ComfyUI 的脚本缺预检、角色标签、显存交接与出处锁（S–M）
+- **现状**：`comfy_submit.py` 按节点 id / 标题覆盖、轮询 ≥ 20 s、可定期 `/free`。
+- **别人**：comfy‑mcp 的 validate / slots / vary / preview / VRAM 配方；Calliope 的角色标签；artokun 的 VRAM watchdog 与出处锁。
+- **落地**：`--preflight`（取 `/object_info`，查每个 `class_type` 存在、每个模型 / LoRA 文件名在该输入的可选列表里、帧数落在 17k+5、宽高是 32 的倍数）；支持 `(Input:prompt)` / `(Input:character)` / `(Input:audio)` / `(Output:video)` 标签，`comfyui-nodes.md` 加一节「给工作流打标签」；`--vram-handoff ollama:<model>`（先让 Ollama `keep_alive: 0` 卸载，再 `/free`，复读 `/system_stats` 确认空闲显存回升后才提交）；`scripts/lock_workflow.py` 把模型文件大小 + 部分哈希与各节点包的 git commit 记进 `project.lock.json`，重跑前比对漂移。装了 comfy‑cli 的环境在 `local-stack-and-acceleration.md` 里标注可直接用 `comfy validate` / `comfy workflow vary`。
+
+### G9 · 反打 / 特写的首帧没有「同空间」来源（S）
+- **现状**：`image-stage.md` §⑤ 用编辑模型 + 脸图 + 场景裁切出首帧，每张首帧各自生成。
+- **别人**：ViMax 机位树 + 借视频模型切机位。
+- **落地**：`shots[]` 加可选 `cam_idx`（同机位的镜头复用同一张首帧 / 参考）；`image-stage.md` §⑤ 增加方法：母版首帧 + 「两镜、镜间硬切」的短 I2VA（草稿档）→ 新 `scripts/harvest_cut_frame.py <mp4> --cut 1 --out ff.png`（场景检测取切点后第一帧，没切出来就取末帧）→ 作为反打 / 特写段的首帧；父子机位景别相邻（全 → 中 → 近），不从大远景直接跳特写。
+
+### G10 · 没有局部重拍（M，需先验证）
+- **现状**：一段里 2 秒坏了只能整段重抽或靠剪辑避让。
+- **别人**：wind‑comic Segment retake；LTX Studio Retake。
+- **落地**：`continuity-long-video.md` 新增「局部重拍」：取坏段前后各一帧作首尾帧，补丁长度取覆盖坏段的最短合法帧数，提示词只写这几秒；`scripts/splice_retake.py <take> --from 3.2 --to 5.2 --patch p.mp4` 用精确 seek 定位、整段只重编码一次（x264 crf 17）、保持采样率与声道、总时长不变。**H3 上的补丁最短可用时长与对白段可行性未验证**——先在一个无台词动作段上做样本。
+
+### G11 · 节奏审计全靠 LLM（S）
+- **现状**：`03-rhythm-audit.md` 是 LLM 审计；`validate_episode.py` 查硬约束。
+- **别人**：wind‑comic 的纯函数审计；Emily2040 负载分；shuohao「均匀病」；smixs 三职责律。
+- **落地**：`validate_episode.py --rhythm`：负载分 S = 段长 ÷（节拍数 + 0.5 × 反应 / 插入镜数），< 2.0 告警；子镜头时长方差过小报「均匀病」；连续三镜同景别告警；前三分之一单独统计节拍密度；可选 `shots[].job ∈ emotion | action | pressure`，三者皆无的镜头告警。零 LLM 成本，放在 `03-rhythm-audit` 之前跑。
+
+### G12 · 系列级状态与跨集复用（M）
+- **现状**：「集间：同一组定妆图 + 短语逐字复用，存进系列圣经」。
+- **别人**：LumenX（persona、Reconcile、上回书说到）、zenstory（只记净变化）、DramaClaw（identity planner）。
+- **落地**：`bible/state_ledger.json`（每实体的净变化：前后状态 + 触发段 + 有效范围）；`bible/recap/epNN.md`（上一集最后 500–800 字剧本原文 + 最后一段的 `observed_end_state`）；`characters[].persona` 把造型 / 年龄变体连到同一人；`01-outline.md` 增加一步「与系列库对账，低置信匹配列出来让用户确认」。
+
+### G13 · 续接链上的前瞻择优（S，可选）
+- **现状**：择优只看本段。
+- **别人**：AniMaker MCTS‑Gen。
+- **落地**：`qc-and-assembly.md` §2 加一条——仅对续接链：本段评分前二的 take 各用草稿档出一条下一段，按「本段分 + 下一段分」选，胜出的下一段草稿直接进入下一轮候选。成本是每个节点多 1–2 次草稿生成，只在链首与情绪高点用。
+
+### G14 · skill 自身的评估纪律（S）
+- **现状**：`evals/` 有 5 个 case 与分级器。
+- **别人**：zenstory 的 holdout、盲评、不做 best‑of‑N、过拟合诊断标签；shuohao 每门一个击穿用例。
+- **落地**：`evals/` 分 development / holdout 两组，holdout 只跑一次、用过即退役；每个新增校验门配一个必须被拦下的坏样例；记录「为通过评测而把局部手艺写成通用模板」这类过拟合信号（例如所有答案都硬塞倒计时或二选一）。
+
+## 可写进 skill 的规则
+
+1. 下一段的 `continuity` 抄自上一段**已采纳 take 的实拍末态**，不是计划的 `end_state`；没从抽帧上读到的内容不得写进 `observed_end_state`。（Emily2040 `continuation-handoff.md`；Toonflow `stateAndDelivery.md`）
+2. 给每段标 `already_happened / this_clip_only / reserved_for_later`，提示词只写 `this_clip_only`；已完成的动作下一段不重演，留给后面的事件本段不出现。（Emily2040 `event-density.md`）
+3. 续接只在同一场内做；连续「吃自己输出」的生成先按 2–3 段封顶，场界一律从角色板与场景母版重锚并把链深清零。（Emily2040 `seedance-sequence`；与现有「≤ 4 段」并存，H3 上取值待自测）
+4. Motion‑Context 续接段：所有时间戳后移「钉头帧数 ÷ 24」（22 帧 = 0.92 s）；开头约 2 s 不进新元素、主体不停不转不伸手；`subject_definitions` 与标签整链逐字不变；推 / 环绕不跨接缝；接缝放在行走或动作中途、不放门槛处；配乐写「同一段、同一速度延续」。（Calliope `h3-continuation-prompt/SKILL.md`，MIT）
+5. 硬切段与续接段的段尾写法相反：硬切 = 0.5 s 收束 + 1 s 定格（剪掉）；续接 = 以动作仍在进行收尾。别混用。（Calliope；本 skill 铁律 14）
+6. 要严格锁首帧构图的段不要同时挂音色参考——H3 一挂音频或多图参考就进 full‑reference、失去首帧硬锁；这类段的音色一致交后期。（zenstory `minimax-h3.md`，云 API 经验，本地权重未验证）
+7. 首帧模式的对白段按约 4.1 字 / 秒估时，并为 1.3–2.4 s 的起音延迟留余量或在剪辑时裁掉片头静帧；单喊两字人名的镜头预备后期换音。先用 `qc_dialogue.py` 量出自己机器上的延迟分布再定默认值。（zenstory，同上）
+8. 反应镜按「触发 → 一个准确情绪词 → 两处当前景别看得见的身体破绽 → 1.5 s 内落定保持」写；重大信息的反应分「僵住 → 确认 → 释放」三层，每镜只演一层。（zenstory `performance-action-timing.md`；waoowaoo `video-direction` 转述）
+9. 精确标秒的分段，时间必须恰好填满段长：超了会截句尾，留白会被慢放拖长。（zenstory，同上）
+10. 提示词不用「增加 / 删除 / 替换 / 改成 / 延长 / 续写」这类编辑祈使词，直接描述目标画面；画面描述不重复参考图已经给出的外貌与陈设，专心写构图、此刻的位置状态与姿态。（ArcReel `action_writing_guide.md` 转述；shuohao `storyboard-pass.md`）
+11. 每场第一段开头逐字贴入由 `staging.py` 生成的开场走位句（谁在哪件东西的哪一侧、坐或站、面朝哪、共几人、其余位置空着）；位置变化必须对应剧本里的移动事件。（shuohao `novel-staging`；Toonflow A5.3）
+12. 改了画面动作就同步改 `soundscape`——声景也是动作指令。（shuohao `storyboard-pass.md`）
+13. 每个镜头至少承担「改变情绪 / 推进动作 / 增加压力」之一，并写出一个环境压力、一个身体微动作、一个声音或视觉母题；三者皆无的镜头删掉。（smixs/visual‑skills `dramaturgy.md`，CC BY 4.0，Serge Shima）
+14. VLM 审片只查事实矛盾（人数、性别、核心动作、关键道具、左右站位、场景类型、光线时段），明写不查主观项，不确定默认通过；通过线：事实分 ≥ 6 且无 critical，身份 face ≥ 7 且 clothing ≥ 7。（DramaClaw `verification/prompts.py`，ELv2，转述）
+15. 审片输入给剧本原句，不给我们扩写后的提示词；critical 只留给「高置信、直接可见、与剧本明文矛盾」。（ATAS `film_review.py`，MIT）
+16. 每个 take 解码一次出信号：`blackdetect=d=0.1`、`freezedetect=n=-60dB:d=0.5`、`select='gt(scene,0.4)'`；检测到的切点数应等于 `[Shot N]` 数 − 1（±0.3 s），不等就按「没照分镜切」处理。（阈值来自 ArcReel `signals.py`；切点对账是本文据此的推论，未实测 H3 硬切的 scene 分数分布）
+17. 联络表每镜头至少一帧、切点两侧各一帧、每张 ≤ 12 帧、帧下印秒数；入出点对着这张表定。（ArcReel `sampling.py` / `contact_sheet.py`）
+18. 返工先分流：区间外的毛病裁掉，能后期修的后期修，只有漏关键动作 / 台词、换脸、轴线全反、关键文字乱码才必须重生成；原样重抽 1–2 次仍同一硬伤就改词或拆镜；一眼看清的多处错漏同一轮修完，原因不明才一次只改一个变量。（zenstory `generated-media.md`）
+19. 花 GPU 前出批次预览（段 × seed × 步数 × 预计分钟 × 输出路径）并取得绑定指纹的确认；「继续」不算确认；提交后先把 `prompt_id` 落盘再轮询，重启后按 `prompt_id` 取回，受理结果不明时不重提。（zenstory `short-drama-produce`；ArcReel `restart_recovery.py`；waoowaoo FG‑03）
+20. 一集的全部段做完再开下一集，不按「先全部首帧、再全部视频」横铺多集。（zenstory，同上）
+21. 剪辑单每段写入点理由与出点理由；对白段首音前 0.25 s 入、末音后 0.4 s 出（景别或站位跨度大给 0.6 s），整段 ≥ 1.2 s；每个切点两侧各做 30 ms 音频淡变；字幕逐字取自分镜 JSON，ASR 只用来定时间。（zenstory EDT‑19 / EDT‑05；video‑use 硬规则 3、6）
+22. 成片 −14 LUFS、真峰 ≤ −1.5 dBTP、容差 ±1 LU，一次处理仍超差就停下报告；切点两帧亮度差 > 20 或前后 0.4 s RMS 差 > 10 dB 的位置列清单给人复看。（zenstory `editing-guide.md`；ffmpeg‑skill）
+23. 时间线内部用整数毫秒，片段边界按累计时长取整到帧；转场只用能同时落到 `xfade` 与剪辑软件预设的几种，默认硬切。（ArcReel `model.py` / `render_plan.py` / `transitions.py`；OpenFilm `nle.mjs`）
+24. 出剪辑工程：CapCut 国际版用 pyCapCut，剪映用 pyJianYingDraft，Premiere / DaVinci 用 xmeml v4；素材拷进工程并按内容哈希命名；文件生成成功不等于在目标软件里打开播放过，交付前请用户打开确认。（story‑studio `jianying.md`；OpenFilm；pyCapCut README）
+25. 长任务前先预检（节点类存在、模型文件在列表里）；本地 LLM 与 ComfyUI 同卡时按「卸载 LLM → `/free` → 复读 `/system_stats` → 提交」的顺序，`/free` 要到队列下一次迭代才生效。（Comfy‑Org/comfy‑mcp README）
+
+## 未覆盖
+
+- **没有实跑**任何一个系统；所有 H3 相关的外部经验（4.1 字 / 秒、起音延迟、首帧硬锁与音色参考互斥、续接八条）都未在本地开源权重上验证，写进 skill 前应各做一组样本。
+- **只进目录未读源码**：storytold/artcraft（★41 844）、yi1108/printfilm、BigBanana‑AI‑Director、ai‑fusion‑video、TypeTale、aqm857886159/Nomi（自述可接本地 ComfyUI）、hulutech‑web/novel‑video‑workflow、chillzhuang/Kinema、Yuuhann1999/agent‑storyboard、Vincentwei1021/video‑shotcraft、sarpstar/cinecode、digitalsamba/claude‑code‑video‑toolkit、0xsline/OpenChatCut、diffusionstudio/editor、JimLiu/baocut、GVCLab/CutClaw、showlab/Code2Video、heshengtao/comfyui_LLM_party、tin2tin/Pallaidium 等。
+- **rea‑video 的复刻端 capsule‑cinema**（自述用自托管 H3 复刻）未读；它可能包含「参考视频作动作参考 + 换元素关键帧」的 H3 工作流。
+- **商业平台**：LTX Studio 多数官方页面抓取失败（只拿到搜索摘要与一处产品页表述），Flova 只有一篇公司通稿；未看 Runway、可灵、即梦、OiiOii 等的 agent 产品文档。
+- **学术**：只读代码未读论文正文；原生多镜头模型（HoloCine、MultiShotMaster、ShotStream）属模型簇；CineEvolve、cut‑craft‑bench、VideoGen‑Eval 未读。
+- **文档站**：ArcReel 的 docs.arc‑reel.com、Toonflow 飞书教程（需登录）、DramaClaw 的 `docs/en`（克隆里缺失）未读。
+- **版本变化的口径**：本环境拿不到 GitHub release 说明，Toonflow 与 OpenMontage 的「更新」是拿当前代码与 docs/09、docs/12 的描述逐项比对得出的，不是按 changelog；可能漏掉代码里看不出来的变化。
+- **许可**：只读了各仓库 LICENSE 文件首部与 README 说明，不构成法律意见；MiniMax H3 Community License 的地域条款出自 artokun skill 的转述，未核对原文。
+- **n8n / Dify / Coze**：只抽查了 6 个仓库的 README，没有导入运行任何模板。
