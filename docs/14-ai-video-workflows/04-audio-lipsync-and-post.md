@@ -257,7 +257,7 @@ B6 的四个选项：
 - **硬件 / 速度**：权重合计 3.94 GB；作者只给了 3060 笔记本实时模式数字（xlsr-tiny 10 步，每 180 ms 块推理 150 ms），4090 离线速度未验证；Windows 上 `--compile` 需 `triton-windows==3.2.0.post13`。
 - **许可**：GPL-3.0（代码与 HF `Plachta/Seed-VC` 权重）；本 skill 只以命令行方式调用，不打包其代码。
 - **对 4090 短剧的价值**：链路 A 的核心；每句对白几秒，时间成本可忽略。
-- **坑**：默认离线模型输出 22.05 kHz，H3 原生 32 kHz——直接替换会丢 11–16 kHz 的空气感；用 44 k F0 模型或转换后只取 < 10 kHz 与原声高频带混合（未验证）。仓库已 19 个月未更新，GPL-3.0 仅影响再分发代码，不影响输出。
+- **坑**：默认离线模型输出 22.05 kHz，H3 原生 32 kHz——直接替换会丢 11–16 kHz 的空气感；用 44 k F0 模型或转换后只取 < 10 kHz 与原声高频带混合（未验证）。仓库已 19 个月未更新，遇到新版 PyTorch 兼容问题只能自己修。
 - **评级**：**采用**，但作为「有漂移才用」的修复工具。
 
 #### RVC / Applio
@@ -350,6 +350,7 @@ B6 的四个选项：
 
 #### Stable Audio 3（stabilityai，ComfyUI 原生）
 - **定位**：文本 → 音频家族：`medium`（9.22 GB）、`small-sfx` / `small-music`（各 2.27 GB），文本编码器 `t5gemma_b_b_ul2`（1.19 GB）。
+- **机制**：T5Gemma 文本编码 + 潜空间扩散；每个尺寸都发了 `_base`（多步）与蒸馏版（模板 8 步、cfg 1）两套权重；官方模型卡 gated，架构细节未读。
 - **官方模板参数**：`CheckpointLoaderSimple(stable_audio_3_medium.safetensors)` + `CLIPLoader(t5gemma_b_b_ul2.safetensors, type stable_audio)` + `EmptyLatentAudio(60)`，KSampler 8 步 cfg 1 `lcm` / `simple`；模板内置 Music / Instrument / SFX / One-shot 四类提示词改写。
 - **硬件 / 速度**：small 2.27 GB、medium 9.22 GB，模板用 8 步蒸馏采样；速度未见官方数字。
 - **许可**：stable-audio-community（Stability 社区许可；官方模型卡 gated，本次未读到正文）。
@@ -440,6 +441,7 @@ B6 的四个选项：
 
 #### faster-whisper / WhisperX / stable-ts
 - **定位**：Whisper 生态三件套——faster-whisper 是 CTranslate2 推理引擎，WhisperX 在其上加 wav2vec2 强制对齐与 pyannote 说话人，stable-ts 提供 `align()` 与更好的断句。
+- **机制**：faster-whisper 用 CTranslate2 做 float16 / int8 推理；WhisperX 先 VAD 切段、批量转写，再用按语种选择的 wav2vec2 CTC 模型做音素级强制对齐（中日文按单字）；stable-ts 直接利用 Whisper 的 cross-attention 时间并做静音吸附。
 - **关键参数**：faster-whisper `WhisperModel("large-v3" | "turbo", device="cuda", compute_type="float16")`、`transcribe(audio, word_timestamps=True, vad_filter=True)`、`BatchedInferencePipeline(model).transcribe(audio, batch_size=16)`；WhisperX `--align_model` 可指定，中文默认 `jonatasgrosman/wav2vec2-large-xlsr-53-chinese-zh-cn`，`--diarize` 需 HF token；stable-ts `result.to_ass()`。
 - **硬件**：large-v3 CT2 权重 3.09 GB；WhisperX 自述 large-v2 beam 5 < 8 GB；需 CUDA 12 + cuDNN 9。
 - **许可**：MIT / BSD-2 / MIT；pyannote 说话人模型 CC-BY-4.0。
@@ -485,17 +487,32 @@ ffmpeg -i ep01.mp4 -vn -af ebur128=peak=true -f null -      # 读 I / LRA / Peak
 
 注意：① `acrossfade` 会让总时长缩短一个交叉长度，**硬切短剧不要用它拼对白**，用上面的 `adelay` 定位 + 各自淡变；② `loudnorm` 给不出线性增益时（目标会顶到 TP）自动退回动态模式并改变动态——脚本要检查 `Normalization Type`，退回时改用「固定增益 + `alimiter`」；③ 少于约 3 s 的片段积分响度不可靠，逐句归一用整段对白的测量值；④ H3 段间响度可差 9 LU（skill 既有数据），所以必须**逐 take 先归一再混**。
 
-#### 剪映 / CapCut 草稿导出
-- **pyJianYingDraft**（GuanYixuan，★4958，Apache-2.0，pip 0.3.1，push 2026-10-14）：生成草稿在剪映 5.9 与新版（README 标 10.8）都可用；**读加密模板**需自备 `fallback_loader`；自动导出仅剪映 ≤ 6；草稿需在 Windows 剪映里导出。API：`DraftFolder(root).create_draft(name, 1920, 1080, fps=24, allow_replace=True)` → `append_tracks([TrackSpec(TrackType.audio, "music"), …])` → `VideoSegment(path, trange(start_us, dur_us), source_timerange=…, volume=0.0)` / `AudioSegment(path, target, source_timerange=…, volume=…)` + `add_fade("0.01s", "0.12s")` → `script.import_srt(srt, track_name="subtitle", text_style=TextStyle(size=7.0, auto_wrapping=True), clip_settings=ClipSettings(transform_y=-0.78))` → `script.save()`。本次原型实跑：3 段画面 + 2 条交错对白轨 + 配乐 + SRT，`draft_content.json` 时长 14.75 s、fps 24。
-- **pyCapCut**（同作者，★779）：国际版 CapCut 草稿，README 标验证版本 8.2.0，不支持自动导出。
-- **capcut-mate**（Hommy-master，★2191，Apache-2.0）：FastAPI 服务（`uv run main.py` → `http://localhost:30000/docs`）+ Coze 插件 + 云渲染，适合 n8n / agent 调用。
-- **capcut-cli**（renezander030，★1247，MIT，Node ≥ 18）：`capcut quickstart my-first --video clip.mp4 --srt captions.srt`，直接读写本地草稿库；旧版本（≤ 0.17.2）有安全公告，须升级。
-- **评级**：pyJianYingDraft **采用**（用户在 Windows 上，剪映是最顺手的精修入口）；其余**试用**。
+#### pyJianYingDraft（GuanYixuan/pyJianYingDraft）
+- **定位**：用 Python 直接生成剪映草稿的轻量库（★4958，pip 0.3.1，push 2026-10-14）——把自动剪好的时间线交给人在剪映里精修。
+- **机制**：在剪映草稿目录下写 `draft_content.json` + `draft_meta_info.json`；素材只记录本地绝对路径，不拷贝文件；时间单位是微秒（`SEC = 1_000_000`）。
+- **关键参数**：`DraftFolder(root).create_draft(name, 1920, 1080, fps=24, allow_replace=True)` → `append_tracks([TrackSpec(TrackType.audio, "music"), …])` → `VideoSegment(path, trange(start_us, dur_us), source_timerange=…, speed=…, volume=0.0)` / `AudioSegment(path, target, source_timerange=…, volume=…)` + `add_fade("0.01s", "0.12s")` → `script.import_srt(srt, track_name="subtitle", text_style=TextStyle(size=7.0, auto_wrapping=True), clip_settings=ClipSettings(transform_y=-0.78))` → `script.save()`。
+- **版本兼容**：生成草稿在剪映 5.9 与新版（README 标 10.8）都可用；**读取加密模板**需自备 `fallback_loader`；自动导出仅剪映 ≤ 6；Linux / macOS 能生成，但草稿要在 Windows 剪映里导出。
+- **硬件 / 速度**：纯文件操作，无 GPU；本次原型实跑：3 段画面 + 2 条交错对白轨 + 配乐 + SRT，`draft_content.json` 时长 14.75 s、fps 24。
+- **许可**：Apache-2.0；剪映 / CapCut 本体与其素材库的使用条款另计。
+- **对 4090 短剧的价值**：用户在 Windows 上，剪映是调色、花字、转场、封面最顺手的入口；自动流水线负责「粗剪对齐」，人只做审美决定。
+- **坑**：未缓存的字体 / 特效需二次打开草稿才加载；ducking 与总线响度在剪映里没有等价物，成品混音要作为独立音轨带进去；累计时间用帧数换算，逐段累加四舍五入会出现 1 µs 误差（原型里已见 14750001）。
+- **评级**：**采用**。
 
-#### OpenTimelineIO / FCP XML / EDL / DaVinci Resolve / Premiere
-- **OpenTimelineIO**（ASWF，★2106，Apache-2.0，0.18.1）：0.16 之后核心包只含 `.otio / .otioz / .otiod`，FCP7 XML、CMX3600 EDL、AAF 适配器要另装（`pip install otio-fcp-adapter otio-cmx3600-adapter` 或 `OpenTimelineIO-Plugins`）。本次原型实跑：`otio.adapters.write_to_file(tl, "ep01.otio")`、`adapter_name="fcp_xml"`、`"cmx_3600"` 三种都写出，354 帧。
-- **去向**（通行做法，版本细节未在本次核对）：Resolve 可直接导入 `.otio` / FCP7 XML / EDL；Premiere 导入 FCP7 XML；EDL 只带单轨切点，适合给调色。Resolve 的 Python 外部脚本 API 只有 Studio 版开放（免费版需走内置控制台或社区 MCP，如 `emircbngl/davinci-resolve-mcp-free`，未验证）。
-- **评级**：**采用** `.otio + FCP7 XML` 作为剪映之外的第二工程出口。
+#### pyCapCut / capcut-mate / capcut-cli（合并）
+- **pyCapCut**（同作者，★779）：国际版 CapCut 草稿，README 标验证版本 8.2.0，不支持自动导出；下一版将统一成 `append_track(s)` / `TrackSpec` 接口。**试用**（用 CapCut 国际版时）。
+- **capcut-mate**（Hommy-master，★2191，Apache-2.0）：FastAPI 服务（`uv run main.py` → `http://localhost:30000/docs`）+ Coze 插件 + 云渲染，适合 n8n / agent 以 HTTP 调用。**试用**。
+- **capcut-cli**（renezander030，★1247，MIT，Node ≥ 18）：`capcut quickstart my-first --video clip.mp4 --srt captions.srt`，直接读写本地草稿库，`pip install capcut` 有 Python 包装；≤ 0.17.2 的旧版有安全公告，须升级。**试用**。
+
+#### OpenTimelineIO / FCP XML / EDL（去 DaVinci Resolve / Premiere）
+- **定位**：ASWF 的时间线交换格式与 API（★2106，Apache-2.0，0.18.1）——「剪辑决定」的中立表示，剪映之外的第二个工程出口。
+- **机制**：`Timeline → Track(kind) → Clip / Gap / Transition`，素材用 `ExternalReference(target_url, available_range)`，时间用有理数 `RationalTime(value, rate)`，天然帧精确。
+- **关键参数**：`otio.adapters.write_to_file(tl, "ep01.otio")`；`adapter_name="fcp_xml"`（FCP7 XML）/ `"cmx_3600"`（EDL）；0.16 之后核心包只含 `.otio / .otioz / .otiod`，其余适配器另装：`pip install otio-fcp-adapter otio-cmx3600-adapter`（或 `OpenTimelineIO-Plugins`）。
+- **去向**（通行做法，版本细节未在本次核对）：Resolve 可直接导入 `.otio` / FCP7 XML / EDL；Premiere 导入 FCP7 XML；EDL 只带单轨切点，适合交给调色。
+- **硬件 / 速度**：纯 Python；本次原型实跑三种格式都写出，时间线 354 帧。
+- **许可**：Apache-2.0。
+- **对 4090 短剧的价值**：需要专业调色（Resolve）或交给外部剪辑师时不必重剪；`.otio` 也是做「同一集多平台版本」时最干净的中间表示。
+- **坑**：EDL 的 reel 名被截成 8 字符；Resolve 的 Python **外部**脚本 API 只有 Studio 版开放（免费版只能用内置控制台，或社区方案如 `emircbngl/davinci-resolve-mcp-free`，未验证）；转场 / 变速 / 音量自动化在各适配器里支持不一，保持时间线只含硬切 + 音频偏移最稳。
+- **评级**：**采用**（`.otio + FCP7 XML`）。
 
 #### auto-editor / MoviePy / Remotion
 - **auto-editor**（★6038，Unlicense，Nim 重写）：按响度 / 运动自动剪「死气」，`auto-editor in.mp4 --margin 0.2sec --edit audio:-19dB`，可导出到 Premiere / Resolve / Final Cut 时间线。对 H3 短剧的用途是**口播类**（数字人口播去停顿），剧情片不要用。**试用**。
@@ -505,7 +522,8 @@ ffmpeg -i ep01.mp4 -vn -af ebur128=peak=true -f null -      # 读 I / LRA / Peak
 ### 2.9 插帧与输出规格
 
 - **24 → 30 / 60 fps 的取舍**：H3 原生 24 fps。YouTube 官方建议「按拍摄帧率上传」，24 fps 直接交付即可；国内平台与电视端常见 25 / 30 fps，直接 `fps=30` 是复制帧（每 4 帧重复 1 帧，平移镜头可见顿挫）。要 30 / 60 就用光流插帧，且**只对无硬切的单镜头片段做**（跨切点插帧会生成融帧）。
-- **工具**：Practical-RIFE（★1050，MIT，README 建议默认 4.25，并称 4.24+ 适合扩散生成视频的后处理）；Fannovel16/ComfyUI-Frame-Interpolation（★1095，MIT：RIFE 4.0–4.9、FILM、AMT、IFRNet…）；kijai/ComfyUI-GIMM-VFI（★487，需 `cupy-cuda12==13.3.0`）；yuvraj108c/ComfyUI-Rife-Tensorrt（最快）。ffmpeg `minterpolate=fps=60:mi_mode=mci` 只作无 GPU 的兜底（慢且有拖影）。
+- **工具**：ComfyUI 核心已自带 `FrameInterpolationModelLoader`（`models/frame_interpolation/`，自动识别 FILM / RIFE 权重）+ `FrameInterpolate(images, multiplier 2–16)`，不必装自定义节点；Practical-RIFE（★1050，MIT，README 建议默认 4.25，并称 4.24+ 适合扩散生成视频的后处理）；Fannovel16/ComfyUI-Frame-Interpolation（★1095，MIT：RIFE 4.0–4.9、FILM、AMT、IFRNet…）；kijai/ComfyUI-GIMM-VFI（★487，需 `cupy-cuda12==13.3.0`）；yuvraj108c/ComfyUI-Rife-Tensorrt（最快）。ffmpeg `minterpolate=fps=60:mi_mode=mci` 只作无 GPU 的兜底（慢且有拖影）。
+- **整数倍插帧的精确换算**：插帧器只支持整数倍率，24 → 30 fps = `multiplier 5`（120 fps）后每 4 帧取 1 帧（`select='not(mod(n\,4))'`），24 → 60 fps = `multiplier 5` 后每 2 帧取 1 帧；这样每个输出帧都落在精确时间点上，不引入 `fps` 滤镜的就近取帧抖动（换算为算术结论，节点实跑未验证）。
 - **24 ↔ 25 fps**（给 25 fps 的口型模型）：用时间戳重解释（`-itsscale 0.96` / `1.0416667` + `-c:v copy`），不是插帧。
 - **各平台规格**：
 
@@ -693,7 +711,7 @@ script.import_srt(srt, track_name="subtitle", text_style=TextStyle(size=7.0, aut
 20. **1080p 字幕样式**：中文 58 px / 英文 36 px，`Outline 3`、`MarginV 96 / 52`、`MarginL/R 160`、单行 ≤ 18 汉字、`YCbCr Matrix: TV.709`；烧录 `-vf subtitles=ep01.ass`，软字幕另存 `.srt`。（本簇 libass 实跑）
 21. **每集双出口工程**：`export_capcut_draft.py`（pyJianYingDraft 0.3.1：画面片段 `volume=0.0`、对白交错两轨、`import_srt` 进文本轨、成品混音单独一轨）+ `export_otio.py`（`.otio` 与 FCP7 XML，需 `otio-fcp-adapter`）。（本簇原型实跑）
 22. **母版编码**：1920×1080、24 fps、H.264 High、`-g 12 -bf 2`、yuv420p + bt709 三标记、AAC 48 kHz、`-movflags +faststart`；YouTube 1080p 给 8 Mbps（24–30 fps）/ 12 Mbps（48–60 fps）、立体声 384 kbps。（YouTube 官方上传编码建议）
-23. **要 30 / 60 fps 就按镜头分段用 RIFE 4.25 插帧**，不跨硬切；`fps=30` 复制帧只作兜底；能按 24 fps 交付就不插。（Practical-RIFE README；YouTube 建议按原帧率上传）
+23. **要 30 / 60 fps 就按镜头分段插帧**，不跨硬切：ComfyUI 核心 `FrameInterpolationModelLoader` + `FrameInterpolate(multiplier=5)` 后 30 fps 每 4 取 1、60 fps 每 2 取 1（RIFE 权重建议 4.25）；`fps=30` 复制帧只作兜底；能按 24 fps 交付就不插。（ComfyUI `nodes_frame_interpolation.py`；Practical-RIFE README；YouTube 建议按原帧率上传）
 24. **音频批次与 H3 不同驻**：TTS / VC / 分离 / 改嘴开始前先调 ComfyUI `/free`，整批做完再回去生成；AuK 必须 `--cpu_offload`（否则 ~25 GiB），Fish Drama 3 不在本机跑。（AuK README 显存表；Drama 3 模型卡）
 25. **长旁白与画外音直接 TTS 进混音**，不经 H3；H3 的 VO 只用于 15 s 内 ≤ 20 字的贴画面短句。（skill 既有 VO 限额 + 本簇结论）
 
