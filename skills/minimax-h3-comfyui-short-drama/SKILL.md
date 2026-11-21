@@ -1,7 +1,7 @@
 ---
 name: minimax-h3-comfyui-short-drama
 description: 用本地 ComfyUI 上的 MiniMax H3（海螺 3.0 / Hailuo 03，FL2VA / Ref2VA 开源权重）从剧本、生图（角色卡 / 场景 / 道具 / 逐镜首帧）做到成片的短剧 / 漫剧 / 电影质感短片生产流程，内置 13 个类型包（都市情感、悬疑、古装仙侠、动作打斗、恐怖、喜剧、科幻赛博、3D 国漫、2D 动画、MV、产品广告、口播数字人、手作定格科普）。只要用户提到 MiniMax H3、海螺、Hailuo、H3 工作流、ref2va / fl2va、Turbo LoRA、导演台、短剧分镜、角色一致性、抽卡、二采 / 超分、长视频续接、SageAttention / 稀疏注意力 / 缓存加速、ComfyUI 跑 H3 慢或爆显存，或者想让 agent 接管本地 H3 工作流批量出片——即使没说「短剧」两个字——都要先读本 skill。覆盖：环境盘点与模型文件选择、24 GB 单卡的草稿档 / 精修档加速组合、官方三段式 / 六段式提示词格式与短剧对白规则、分镜分段与角色卡 / 道具绑定、段间续接方案、768P→1080p/2K 画质流水线、QC 与拼接、GitHub 生态里每类工具该用哪个与禁忌清单。
-compatibility: 本地 ComfyUI ≥ 0.37（原生 MiniMaxH3 节点；官方滑窗、原生 latent 放大、H3 出图节点与 RelayVSR 需要 ≥ 0.44 / 0.45，当前最新 0.46.2），单卡 ≥ 16 GB（推荐 24 GB），系统内存 ≥ 32 GB（推荐 64 GB）。脚本需要 Python 3.10+ 与 ffmpeg / ffprobe，核心脚本只用标准库；可选依赖按用到的装：台词质检与字幕对时 `faster-whisper`（建议加 `pypinyin`）、身份门禁 `opencv-python`、导出剪映草稿 `pyJianYingDraft`、导出 OTIO `opentimelineio`。模型与 LoRA 从 HuggingFace 下载。
+compatibility: 本地 ComfyUI ≥ 0.37（原生 MiniMaxH3 节点；官方滑窗、原生 latent 放大、H3 出图节点与 RelayVSR 需要 ≥ 0.44 / 0.45，当前最新 0.46.2），单卡 ≥ 16 GB（推荐 24 GB），系统内存 ≥ 32 GB（推荐 64 GB）。脚本全部是 Python（Windows 可直接运行，通配符写在引号里由脚本自己展开），需要 Python 3.10+ 与 ffmpeg / ffprobe，核心脚本只用标准库；可选依赖按用到的装：台词质检与字幕对时 `faster-whisper`（建议加 `pypinyin`）、身份门禁 `opencv-python`、导出剪映草稿 `pyJianYingDraft`、导出 OTIO `opentimelineio`。模型与 LoRA 从 HuggingFace 下载。
 ---
 
 # MiniMax H3 × ComfyUI 短剧生产
@@ -26,9 +26,9 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 | 2 | 生图：定妆照（锚点，选定后冻结）→ 正面全身 + `face.png` 等单人单视图（拼成的 16:9 角色板只给人审）→ 场景无人母版 + 九宫格 → 道具白底图；再备 2–15 s 干净音色；写识别短语 + 声音短语 | `references/image-stage.md`、`assets/image-prompts.md`、`references/storyboard-and-assets.md` §3 |
 | 3 | 用 `assets/agent-prompts/01-outline.md` → `02-storyboard.md` 让 LLM 把剧本切成 4–15 s 段（对白段 8–12 s，动作 / 硬切镜头 5–8 s），每段 2–4 子镜头，每镜写景别 / 焦段 / 运镜 / 动作 / 表演 / 光线 / 台词 / 声音；多人场景的第一段在 `stagings` 里登记开场站位（脚本据此生成固定的走位句）；跑 `scripts/validate_episode.py --rhythm`，再用 `scripts/render_storyboard.py` 出分镜表给用户审，`03-rhythm-audit.md` 做节奏审计 | `references/storyboard-and-assets.md` §1–2 |
 | 4 | 需要首帧的段（中文真人对白、关键道具特写）用编辑模型 + face.png + 场景裁切出字面首帧（`image-stage.md` §⑤）；`scripts/build_prompts.py` 生成每段提示词与媒体顺序；`scripts/lint_prompt.py` 机检，FAIL 不提交；本地 Ollama 改写只用于三段式，六段式手写 | `references/prompt-format.md` |
-| 5 | 草稿档（Turbo 8 步 + Sage + 768P）每段 2–4 个 seed；先 `scripts/comfy_submit.py … --dry-run` 出批次预览给用户确认，再带 `--confirm <批次号>` 提交；中断了原样重跑即可续取 | `references/local-stack-and-acceleration.md`、`references/comfyui-nodes.md` |
+| 5 | 草稿档（Turbo 8 步 + Sage + 768P）每段 2–4 个 seed；先 `scripts/comfy_submit.py … --dry-run` 出批次预览给用户确认，再带 `--confirm <批次号>` 提交；中断了原样重跑即可续取。同场景动作接续的段按顺序做：上一段采纳 → `scripts/observe_take.py` 把实拍末态写回分镜 → `build_prompts.py --only <下一段>` | `references/local-stack-and-acceleration.md`、`references/comfyui-nodes.md` |
 | 6 | 中选段**同 seed** 精修：LBH latent 放大 + σ 0.45 二采（音频钉死）→ 1920×1088；小脸先修再放大；只有单镜 > 15 s 才续接 | `references/quality-pipeline.md`、`references/continuity-long-video.md` |
-| 7 | QC：`qc_probe.py`（含镜头数对账）→ `qc_dialogue.py` → `identity_gate.py` → `contact_sheet.py` + 人眼；后期：`make_edl.py` → `retime_subtitles.py` → `mix_episode.py`（帧精确拼接、逐段电平、配乐压低、成片响度、验收）→ 需要人工精修时 `export_capcut_draft.py` / `export_otio.py` | `references/qc-and-assembly.md`、`references/audio-and-post.md` |
+| 7 | QC：`qc_probe.py`（含镜头数对账）→ `qc_dialogue.py` → `identity_gate.py` → `contact_sheet.py` + 人眼；后期：`make_edl.py` → `retime_subtitles.py` → `mix_episode.py`（帧精确拼接、逐段电平、配乐压低、成片响度、验收；段间音色不齐先用 `voice_check.py` 量出是哪几句）→ 需要人工精修时 `export_capcut_draft.py` / `export_otio.py` | `references/qc-and-assembly.md`、`references/audio-and-post.md` |
 
 生态里每类任务该选哪个仓库、为什么，见 `references/ecosystem-map.md`；所有已知禁忌集中在 `references/pitfalls.md`。
 
@@ -91,7 +91,7 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 | `scripts/export_otio.py edit/ep01.edl.json --out edit/ep01` | 导出 `.otio` + FCP7 XML + CMX3600，给 Resolve / Premiere（需 `opentimelineio`） |
 | `scripts/lint_prompt.py <prompt.txt> --seconds 10 --images 4 --audios 1` | 提示词机检：字段顺序、时码递增与 1.2 s 下限、17k+5 有效时长、`<d>` 配对、标签先定义后引用、retention 关键词、否定句、静止句、全角符号、字数 |
 | `scripts/selfcheck.py [--keep work]` | 装完 skill 先跑一次（约 1 分钟、不用 GPU）：用合成素材把校验 → 提示词 → 技术 QC（切点对账）→ 联络表 → 剪辑单 → 混音母带 → 工程导出整条链走一遍，逐步报 PASS / FAIL / SKIP，并列出缺哪些可选依赖 |
-| `scripts/fetch_official_guides.sh` | 拉取 MiniMax 官方提示词指南原文作对照 |
+| `scripts/fetch_official_guides.py [目录]` | 拉取 MiniMax 官方提示词指南原文作对照 |
 | `scripts/h3lib/catalog.py build <dir> --kind prop --out props.json` | 把道具图目录化（稀有度从路径解析），供 `validate_episode.py --catalog props.json` 检查 |
 
 ## 参考文件索引

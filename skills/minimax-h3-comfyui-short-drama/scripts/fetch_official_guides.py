@@ -1,0 +1,37 @@
+#!/usr/bin/env python3
+"""Download MiniMax's official prompt-writing guides (three-part and reference mode) and the official
+h3-prompt-writing SKILL.md, for exact wording when something in this skill is unclear.
+
+    python fetch_official_guides.py [dest_folder]      # default: ../references/official
+
+Source: github.com/MiniMax-AI/MiniMax-H3, skills/h3-prompt-writing (MiniMax H3 Community License -
+read-only reference, do not redistribute modified copies). Standard library only.
+"""
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+BASE = "https://raw.githubusercontent.com/MiniMax-AI/MiniMax-H3/main/skills/h3-prompt-writing"
+FILES = {"SKILL.md": "h3-prompt-writing.SKILL.md", "references/base-en.txt": "base-en.txt", "references/ref-en.txt": "ref-en.txt"}
+
+
+def main():
+    dest = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).resolve().parent.parent / "references" / "official"
+    dest.mkdir(parents=True, exist_ok=True)
+    failed = 0
+    for remote, local in FILES.items():
+        try:
+            with urllib.request.urlopen(f"{BASE}/{remote}", timeout=60) as r:
+                data = r.read()
+            (dest / local).write_bytes(data)
+            print(f"saved {dest / local} ({len(data)} bytes)")
+        except (urllib.error.URLError, TimeoutError) as e:
+            failed += 1
+            print(f"could not fetch {remote}: {e}", file=sys.stderr)
+    print("MiniMax H3 Community License - read-only reference, do not redistribute modified copies")
+    sys.exit(1 if failed else 0)
+
+
+if __name__ == "__main__":
+    main()
