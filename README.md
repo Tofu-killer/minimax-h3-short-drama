@@ -29,10 +29,11 @@
 | [11 加速方案](docs/11-acceleration.md) | Turbo LoRA 版本、步数、shift、强度建议，画质代价与规避，其他加速手段叠加原则 |
 | [09 Toonflow 剖析](docs/09-toonflow-analysis.md) | 20k star 开源短剧平台的架构、13 步 skill、H3 供应商协议、ComfyUI 接入方式、MCP 接管路线，以及与本仓库的组合建议 |
 | [13 GitHub 全量调研](docs/13-github-survey/00-catalog.md) | 1750+ 个 H3 相关仓库目录 + 7 簇源码级精读（导演台、续接、加速、提示词工具、agent skill、画质、LoRA），每簇附可写进 skill 的规则 |
+| [14 现有 AI 视频工作流调研](docs/14-ai-video-workflows/00-synthesis.md) | 走出 H3：开源视频模型的 ComfyUI 工作流、端到端流水线与 agent、商业模型与创作者做法、配音 / 口型 / 后期、一致性与分镜生图五份报告 + 综合篇（通用方法论、各模型分工表、对 skill 的改动与未做项） |
 
 ## 可安装 Skill（GitHub 全量调研的沉淀）
 
-[`skills/minimax-h3-comfyui-short-drama/`](skills/minimax-h3-comfyui-short-drama/SKILL.md)：给 Claude Code / Codex / OpenCode 等 agent 安装后，它就知道如何在本地 ComfyUI 上用 H3 从剧本做到成片——环境盘点、24 GB 草稿档 / 精修档加速组合、官方格式提示词与短剧对白规则、分镜与角色卡、段间续接、768P→1080p 画质流水线、QC 与拼接、生态地图与禁忌清单，附校验 / 构建 / 提交 / QC 脚本与 eval 用例。
+[`skills/minimax-h3-comfyui-short-drama/`](skills/minimax-h3-comfyui-short-drama/SKILL.md)：给 Claude Code / Codex / OpenCode 等 agent 安装后，它就知道如何在本地 ComfyUI 上用 H3 从剧本做到成片——环境盘点、24 GB 草稿档 / 精修档加速组合、官方格式提示词与短剧对白规则、分镜与角色卡、段间续接、768P→1080p 画质流水线、QC 与拼接、生态地图与禁忌清单，附校验 / 构建 / 提交 / QC 脚本与 eval 用例。2026-11 起还包括：生图阶段（定妆照 → 单视图参考 → 场景 / 道具 → 逐镜首帧）、13 个类型包、脚本化 QC（镜头数与分镜对账、逐句台词质检、真人脸身份门禁、带时间戳的联络表）、一份剪辑单走到底的后期（字幕对时、帧精确拼接与混音母带、导出剪映草稿 / OTIO），以及 H3 做不了的镜头该换哪个本地或云端模型。
 
 ```bash
 npx skills add https://github.com/Tofu-killer/minimax-h3-short-drama --skill minimax-h3-comfyui-short-drama
