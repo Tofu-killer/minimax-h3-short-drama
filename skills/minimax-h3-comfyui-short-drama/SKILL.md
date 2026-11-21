@@ -86,6 +86,7 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 | `scripts/make_edl.py ep.json --selects selects/ep01 --out edit/ep01.edl.json` | 从分镜 + 中选片段生成剪辑单：每段入出帧（裁起始音节与定格尾）、锁定台词、L-cut；之后所有后期脚本都读它 |
 | `scripts/retime_subtitles.py edit/ep01.edl.json --out subs/ep01 [--bilingual]` | 字幕：文字 = 锁定台词，时间 = 音频；出 `.srt` / `.ass`，并把每句起止时间写回剪辑单（需 `faster-whisper`） |
 | `scripts/mix_episode.py edit/ep01.edl.json --out final/ep01.mp4 [--ass subs/ep01.ass] [--stems-out audio/ep01]` | 装配与母带：帧精确拼接、按台词区间对齐各段电平、环境声底、配乐在台词处自动压低、成片 −14 LUFS / −1.5 dBTP、可烧字幕；自动验收并写报告 |
+| `scripts/voice_check.py edit/ep01.edl.json --out qc/voice [--episode ep.json \| --anchor 角色=样音.wav]` | 音色漂移量化：逐句测中位基频，与角色锚点（或本集该角色的中位数）比，≤ 0.5 半音不动、0.5–2 半音去听、> 2 半音重抽或变声；台词下面压着音效 / 配乐测不准的句子标 `unreadable`（需 `numpy`） |
 | `scripts/export_capcut_draft.py edit/ep01.edl.json --drafts "<剪映草稿目录>" [--report … --mix …]` | 导出可在剪映 / CapCut 里继续精修的草稿（切点与自动成片逐帧一致；需 `pyJianYingDraft`） |
 | `scripts/export_otio.py edit/ep01.edl.json --out edit/ep01` | 导出 `.otio` + FCP7 XML + CMX3600，给 Resolve / Premiere（需 `opentimelineio`） |
 | `scripts/lint_prompt.py <prompt.txt> --seconds 10 --images 4 --audios 1` | 提示词机检：字段顺序、时码递增与 1.2 s 下限、17k+5 有效时长、`<d>` 配对、标签先定义后引用、retention 关键词、否定句、静止句、全角符号、字数 |
