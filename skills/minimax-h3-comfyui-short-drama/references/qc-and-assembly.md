@@ -1,6 +1,6 @@
 # QC 与拼接
 
-> 本页脚本的验证口径：`qc_probe.py`、`qc_dialogue.py`、`contact_sheet.py`、`make_edl.py`、`retime_subtitles.py`、`mix_episode.py`、两个导出脚本都在一支 38 s 的真实 H3 成片（切成 5 段）上跑通过（Linux、ffmpeg 6.1、CPU）：切点 7 / 7 检出且无误报，复读台词被拦下，成片 910 帧与计划一致、音画偏移 0 ms、−14.2 LUFS / −1.6 dBTP。**没有在用户的 Windows + 4090 上跑过**，剪映草稿也没有在剪映里打开过——第一次用先拿样片段走一遍。
+> 本页脚本的验证口径：`qc_probe.py`、`qc_dialogue.py`、`contact_sheet.py`、`make_edl.py`、`retime_subtitles.py`、`mix_episode.py`、两个导出脚本都在一支 38 s 的真实 H3 成片（切成 5 段）上跑通过（Linux、ffmpeg 6.1、CPU）：切点 7 / 7 检出且无误报，复读台词被拦下，成片 910 帧与计划一致、音画偏移 0 ms、−14.2 LUFS / −1.6 dBTP。**没有在用户的 Windows + 4090 上跑过**，剪映草稿也没有在剪映里打开过——装好后先跑 `scripts/selfcheck.py`（合成素材，约 1 分钟，逐步报 PASS / FAIL），再拿样片段走一遍。
 
 ## 1. QC：脚本先筛，人只看联络表
 
@@ -69,6 +69,8 @@ selects/ep01/<段>.mp4（精修后的中选片段，一段一个）
  → scripts/export_capcut_draft.py edit/ep01.edl.json --drafts "<剪映草稿目录>" --report final/ep01.mix.report.json --mix final/ep01.mix.wav
    scripts/export_otio.py edit/ep01.edl.json --out edit/ep01 --mix final/ep01.mix.wav   # 要人工精修时二选一
 ```
+
+完整示例见 `assets/edl.example.json`（一段用片段自带声音，一段用分离出的对白 / 非人声 stem，带环境声与配乐）。
 
 **EDL 是唯一事实源**：字幕、混音、剪映草稿、OTIO 都从它算时间线（`scripts/h3lib/edl.py`，位置 = 帧数累加，不是秒数累加），所以四者的切点逐帧一致。手改都改这一个文件，重跑 `make_edl.py` 不会覆盖已有的段（`--overwrite` 才重建）。
 

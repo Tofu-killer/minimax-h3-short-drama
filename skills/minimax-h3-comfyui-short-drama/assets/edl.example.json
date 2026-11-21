@@ -1,0 +1,79 @@
+{
+ "name": "ep01",
+ "title": "深夜走廊 EP01",
+ "fps": 24.0,
+ "width": 1920,
+ "height": 1080,
+ "segments": [
+  {
+   "id": "s01",
+   "video": "selects/ep01/s01.mp4",
+   "frames_total": 192,
+   "src_fps": 24.0,
+   "in_frame": 2,
+   "out_frame": 192,
+   "audio": "native",
+   "nondialogue": null,
+   "l_cut": 0.25,
+   "j_cut": 0.0,
+   "scene": "corridor",
+   "lines": [
+    {
+     "speaker": "lin_lan",
+     "name": "林岚",
+     "text": "你到底瞒了我多久？",
+     "shot": 2,
+     "start": 4.625,
+     "end": 6.75,
+     "coverage": 1.0
+    }
+   ]
+  },
+  {
+   "id": "s02",
+   "video": "selects/ep01/s02.mp4",
+   "frames_total": 243,
+   "src_fps": 24.0,
+   "in_frame": 2,
+   "out_frame": 219,
+   "audio": "audio/ep01/stems/s02_vocals.wav",
+   "nondialogue": "audio/ep01/stems/s02_instrumental.wav",
+   "l_cut": 0.25,
+   "j_cut": 0.0,
+   "scene": "corridor",
+   "lines": [
+    {
+     "speaker": "dr_zhou",
+     "name": "周医生",
+     "text": "从你母亲住院的第一天起。",
+     "shot": 2,
+     "en": "Since the day your mother was admitted.",
+     "start": 3.875,
+     "end": 6.5,
+     "coverage": 1.0
+    }
+   ]
+  }
+ ],
+ "ambience": {
+  "corridor": {
+   "file": "audio/ep01/corridor_tone.wav",
+   "gain_db": -34
+  }
+ },
+ "music": {
+  "file": "audio/ep01/score.wav",
+  "gain_db": -6,
+  "fade_in": 0.5,
+  "fade_out": 1.0,
+  "loop": false,
+  "duck": {
+   "depth_db": 9
+  }
+ },
+ "loudness": {
+  "dialogue_lufs": -16,
+  "program_lufs": -14,
+  "true_peak": -1.5
+ }
+}

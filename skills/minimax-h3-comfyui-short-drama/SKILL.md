@@ -21,7 +21,7 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 
 | 步 | 做什么 | 读 |
 |----|--------|----|
-| 0 | 列出 GPU / ComfyUI 版本 / 已有模型与 LoRA / 自定义节点 / 现有工作流；用 `assets/local-inventory-checklist.md` 的清单 | `references/local-stack-and-acceleration.md` |
+| 0 | 列出 GPU / ComfyUI 版本 / 已有模型与 LoRA / 自定义节点 / 现有工作流；用 `assets/local-inventory-checklist.md` 的清单；跑一次 `scripts/selfcheck.py` 确认 ffmpeg 与后期脚本在这台机器上能用 | `references/local-stack-and-acceleration.md` |
 | 1 | 确认类型（`assets/genres/README.md` 选一个类型包，看 H3 适配度与绕法）与风格（电影质感 / 漫剧）、画幅（16:9：训练格点 1344×768 其实是 7:4，真 16:9 用 1536×864 或生成后 lanczos 到 1920×1080）、单集时长、每段时长 | `assets/genres/`、`assets/style-*.md`、`references/model-and-modes.md` 分辨率格点 |
 | 2 | 生图：定妆照（锚点，选定后冻结）→ 正面全身 + `face.png` 等单人单视图（拼成的 16:9 角色板只给人审）→ 场景无人母版 + 九宫格 → 道具白底图；再备 2–15 s 干净音色；写识别短语 + 声音短语 | `references/image-stage.md`、`assets/image-prompts.md`、`references/storyboard-and-assets.md` §3 |
 | 3 | 用 `assets/agent-prompts/01-outline.md` → `02-storyboard.md` 让 LLM 把剧本切成 4–15 s 段（对白段 8–12 s，动作 / 硬切镜头 5–8 s），每段 2–4 子镜头，每镜写景别 / 焦段 / 运镜 / 动作 / 表演 / 光线 / 台词 / 声音；跑 `scripts/validate_episode.py --rhythm`，再用 `scripts/render_storyboard.py` 出分镜表给用户审，`03-rhythm-audit.md` 做节奏审计 | `references/storyboard-and-assets.md` §1–2 |
@@ -89,6 +89,7 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 | `scripts/export_capcut_draft.py edit/ep01.edl.json --drafts "<剪映草稿目录>" [--report … --mix …]` | 导出可在剪映 / CapCut 里继续精修的草稿（切点与自动成片逐帧一致；需 `pyJianYingDraft`） |
 | `scripts/export_otio.py edit/ep01.edl.json --out edit/ep01` | 导出 `.otio` + FCP7 XML + CMX3600，给 Resolve / Premiere（需 `opentimelineio`） |
 | `scripts/lint_prompt.py <prompt.txt> --seconds 10 --images 4 --audios 1` | 提示词机检：字段顺序、时码递增与 1.2 s 下限、17k+5 有效时长、`<d>` 配对、标签先定义后引用、retention 关键词、否定句、静止句、全角符号、字数 |
+| `scripts/selfcheck.py [--keep work]` | 装完 skill 先跑一次（约 1 分钟、不用 GPU）：用合成素材把校验 → 提示词 → 技术 QC（切点对账）→ 联络表 → 剪辑单 → 混音母带 → 工程导出整条链走一遍，逐步报 PASS / FAIL / SKIP，并列出缺哪些可选依赖 |
 | `scripts/fetch_official_guides.sh` | 拉取 MiniMax 官方提示词指南原文作对照 |
 | `scripts/h3lib/catalog.py build <dir> --kind prop --out props.json` | 把道具图目录化（稀有度从路径解析），供 `validate_episode.py --catalog props.json` 检查 |
 
