@@ -60,7 +60,9 @@ def main():
     ap.add_argument("take")
     ap.add_argument("--episode", required=True)
     ap.add_argument("--segment", required=True)
-    ap.add_argument("--freeze-tail", type=float, default=0.0, help="seconds of declared end freeze (the last MOVING frame is before it)")
+    ap.add_argument("--freeze-tail", type=float, default=None,
+                    help="seconds of declared end freeze (the last MOVING frame is before it); default: 1.0 when the segment's "
+                         "last shot has end_hold, else 0")
     ap.add_argument("--out", default="qc/observe", help="folder for the observation sheet")
     ap.add_argument("--write", help="the observed end state, one or two sentences")
     ap.add_argument("--confidence", choices=["low", "medium", "high"], help="how sure the frames make you (required with --write)")
@@ -78,6 +80,9 @@ def main():
     i = ids.index(a.segment)
     seg = raw["segments"][i]
     nxt = raw["segments"][i + 1] if i + 1 < len(raw["segments"]) else None
+    if a.freeze_tail is None:
+        shots = seg.get("shots") or []
+        a.freeze_tail = 1.0 if shots and shots[-1].get("end_hold") else 0.0
 
     if a.reject:
         seg["status"] = "rejected"
@@ -93,6 +98,13 @@ def main():
         text = a.write.strip()
         if len(text.split()) < 8:
             sys.exit("the observed state is too short to hand over positions, posture and props (write one or two full sentences)")
+        if nxt and (nxt.get("continuity") or "").strip().startswith("@observed"):
+            bound = set(nxt.get("character_ids", [])) | set(nxt.get("prop_ids", [])) | {nxt.get("scene_id")}
+            import re as _re
+            unknown = [k for k in _re.findall(r"\{([A-Za-z0-9_\u4e00-\u9fff-]+)\}", text) if k not in bound]
+            if unknown:
+                sys.exit(f"{nxt['id']} opens from this text, but it does not bind {', '.join('{' + k + '}' for k in unknown)}: "
+                         f"add them to {nxt['id']}'s character_ids / prop_ids, or describe them in words")
         seg["status"] = "accepted_with_deviation" if a.deviation else "accepted"
         seg["accepted_take"] = {"path": str(take), "sha256": sha256_file(take)}
         seg["observed_end_state"] = text
@@ -134,7 +146,9 @@ def main():
     print("  " + " | ".join(f"{k + 1}: {t:.2f}s {tag}" for k, (t, tag) in enumerate(samples)))
     print(f"\nplanned end_state of {a.segment}:\n  {seg.get('end_state', '(none)')}")
     print("""
-Look at the LAST frames of the sheet and write one or two sentences in the style of end_state, with {asset_id} placeholders:
+Look at the LAST frames of the sheet and write one or two sentences in the style of end_state, with {asset_id} placeholders.
+The text is pasted into the next segment's prompt after "The clip opens from this state:", so write a state, in
+English, and use only placeholders of assets the next segment binds:
   each person  where in frame (left / centre / right, near / far), which way they face, posture, what the hands hold, wardrobe state
   key props    where they are now
   light        direction and colour, if it differs from the start

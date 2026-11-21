@@ -12,8 +12,17 @@ inside any agent sandbox or on Windows with the ComfyUI-embedded python.
         --set 7.seed=12345 --set 7.steps=8 \
         --batch 3 --out takes/ep01/s03 --tag s03 --log logs/takes.csv
 
+    # or let the segment file from build_prompts.py do the wiring (prompt, frame count, every reference in order):
+    python3 comfy_submit.py yz_ref2va.api.json --media prompts/ep01/s03.media.json \
+        --batch 3 --out takes/ep01/s03 --tag s03 --log logs/takes.csv
+
     python3 comfy_submit.py wf.api.json ... --dry-run          # show the batch, spend nothing
     python3 comfy_submit.py wf.api.json ... --confirm 3f9a1c2b7d10   # run only if the batch is still that one
+
+--media replaces whatever references the exported workflow carried: it adds one LoadImage / LoadAudio node per
+reference and links them as "ref_images.ref_image_0", "ref_audios.ref_audio_0", ... on the single
+MiniMaxH3ReferenceToVideo node (I2VA / FL2VA: first_frame / last_frame on MiniMaxH3ImageToVideo). Everything else
+in the workflow - models, LoRA, sampler, resolution - stays as you exported it; --set still works on top.
 
 Overrides
   --set <node_id>.<input>=<value> / --set-title "<title>".<input>=<value>
@@ -26,8 +35,8 @@ Overrides
 Before anything is queued (skip with --no-preflight; --preflight-only stops after it)
   every node class must exist on the server, every model / LoRA / sampler name must be one the server
   offers (with the closest match when it is not), required inputs must be present, MiniMax H3 frame counts
-  must sit on the 17k+5 grid, widths / heights must be multiples of 32, and the H3 reference groups
-  (ref_images ...) must be objects, not lists. Free VRAM is printed.
+  must sit on the 17k+5 grid, widths / heights must be multiples of 32, and the H3 reference inputs must be
+  the flat keys ComfyUI reads ("ref_images.ref_image_0", ...). Free VRAM is printed.
 
 Re-running the same command is safe
   * every take gets a fingerprint (the final workflow + the content of every uploaded file). A take that
@@ -158,6 +167,101 @@ def apply_sets(wf, sets, server, media, do_upload, by_title=False):
         wf[nid]["inputs"][inp] = parse_value(raw, inp, server, media, do_upload)
 
 
+H3_REF, H3_I2V, H3_EMPTY = "MiniMaxH3ReferenceToVideo", "MiniMaxH3ImageToVideo", "EmptyMiniMaxH3LatentAV"
+REF_GROUPS = ("ref_images.", "ref_videos.", "ref_video_audios.", "ref_audios.")
+
+
+def apply_media(wf: dict, media_json: Path, server: str, media: dict, do_upload: bool, node_id: str | None) -> list[str]:
+    """Put a segment into the workflow exactly as build_prompts.py numbered it: prompt text, frame count, and one
+    Load node per reference wired to ref_images.ref_image_0.. / ref_audios.ref_audio_0.. (Ref2VA) or to
+    first_frame / last_frame (I2VA / FL2VA). Whatever references the workflow carried before are replaced.
+    Returns the lines of the wiring table."""
+    spec = json.loads(media_json.read_text(encoding="utf-8"))
+    mode = spec.get("mode", "ref2va")
+    want = H3_REF if mode == "ref2va" else H3_I2V
+    hits = [k for k, v in wf.items() if v.get("class_type") == want]
+    if node_id:
+        if node_id not in wf:
+            die(f"--h3-node {node_id} is not in the workflow")
+        hits = [node_id]
+    if len(hits) != 1:
+        die(f"--media: the segment is {mode}, which needs exactly one {want} node in the workflow; found {len(hits)}"
+            + (f" ({', '.join(hits)}) - pick one with --h3-node" if hits else " - export a workflow built on that node"))
+    nid = hits[0]
+    inputs = wf[nid]["inputs"]
+    prompt_file = media_json.parent / spec.get("prompt_file", f"{spec['segment']}.txt")
+    if not prompt_file.exists():
+        die(f"--media: prompt file not found: {prompt_file}")
+    inputs["prompt"] = prompt_file.read_text(encoding="utf-8")
+    frames = spec.get("frames")
+    lines = [f"segment {spec['segment']} ({mode}) -> node {nid} ({want}); prompt {prompt_file.name}, {len(inputs['prompt'].split())} words"]
+    if frames:
+        inputs["length"] = int(frames)
+        for k, v in wf.items():
+            if v.get("class_type") == H3_EMPTY and not isinstance(v["inputs"].get("length"), list):
+                v["inputs"]["length"] = int(frames)
+        lines.append(f"length = {frames} frames ({frames / 24:.3f} s)")
+    for key in [k for k in inputs if k.startswith(REF_GROUPS) or k in ("ref_images", "ref_videos", "ref_video_audios", "ref_audios")]:
+        del inputs[key]
+    next_id = max([int(k) for k in wf if str(k).isdigit()] + [0]) + 1000        # ids well clear of the exported ones
+
+    def load_node(kind: str, path: Path, title: str) -> str:
+        nonlocal next_id
+        if not path.exists():
+            die(f"--media: reference file not found: {path}")
+        name = upload(server, path) if do_upload else path.name
+        media[name] = sha256_file(path)
+        new = str(next_id)
+        next_id += 1
+        wf[new] = {"class_type": "LoadImage" if kind == "image" else "LoadAudio",
+                   "inputs": {"image" if kind == "image" else "audio": name}, "_meta": {"title": title}}
+        return new
+
+    n_img = n_aud = 0
+    for item in spec.get("media", []):
+        path = Path(item["path"])
+        if item["type"] == "image" and item.get("role") in ("first_frame", "last_frame"):
+            new = load_node("image", path, item["role"])
+            inputs[item["role"]] = [new, 0]
+            lines.append(f"{item['role']:12s} <- {path.name}")
+        elif item["type"] == "image":
+            if mode != "ref2va":
+                die(f"--media: a reference image in a {mode} segment has nowhere to go ({path.name})")
+            new = load_node("image", path, f"Picture {n_img + 1}")
+            inputs[f"ref_images.ref_image_{n_img}"] = [new, 0]
+            n_img += 1
+            lines.append(f"<Picture {n_img}>  <- {path.name}")
+        elif item["type"] == "audio":
+            new = load_node("audio", path, f"Audio {n_aud + 1}")
+            inputs[f"ref_audios.ref_audio_{n_aud}"] = [new, 0]
+            n_aud += 1
+            lines.append(f"<Audio {n_aud}>    <- {path.name}")
+    return lines
+
+
+def settings_summary(wf: dict) -> list[str]:
+    """What this workflow will actually run with - for the batch preview."""
+    out = []
+    for k, v in wf.items():
+        cls, inp = v.get("class_type", ""), v.get("inputs", {})
+        lit = {n: x for n, x in inp.items() if not isinstance(x, (list, dict))}
+        if cls in (H3_REF, H3_I2V, H3_EMPTY) and "width" in lit:
+            secs = f" = {lit['length'] / 24:.2f}s" if isinstance(lit.get("length"), int) else ""
+            refs = sum(1 for n in inp if n.startswith("ref_images.")), sum(1 for n in inp if n.startswith("ref_audios."))
+            extra = f", {refs[0]} reference image(s), {refs[1]} audio" if cls == H3_REF else ""
+            out.append(f"{cls} [{k}]: {lit.get('width')}x{lit.get('height')}, {lit.get('length')} frames{secs}"
+                       + (f", ref_image_size {lit['ref_image_size']}" if "ref_image_size" in lit else "") + extra)
+        elif "steps" in lit and ("cfg" in lit or "sampler_name" in lit):
+            out.append(f"{cls} [{k}]: {lit.get('steps')} steps, cfg {lit.get('cfg')}, {lit.get('sampler_name', '?')} / {lit.get('scheduler', '?')}")
+        elif "lora_name" in lit:
+            out.append(f"{cls} [{k}]: {lit['lora_name']} @ {lit.get('strength_model', lit.get('strength', '?'))}")
+        elif "unet_name" in lit:
+            out.append(f"{cls} [{k}]: {lit['unet_name']}")
+        elif "shift_video" in lit:
+            out.append(f"{cls} [{k}]: shift video {lit['shift_video']} / audio {lit.get('shift_audio')}")
+    return out
+
+
 def seed_nodes(wf):
     return [k for k, v in wf.items() if "seed" in v.get("inputs", {}) and not isinstance(v["inputs"]["seed"], list)]
 
@@ -210,14 +314,33 @@ def preflight(server: str, wf: dict, media: dict) -> list[str]:
         if cls and "MiniMaxH3" in cls:
             for group, prefix in (("ref_images", "ref_image_"), ("ref_videos", "ref_video_"),
                                   ("ref_video_audios", "ref_video_audio_"), ("ref_audios", "ref_audio_")):
-                g = inputs.get(group)
-                if g is None:
-                    continue
-                if not isinstance(g, dict):
-                    errors.append(f"{where}: {group} must be an object like {{\"{prefix}0\": [\"<node id>\", 0]}} - written as a "
-                                  f"list it is accepted but silently ignored (references dropped, black output)")
-                elif any(not (k.startswith(prefix) and k[len(prefix):].isdigit()) for k in g):
-                    errors.append(f"{where}: keys of {group} must be {prefix}0, {prefix}1, ... (found {', '.join(g)})")
+                if group in inputs:                       # ComfyUI reads "ref_images.ref_image_0", never a list or an object
+                    errors.append(f"{where}: `{group}` is written as a {'list' if isinstance(inputs[group], list) else 'nested object'} - "
+                                  f"ComfyUI only reads flat keys \"{group}.{prefix}0\", \"{group}.{prefix}1\", ... (each a link "
+                                  f"[\"<node id>\", 0]); other shapes are silently dropped and the references never reach the model")
+                keys = sorted((k for k in inputs if k.startswith(group + ".")), key=lambda k: k)
+                idx = []
+                for k in keys:
+                    tail = k[len(group) + 1:]
+                    if not (tail.startswith(prefix) and tail[len(prefix):].isdigit()):
+                        errors.append(f"{where}: unexpected key {k!r} (expected {group}.{prefix}<number from 0>)")
+                    else:
+                        idx.append(int(tail[len(prefix):]))
+                if idx and sorted(idx) != list(range(len(idx))):
+                    errors.append(f"{where}: {group} keys must be numbered 0..{len(idx) - 1} without gaps (found {sorted(idx)}) - "
+                                  f"the order is the <Picture N> / <Audio N> numbering")
+            text = inputs.get("prompt")
+            if cls == H3_REF and isinstance(text, str):      # does the prompt talk about references that are not wired?
+                import re as _re
+                for label, group in (("Picture", "ref_images."), ("Audio", "ref_audios."), ("Video", "ref_videos.")):
+                    used = [int(x) for x in _re.findall(rf"<{label} (\d+)>", text)]
+                    wired = sum(1 for k in inputs if k.startswith(group))
+                    if used and max(used) > wired:
+                        errors.append(f"{where}: the prompt refers to <{label} {max(used)}> but {wired} reference "
+                                      f"{label.lower()}(s) are wired to this node - without them the model invents the look "
+                                      f"(use --media <segment>.media.json to wire them in prompt order)")
+                    elif wired and not used:
+                        errors.append(f"{where}: {wired} reference {label.lower()}(s) are wired but the prompt never mentions <{label} N>")
             n = inputs.get("length")
             if isinstance(n, int) and (n - 5) % 17 != 0:
                 k = round((n - 5) / 17)
@@ -367,8 +490,12 @@ def archive_previous(dest: Path) -> None:
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0], formatter_class=argparse.RawDescriptionHelpFormatter,
+                                 epilog=__doc__[__doc__.index("    # 1) export"):])
     ap.add_argument("workflow", help="API-format workflow JSON")
+    ap.add_argument("--media", help="<segment>.media.json from build_prompts.py: sets the prompt and the frame count on the H3 node and "
+                                    "wires every reference in the order that numbered <Picture N> / <Audio N>")
+    ap.add_argument("--h3-node", help="node id of the H3 conditioning node when the workflow has more than one")
     ap.add_argument("--server", default="http://127.0.0.1:8188")
     ap.add_argument("--set", action="append", default=[], help="node_id.input=value (value may be @file)")
     ap.add_argument("--set-title", action="append", default=[], help='"Node title".input=value')
@@ -393,7 +520,10 @@ def main():
         die("this is a UI workflow; export with 'Export (API)' instead")
     offline = a.dry_run
     media: dict[str, str] = {}
+    wiring: list[str] = []
     try:
+        if a.media:
+            wiring = apply_media(wf, Path(a.media), a.server, media, do_upload=not offline, node_id=a.h3_node)
         apply_sets(wf, a.set, a.server, media, do_upload=not offline)
         apply_sets(wf, a.set_title, a.server, media, do_upload=not offline, by_title=True)
     except urllib.error.URLError as e:
@@ -444,6 +574,20 @@ def main():
                f"(median of {len(past)} finished take(s) in this folder)")
     else:
         est = "no timing history in this folder yet"
+    if not past and todo and a.log and Path(a.log).exists():               # no history here: look in the takes log
+        try:
+            with open(a.log, newline="", encoding="utf-8-sig") as fh:
+                logged = [float(r["seconds"]) for r in csv.DictReader(fh)
+                          if r.get("workflow") == Path(a.workflow).name and r.get("status") == "success" and r.get("seconds")]
+            if logged:
+                est = (f"about {statistics.median(logged) * len(todo) / 60:.1f} min at {statistics.median(logged):.0f}s per take "
+                       f"(median of {len(logged)} earlier take(s) of this workflow in {a.log})")
+        except (OSError, ValueError, KeyError):
+            pass
+    for line in wiring:
+        print("  " + line)
+    for line in settings_summary(wf):
+        print("  " + line)
     print(f"batch {batch_id}: {len(plan)} take(s) -> {len(todo)} to run; {est}")
     for p in plan:
         note = {"done": "already finished with identical inputs - skipped", "resume": "was queued before - will be collected, not resubmitted",

@@ -75,6 +75,7 @@ ComfyUI 0.37.2 已内置 Qwen-Image 2.1（`TextEncodeQwenImage21`、`QwenImage21
 ## 3. 提示词模板（英文，正向写法；全文另存 `../assets/image-prompts.md`）
 
 防撞脸（每个角色都要过）：
+- 这一节写的是**生图用的完整外貌**，存进角色的 `sheet_phrase`。它不进视频提示词：H3 有参考图，提示词里只要一句短外貌 `identity_phrase`（年龄段 + 发型发色 + 主服装与颜色 + 一个标志物，12–25 词，`a <who> with <features>`）和一个短称 `short_phrase`（`the grey-haired doctor in the white coat`）——从定下来的定妆照上看着写。
 - 脸用 **3–5 处骨相**，按「脸型 → 颧骨 → 下颌下巴 → 眉骨眼窝 → 眼 → 鼻 → 嘴」取前几处；同项目任意两人骨相 ≥ 3 处不同、发型 / 体型 / 体态 / 主色 / 标志五格 ≥ 2 格不同；`straight high nose bridge`、`black hair in a bun`、`tall and slender` 这类高频词同项目只许出现一次（TapCanvas：十余张卡里「鼻梁挺直」出现 7 次）。
 - 写**族裔**（名字不传递外观，「Nadia Volkov」没写 Eastern European 出成东亚脸）、`about {height_cm} cm tall with a {build} build`（不写人人中等身材）、**一个跨场景标志物**（okaypic）。
 - 主角在骨相后加一句颜值定位（`a striking, cool-toned beauty`），只此一句评价词（TapCanvas）；未满 18 岁只写骨相与年龄感，不写唇形、身材曲线（TapCanvas：整张被拒的案例）。
@@ -157,7 +158,8 @@ ComfyUI 0.37.2 已内置 Qwen-Image 2.1（`TextEncodeQwenImage21`、`QwenImage21
 "segments":   [{"id": "s03", "mode": "i2va", "first_frame": "first/s03.png", "first_frame_prompt": "<§3 首帧模板填好的全文>", …}]
 ```
 
-- 角色图顺序有语义：`build_prompts.py` 把第 1 张写成「脸、发型、体型、服装来源」、第 2 张写成「只控服装与轮廓」（`h3lib/prompt_builder.py`）→ **face.png 放第一、正面全身 `_full.png` 放第二**，两张都是单人单视图；拼出来的角色板只给人审，不进 `reference_images`（shuohao 的 H3 实测：只挂正面全身，服装和背影都对但脸会走样，加一张大头照脸最接近；本 skill 待 A/B）。口型近景用半身裁图而非全身三视图（ancient-rap-battle，05 survey #27）。
+- 上面示例里的路径是相对项目根目录写的；分镜 JSON 放在 `episodes/` 下时两种写法都认（相对 JSON 所在目录，或相对运行脚本的项目根目录）。
+- 角色图顺序有语义：`build_prompts.py` 把第 1 张写成「脸与发型的来源」、第 2 张写成「体型、服装与轮廓的来源」（`h3lib/prompt_builder.py`；只有一张时四样都取自它）→ **face.png 放第一、正面全身 `_full.png` 放第二**，两张都是单人单视图；拼出来的角色板只给人审，不进 `reference_images`（shuohao 的 H3 实测：只挂正面全身，服装和背影都对但脸会走样，加一张大头照脸最接近；本 skill 待 A/B）。口型近景用半身裁图而非全身三视图（ancient-rap-battle，05 survey #27）。
 - 场景只接 `reference_images[0]`（同上源码）；要九宫格就把它排第一，母版 / 九宫格二选一占槽。场景参考会让运镜减半，但去掉就丢地点一致性（egguy886 h3-drama-kit 175 段实测，11 survey）。
 - 道具：剧情里出现即必须有图（本 skill 铁律 6）。
 - **段内每镜一张关键帧（规划中的可选字段，待 A/B）**：`"keyframes": [{"t": 0.0, "image": "first/s04_k1.png"}, {"t": 3.0, "image": "first/s04_k2.png"}]`——每个子镜头一张关键帧，主帧钉在 0.00 s、子帧钉在各自切点（`t` 取该镜的 `shots[].start`），用 `MiniMaxH3AddGuide.frame_idx` 钉帧（shuohao novel-storyboard）。**脚本尚未支持，需手工在 ComfyUI 里用 MiniMaxH3AddGuide 接线**：`episode.schema.json` 没有这个字段，`load_episode()` 读入时会静默丢掉它，`validate_episode.py` / `build_prompts.py` 既不校验也不出对齐句（`Picture k … aligns with the X.XX-second mark of the target video` 要手写；`t` 到 `frame_idx` 的换算与吸附以节点 tooltip 为准）。开放权重 FL2VA 官方只支持 ≤ 2 张图，≥ 3 张为实验性（musubi 单帧文档）→ 先限制在 ≤ 2 张并做样片。

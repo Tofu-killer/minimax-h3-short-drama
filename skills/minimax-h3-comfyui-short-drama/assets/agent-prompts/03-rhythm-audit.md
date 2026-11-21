@@ -14,3 +14,5 @@
  "highlights": [{"segment_id": "s01", "type": "hook|turn|cliffhanger", "description": "…"}],
  "risks": [{"segment_id": "s04", "shot": 2, "risk_level": "low|medium|high", "reason": "…", "fix_suggestion": "…"}]}
 ```
+
+结果存为 `qc/<集>_rhythm_audit.json`。通过线：score ≥ 70 且没有 high 级别的 risk；不过就先改分镜再跑一次 `validate_episode.py --rhythm`，不要带着已知的高风险去花 GPU。

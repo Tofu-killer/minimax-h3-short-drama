@@ -8,14 +8,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-TEXT_LIMIT = 7000
+TEXT_LIMIT = 7000       # the hosted API refuses longer text; the local ComfyUI node has no limit, so this is only reported
 
 
 def text_item(text: str) -> dict:
     if not text or not text.strip():
         raise ValueError("text item must be non-empty")
-    if len(text) > TEXT_LIMIT:
-        raise ValueError(f"text exceeds {TEXT_LIMIT} chars ({len(text)})")
     return {"type": "text", "text": text}
 
 

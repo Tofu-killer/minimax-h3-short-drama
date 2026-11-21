@@ -1,6 +1,6 @@
 # H3 提示词格式（官方规范压缩版 + 短剧补充规则）
 
-> 官方原文：MiniMax-AI/MiniMax-H3 仓库 `skills/h3-prompt-writing/references/base-en.txt`（三段式）与 `ref-en.txt`（六段式）。本文件只保留写短剧必须遵守的结构与规则，并已并入 23 个提示词工具的补充规则（`docs/13-github-survey/04-prompting-tools.md`）与补读裁决（`10-unread-followup.md`）；拿不准时用 `scripts/fetch_official_guides.sh` 拉官方原文对照。
+> 官方原文：MiniMax-AI/MiniMax-H3 仓库 `skills/h3-prompt-writing/references/base-en.txt`（三段式）与 `ref-en.txt`（六段式）。本文件只保留写短剧必须遵守的结构与规则，并已并入 23 个提示词工具的补充规则（`docs/13-github-survey/04-prompting-tools.md`）与补读裁决（`10-unread-followup.md`）；拿不准时用 `scripts/fetch_official_guides.py` 拉官方原文对照。
 
 ## 0. 两条铁律
 
@@ -39,40 +39,71 @@ non_diegetic_music: <乐器/速度/情绪/动态，或 N/A>
 
 ## 3. 六段式（Ref2VA，短剧主路线）
 
+版式照官方完整示例（`ref-en.txt` §7）：**每个字段名单独一行，定义和保留关系一条一行，每个 `[Shot N]` 另起一行，`[Shot 1]` 之前只有一句风格**。`scripts/build_prompts.py` 出的就是这个版式（下面是它对 `assets/episode.example.json` 第二段的输出，略有删节）。
+
 ```
-subject_definitions: <Subject 1> is <身份+外观不变量>, defined by <Picture 1> (face) and <Picture 2> (outfit). <Subject 2> is … <Picture 3> is the <场景> environment. <Subject 3> is <道具名>, the exact item shown in <Picture 4>.
+subject_definitions:
+<Subject 1> is the woman in her early thirties whose face and hairstyle come from <Picture 1> and whose build and outfit come from <Picture 2>, with short black hair tucked behind her ears, a fitted black suit jacket over a white shirt, and a thin silver watch.
+<Subject 2> is the man in his fifties in <Picture 3>, with grey-streaked short hair, thin gold-rimmed glasses, a white doctor's coat over a pale blue shirt, and a stethoscope around his neck.
+<Subject 3> is the environment in <Picture 4>, a long hospital corridor at night: pale green walls, …
+<Subject 4> is the records envelope, the exact item shown in <Picture 5>, a worn brown kraft-paper medical records envelope with a red hospital stamp in the corner.
+<Audio 1> is the voice-timbre reference for <Subject 2> (S1).
 
-summary: <一两句：谁在哪做什么，总时长>
+summary:
+[reference generation + audio reference] <Subject 2> takes out <Subject 4> and admits how long he has kept the truth from <Subject 1>. <Audio 1> is the voice-timbre reference for <Subject 2>.
 
-retention_analysis: <Picture 1>: fully_preserved (facial identity, hairstyle). <Picture 2>: fully_preserved (outfit, colors), no other garment is substituted. <Picture 3>: partially_preserved (layout, lighting), camera may move. <Picture 4>: fully_preserved, no other item is substituted. <Audio 1>: attribute_transfer (voice timbre only).
+retention_analysis:
+<Subject 1> (appears in [Shot 1], [Shot 2], [Shot 3]): fully_preserved - the facial identity and hairstyle of the woman in the black suit jacket are retained from <Picture 1> and the build, outfit and silhouette from <Picture 2>; only the person is taken from these pictures, the setting comes from the scene.
+<Subject 2> (appears in [Shot 1], [Shot 2]): fully_preserved - the facial identity, hairstyle, build and outfit of the grey-haired doctor in the white coat are retained from <Picture 3>; …
+<Subject 3> (appears in [Shot 1], [Shot 2], [Shot 3]): partially_preserved - the layout, light direction and set dressing are retained while the camera position changes from shot to shot.
+<Subject 4> (appears in [Shot 1], [Shot 2]): fully_preserved - the item's shape, colour, markings and material are retained exactly; no other item is substituted.
+<Audio 1>: reference - its vocal timbre guides the dialogue delivery of <Subject 2> without copying the original signal; the spoken words come from the quoted dialogue lines.
 
-detailed_description: [Shot 1] … [Shot 2] At 00:06.500, the shot cuts to …
+detailed_description:
+The target video is rendered as live-action, cinematic, shot on 35mm anamorphic, shallow depth of field, …
+[Shot 1] A medium close-up of <Subject 2> from over the shoulder of <Subject 1>, the woman in the black suit jacket, 50mm, shallow depth of field. The setting is <Subject 3>, the long hospital corridor at night. The clip opens from this state: <Subject 1> stands at frame left facing <Subject 2>, who stands at frame right; both outfits are unchanged. <Subject 2>, the man in his fifties with grey-streaked short hair, thin gold-rimmed glasses, a white doctor's coat over a pale blue shirt, and a stethoscope around his neck, holds her gaze for a long beat, … With his right hand he pulls <Subject 4>, the worn brown kraft-paper medical records envelope with a red hospital stamp in the corner, out from inside his white coat … The camera holds a static shot. The kraft paper rustles against the cotton of his coat.
+[Shot 2] At 00:03.500, the shot cuts to a close-up of the face of <Subject 2>, the grey-haired doctor in the white coat from Shot 1, 85mm, very shallow depth of field. <Subject 2> raises his eyes to <Subject 1> and speaks, … The camera pushes in with small amplitude at slow speed. <Subject 2> (S1), using the voice timbre referenced from <Audio 1>, says slowly and heavily, almost as a confession, <d>[Chinese] 从你母亲住院的第一天起。</d> He closes his lips and lowers his eyes to <Subject 4>.
+[Shot 3] At 00:08.000, the shot cuts to a close-up of the face of <Subject 1>, 85mm, very shallow depth of field. <Subject 1>, the woman in her early thirties with short black hair tucked behind her ears, a fitted black suit jacket over a white shirt, and a thin silver watch, hears the words and her composure cracks: … In the final second every character settles and holds the pose, breathing, while the framing stays put. The segment ends in this state: <Subject 1> stands at frame left …
 
-overall_soundscape: …
+overall_soundscape:
+The fluorescent hum continues unchanged. A single elevator chime sounds far away.
 
-non_diegetic_music: …
+non_diegetic_music:
+N/A
 ```
 
-- 保留级别只用四个词：`fully_preserved` / `partially_preserved` / `attribute_transfer` / `weak_reference`；参考音频若要整段复用原声写 `fully_copy`。
+**脚本替你做的四件事**（都来自官方完整示例；分镜里不要自己再写一遍）：
+
+1. **人不写名字。** 定义行是 `the <who> in <Picture N>, with <features>`（官方 §2.1）；一个人有多张图就写明每张图提供什么（`whose face and hairstyle come from … and whose build and outfit come from …`，官方「state what each asset provides」）。没有标签的地方（三段式、没参考图的人）用短称 `the woman in the black suit jacket`（`short_phrase`，不填就取 `identity_phrase` 的开头：`the woman in her early thirties`）。
+2. **首次清楚出场处把外貌再说一遍**（官方 §5.3：at the first clear appearance describe its referenced characteristics）：紧跟在标签后面作同位语。「清楚出场」= 人在画面里、不是只露肩膀 / 手 / 背影、并且这一镜的景别写的是他或没写任何人（建立镜头）；别人的特写镜头不算。在那之前的一瞥只给短称；之后每次切镜、该镜的主体会带一句 `…, the <短称> from Shot k`。道具同理，首次出现处带一遍描述。
+3. **台词后闭嘴。** 官方示例每句台词后面都跟一句 `She closes her lips and …`。`dialogue[].after_line` 写这句（说完之后这个人做什么）；不写则补 `<Subject N> closes his / her lips.`
+4. **音色参考每句都引用**（官方 §5.3：在音频关系起作用的地方引用 `<Audio N>`）：首句 `using the voice timbre referenced from <Audio 1>`，之后 `in the same voice referenced from <Audio 1>`。没有音色参考的人，首次开口处写嗓音：`<Subject 4> (S2), with a tired, gravelly voice and slow, measured delivery, says …`。
+
+场景、开场站位、承接状态都在 `[Shot 1]` 里（官方 §5.2：`[Shot 1]` 之前只用一两句交代风格）。
+
+- `summary` 以方括号里的任务类型开头：参考图 / 音频只作引导 = `reference generation`；有图当首帧 = 加 `keyframe completion`；音色参考 = 加 `audio reference`；整段复用原声 = `audio reuse`。后面用一两句说谁在哪做什么，只用已定义的标签。
+- 画面的保留级别四个词：`fully_preserved` / `partially_preserved` / `attribute_transfer` / `weak_reference`。**音频另有四个**：`fully_copy`（整段复用为成片音轨）/ `partially_copy` / `reference`（只借音色、节奏，不复制信号——音色参考用这个）/ `weak_reference`。`<Subject N>` 的保留行写 `(appears in [Shot …])`，首帧锚图写 `<Picture 1> ([Shot 1] first frame): fully_preserved - …`；保留行里不写 `(Sx)`。
 - 标签编号 = 媒体在 ComfyUI/API 里的实际顺序。**先角色、再场景、再道具、最后音频**，六段里编号必须一致。用占位符（如 `{fengyi}`）写分镜，最后一步才替换成 `<Subject N>` / `<Picture N>`，避免手工编号错位。
-- 每个参考文件一个职责：脸、服装、环境、道具分开给图；文字只写不变量（年龄、骨相、发型、服装颜色），状态（湿头发、撕破的袖子）写在镜头描述里。
-- 始终用 `<Subject 1>` 指代，不用 `she/he`。
+- 每个参考文件一个职责：脸、服装、环境、道具分开给图。进提示词的 `identity_phrase` 只写一眼能把这个人和别人分开的不变量——年龄段、发型发色、主服装与颜色、一个标志物，12–25 词（官方示例的量级：`with long blonde hair and a light-pink button-down shirt with rolled-up sleeves`）；骨相、族裔、身高这类只对生图有用的细节放 `sheet_phrase`（不进视频提示词）。状态（湿头发、撕破的袖子）写在镜头描述里。
+- 每个镜头里第一次提到某人用 `<Subject N>`；同一镜头内紧接着的句子可以用代词（官方示例就是这样写的：`<Subject 3> (S1) … She closes her lips …`）；换了镜头重新用标签，同框有两个同性别的人时不用代词。
 - `<Subject N>` 只给可复用内容，`<Picture N>` 只给具体帧锚；不发明 `<Image N>` / `<Environment N>`；定义过的标签必须在正文引用且有 retention 行；接了图不提等于白占配额。
 - 参考图：目标画幅、短边 ~768、剪影分明，不画箭头 / 标签 / 网格。
 - 多人镜只给首帧，不加 `<Picture>` 身份参考（会多出一人）；单人镜加身份参考时写明「仅外观参考，不是要切过去的画面」；写 `Exactly N people`。
-- `detailed_description` 350–500 词（> 700 告警）。
+- 长度：官方说生成任务的 `detailed_description` 通常 350–500 词，对白密的段以装下完整的说话时间线为先。脚本带上站位、外貌、收尾状态之后一般落在 450–600 词。`lint_prompt.py` 只警告：< 350 词（模型会自由发挥甚至烧字幕）、> 700 词、单镜 > 240 词（`[Shot 1]` 带着开场交代，放宽到 300）。写分镜时每镜的 action + performance 合计 50–100 词比较合适；灯光只在这一镜的光和风格行不一样时才写。
+- 7000 字符是 MiniMax **云端 API** 的文本上限；本地 ComfyUI 节点没有长度限制（文本编码器是 Qwen3-VL-32B，直接读原文、不套对话模板，`comfy/text_encoders/minimax.py`）。`<d>` 与 `</d>` 在分词器里各是一个专用 token：必须原样写，中间不加空格、不换括号。
 - 多段（30 / 60 s）：每段自包含，把全局规则拼进每一段；上一段末帧 = 本段首态；BGM / 环境音「不重启」写进两段；相邻段最后 ~1.4 s 与开头 ~0.9 s 当一次呼吸设计。
 
 ## 4. 台词与声音
 
 ```
-<Subject 1>, with a low, hoarse voice, (S1) says: <d>[Chinese] 你到底瞒了我多久？</d>
-<Subject 2> listens with his mouth closed, jaw tightening.
+六段式：<Subject 1> (S1), with a low, hoarse voice, says quietly, <d>[Chinese] 你到底瞒了我多久？</d> She closes her lips.
+三段式：The woman in the black suit jacket with a low, hoarse voice (S1) says quietly: <d>[Chinese] 你到底瞒了我多久？</d> She closes her lips.
+听者：  <Subject 2> listens with his mouth closed, jaw tightening.
 ```
 
 - 一镜只能一人开口；听者必须写 `listens with mouth closed` + 反应，否则错人张嘴。
-- **有台词的镜头从头到尾只做「说话」这一件事**（H3 把整镜当成该人在讲，不会在下一拍收嘴）；讲完后的眨眼 / 吞咽放下一镜。
-- 先动作后台词（`She sets the cup down, then (S1) says:`），动作是模型排时间的锚点。
+- **有台词的镜头从头到尾只做「说话」这一件事**（H3 倾向于把整镜当成该人在讲）；讲完后的眨眼 / 吞咽放下一镜。台词后面那句闭嘴动作（官方示例的写法，脚本会补）只负责把嘴收住，不要在它后面再排一串动作。
+- 先动作后台词：动作放在**前一个镜头**或台词之前的那半句（`She sets the cup down. … (S1) says, <d>…</d>`），动作是模型排时间的锚点；开口的那一镜里只做说话这一件事。
 - 台词预算：硬上限 一段的台词总字数 ≤ (时长 − 2 s) × 4.5（权威口径见 `storyboard-and-assets.md` §1）；语速中文约 **4 字/秒**（3.5–5 字/s；金句慢档 < 3.5；快档 > 5 连续不超 3 s），逗号 +0.1–0.3 s、句号 +0.3–0.6 s；单句 > 24 字拆 2–3 镜、每镜 ≤ 18 字；金句后留 0.3–0.8 s 无台词反应镜。超了就拆段，不要要求说快。
 - 每 3–4 s 一句，或明确写出哪几秒沉默。
 - 有 `<d>` 的镜头，台词之外不出现 say / sentence / word / line，不写 `lips parted as if about to speak`（会真开口 2 s）；「没说出口」写抿唇、吞咽、视线落桌面。
@@ -81,7 +112,7 @@ non_diegetic_music: …
 - 画外音：`(S1) says in an off-screen voiceover: <d>…</d> while his lips remain completely closed.` 不加闭唇声明会被对口型；闭唇子句必须在 `</d>` 后 400 字符内；VO + OS 每 15 s 段 ≤ 20 字；VO 不复述画面。
 - 跨切点台词两端加 `<scenetrans>` 并写 `continues seamlessly across the cut`；片尾被打断用 `<cutoff>`。
 - 音色参考 `<Audio 1>`：2–15 s 干净人声，必须伴随至少一张图/一段视频；只定音色，口音/情绪/语速仍要写字；不说话的人脸镜头给一段静音引导音轨（防乱念）。
-- 音色描述（低沉/沙哑/语速）写在 `(S1)` 前，并在每段一字不改复用；说话人首现 ±120 字内要有音色词，`(Sx)` 按首现顺序从 S1 编。
+- 音色描述（低沉 / 沙哑 / 语速）写进角色的 `voice_phrase`（`a man in his fifties with a tired, gravelly voice and slow, measured delivery`），每段一字不改复用；三段式里它在 `(S1)` 前（官方：`the middle-aged baker with a calm, slightly raspy voice (S1) … says:`），六段式里 `(S1)` 紧跟标签、音色随后；说话人首现 ±120 字内要有音色词，`(Sx)` 按**在成片里开口的先后**从 S1 编（官方规则），不必与 `<Subject N>` 的编号相同；绑定了说话人的 `<Audio N>` 复用同一个 `(Sx)`。
 
 ## 5. 镜头、运镜与表演
 

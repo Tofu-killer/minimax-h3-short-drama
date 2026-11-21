@@ -1,6 +1,6 @@
 # 生图提示词模板（复制即用）
 
-> 说明、来源与参数见 `../references/image-stage.md`。`{}` 是占位符；LOOK = 系列圣经里冻结的外观文字（族裔 + 年龄 + 3–5 处骨相 + 发型 + 上装/下装/鞋 + 标志物），每次逐字粘贴。
+> 说明、来源与参数见 `../references/image-stage.md`。`{}` 是占位符；LOOK = 系列圣经里冻结的外观文字，也就是分镜 JSON 里角色的 `sheet_phrase`——只给生图用，不进视频提示词（视频提示词用短的 `identity_phrase`）（族裔 + 年龄 + 3–5 处骨相 + 发型 + 上装/下装/鞋 + 标志物），每次逐字粘贴。
 > 填写前过一遍防撞脸：两人骨相 ≥ 3 处不同、其余五格（发型/体型/体态/主色/标志）≥ 2 格不同；写 `about {HEIGHT_CM} cm tall with a {BUILD} build`；主角只加一句颜值定位；不写 photorealistic / 8K / masterpiece / flawless / perfect / beautiful；正向写法，排除词只放 Edit 2511 的负向框。
 > 指图写法：Qwen-Image-Edit-2511 的节点只有 `image1`–`image3` 三个图像输入，并在提示词前自动加 `Picture 1: `、`Picture 2: `、`Picture 3: ` 标签（ComfyUI v0.46.2 源码）→ 2511 的模板一律写 `Picture 1` / `Picture 2` / `Picture 3`（与 `<image1>` 的效果差别待 A/B）；`<image1>` 只用于 Qwen-Image 2.1。§8–§12 是 LoRA 模板：触发句逐字照抄作者 / 官方模板原句，原句里自带的 `don't`、`remove`、「移除」是作者的触发写法，自己追加的内容仍只写正向；这五条都没有在 4090 上实跑过。
 

@@ -12,7 +12,7 @@ import argparse, re, sys
 from pathlib import Path
 sys.dont_write_bytecode = True      # keep the skill folder free of __pycache__
 sys.path.insert(0, str(Path(__file__).parent / "h3lib"))
-from storyboard import load_episode, blocking_sentence  # noqa: E402
+from storyboard import load_episode, blocking_sentence, effective_continuity, spoken_chars  # noqa: E402
 
 
 def _utf8_console() -> None:
@@ -59,13 +59,21 @@ def main():
         fr = frames_for(seg.duration)
         refs = [ep.char(c).name for c in seg.character_ids] + [ep.scene(seg.scene_id).name] + \
                [next(p.name for p in ep.props if p.id == pid) for pid in seg.prop_ids]
-        chars = sum(len(d.text) for sh in seg.shots for d in sh.dialogue)
+        chars = sum(spoken_chars(d.text) for sh in seg.shots for d in sh.dialogue)
+        try:
+            opening, source = effective_continuity(ep, seg, True)
+        except ValueError:
+            opening, source = seg.continuity, "authored"
         out += [f"## {seg.id} · {seg.mode} · {seg.duration} s（{fr} 帧 = {fr / 24:.3f} s）{' · ' + seg.hook_type if seg.hook_type else ''}", "",
                 f"- 参考：{'、'.join(refs)}" + (f"；首帧：{Path(seg.first_frame).name}" if seg.first_frame else ""),
                 f"- 台词 {chars} 字 / 上限 {int((seg.duration - 2) * 4.5)} 字",
                 *([f"- 开场站位：{esc(blocking_sentence(ep, seg))}"] if blocking_sentence(ep, seg) else []),
-                f"- 承接：{esc(seg.continuity) or '（首段）'}",
-                f"- 结束状态：{esc(seg.end_state)}",
+                f"- 承接：{esc(seg.continuity) or '（首段）'}"
+                + (f"　→ 实际写入提示词（{'上一段实拍末态' if source.startswith('observed') else '上一段计划末态，尚未观测'}）：{esc(opening)}"
+                   if source != "authored" else ""),
+                f"- 结束状态：{esc(seg.end_state)}" + ("　· 末镜定格 1 s（拼接时裁掉）" if seg.shots and seg.shots[-1].end_hold else ""),
+                *([f"- 正向锁定句：{esc(seg.negatives)}"] if seg.negatives else []),
+                *([f"- 已接受的偏差：{'；'.join(esc(x) for x in seg.accepted_deviations)}"] if seg.accepted_deviations else []),
                 *([f"- 实拍末态（{seg.status}，置信 {seg.observation_confidence or '?'}）：{esc(seg.observed_end_state)}"]
                   if seg.observed_end_state else []), "",
                 "| 镜 | 时间 | 景别 / 镜头 | 运镜 | 动作 | 表演 | 光线 | 台词 | 声音 |",
@@ -76,10 +84,13 @@ def main():
             lines = []
             for d in sh.dialogue:
                 who = "旁白" if d.speaker == "narrator" else ep.char(d.speaker).name
-                rate = len(d.text) / span if span else 0
-                lines.append(f"{who}{'（画外）' if d.offscreen else ''}：{d.text}（{rate:.1f} 字/s）")
+                talk = span - (1.5 if sh.end_hold else 0)            # the settle + hold second is not speaking time
+                rate = spoken_chars(d.text) / talk if talk > 0 else 0
+                tone = f"〔{d.delivery}〕" if d.delivery else ""
+                after = f" → {d.after_line.strip()}" if getattr(d, "after_line", "").strip() else ""
+                lines.append(f"{who}{'（画外）' if d.offscreen else ''}{tone}：{d.text}（{rate:.1f} 字/s）{after}")
             out.append("| " + " | ".join([
-                str(sh.index), f"{bounds[i]:.1f}–{bounds[i + 1]:.1f}",
+                str(sh.index), f"{bounds[i]:.2f}–{bounds[i + 1]:.2f}",
                 esc(sh.framing + (f"，{sh.lens}" if getattr(sh, "lens", "") else "")),
                 esc(sh.camera), esc(sh.action), esc(getattr(sh, "performance", "")),
                 esc(getattr(sh, "lighting", "")), esc("<br>".join(lines)),

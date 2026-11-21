@@ -11,7 +11,7 @@
 
 ## 2. 运镜句写法
 
-- 类型 + 幅度 + 速度写进动词句：`the camera pushes in toward X`；默认不写修饰词（`large / fast` 过驱且不叠加，`small` 惰性）。
+- 官方格式是「运动类型 + 幅度 + 速度」写进动词句：`The camera pushes in with small amplitude at slow speed`。幅度和速度照写，但只在两档里选：对白 / 情绪镜用 `small amplitude at slow speed`，要明显运镜才用 `large` / `fast`（`large / fast` 容易过驱且不叠加；`small` 偏惰性——出不来先加步数，见 §1）。
 - 推拉写「焦距全程锁定」+ 距离 / 时长双锚（`slides forward 12 cm over three seconds`）；摇镜不写焦距；横移不写「视线锁定主体」；升降写「姿态保持水平」；甩镜必须命名落点；跟拍写相对位移不写 `follow her`。
 - 单镜只一次运镜，分阶段拆成两个 `[Shot N]`；景别 / 角度 / 运镜三要素每镜给齐。
 - 不写升格 / Hit-Stop / 变速；要「顿」写受力结果（`his head snaps back; the camera holds still`）。
@@ -34,14 +34,14 @@
 
 ## 5. 台词排播（与 prompt-format §4 互补）
 
-- H3 把全部 `<d>` **按文本顺序连续铺轨**，`[Shot N]` 不决定发声时刻；字数 ÷ 3.3–4 字/秒 ≈ 镜头时长，前两句定基准；单镜正文 45–70 词，> 100 词 FAIL。
+- H3 把全部 `<d>` **按文本顺序连续铺轨**，`[Shot N]` 不决定发声时刻；字数 ÷ 3.3–4 字/秒 ≈ 镜头时长，前两句定基准；单镜正文 60–120 词为宜（> 220 词 `lint_prompt.py` 警告）。
 - **对白段不要精简提示词**（人声会提前 1.5 s 开口）；动作段可用 < 400 词精简版（动作量 +60%）（egguy886）。
 - 每镜 ≥ 2.5 s（含末尾停留），`max_shots = floor(duration / 2.5)`；按台词估时：中文 4.3 字/s + 标点 0.4 字 + 0.25 s 起 + 0.55 s 收，收尾镜 +15%（egguy886 的估时公式；总字数硬上限仍以 `storyboard-and-assets.md` §1 的 (段长 − 2 s) × 4.5 为准）。
 - 每个 `<d>` 显式归属三选一：口型同步（露脸、`speaks to the camera`）/ 画外音（`says in an off-screen voiceover … while her lips remain completely closed`）/ 无台词；`<d>` 覆盖全程不留空档。
-- 末句与切点留 ≥ 0.2 s；弱读虚词（都 / 也 / 就 / 了）换双字实义词；音色参考 ≤ 8 s 短音频；无台词片不接音频参考、不声明 `<Audio N>`（egguy886）。
+- 末句与切点留 ≥ 0.2 s；弱读虚词（都 / 也 / 就 / 了）在**定稿台词之前**与用户商量着换成双字实义词——台词一旦锁定就不再改写；音色参考 ≤ 8 s 短音频；无台词片不接音频参考、不声明 `<Audio N>`（egguy886）。
 - 台词里的 `...` 换成逗号（否则停顿处塞乱码插词，换 seed 无用）；总述只写动作不转述台词；英文氛围句删掉并加 `Speak only the quoted dialogue lines`（多说词 9.3% → 1.3%）；个别段被念出声线开头时只对该段去掉 `Name, a man of N:`（egguy886）。
 - 生成时声音行全集统一「安静房间底噪 + 动作声 + 干净人声」，环境声 / 音效 / 配乐后期按场景连续铺；原生对白音色每段漂 1.7 半音，用 seed-vc 统一而不是 TTS 重配（egguy886）。
-- `fully_copy` 语音有 ~0.45 s 系统位移；`reference` 音色迁移受角色表观性别强拉——`<Subject>` 描述与音色性别要一致；`Subject N = S N = Audio N` 三线同号并与接线顺序一致。
+- `fully_copy` 语音有 ~0.45 s 系统位移；`reference` 音色迁移受角色表观性别强拉——`<Subject>` 描述与音色性别要一致；同一个说话人的 `<Subject>`、`(Sx)`、`<Audio>` 在定义行里绑在一起（`<Audio 1> is the voice-timbre reference for <Subject 2> (S1)`），编号各按各的规则，不要求相等；`<Picture N>` / `<Audio N>` 的编号必须与接线顺序一致。
 
 ## 5c. 补充（`12-fresh-followup.md`）
 

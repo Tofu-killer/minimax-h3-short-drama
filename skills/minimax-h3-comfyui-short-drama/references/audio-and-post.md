@@ -37,7 +37,7 @@ qc_dialogue.py（逐 take 台词把关）→ 精修 → make_edl.py → retime_s
 2. 按音频时长排段：每句起点 ≥ 第 18 帧（0.75 s 预卷），句尾留 ≥ 0.2 s + 1 s 定格，段长取 17k+5 帧。
 3. 接线（custom node `badgids/ComfyUI-H3-ExactAudioLock`）：`MiniMaxH3TimedAudio(start_frame)` → `MiniMaxH3DialogueAudioLock(protect_before_ms 200, protect_after_ms 250, feather_ms 100, mix_policy prevent_clipping, overflow_policy error)` → 采样 → `VAEDecodeAudio` → `MiniMaxH3DialogueAudioFinalize`；同一个 `start_frame` 同时接 `MiniMaxH3AddGuide.frame_idx` 并喂同一段音频。提示词照常写同一句 `<d>[Chinese] …</d>` 并点名说话人，TTS 文本与 `<d>` 逐字一致。环境声仍由 H3 生成。
 4. 歌曲 / 口播整条锁用 `MiniMaxH3ExactAudioLock`，成片音轨接它的 `exact_audio` 输出而不是 `VAEDecodeAudio`。
-5. 不装节点的退路：六段式里 `<Audio 1>: fully_copy`（语音有约 0.45 s 的系统位移，排期里预补）；只要音色写 `attribute_transfer (voice timbre only)`。
+5. 不装节点的退路：六段式里 `<Audio 1>: fully_copy`（语音有约 0.45 s 的系统位移，排期里预补）；只借音色写 `<Audio 1>: reference - …`（官方的音频标记是 `fully_copy / partially_copy / reference / weak_reference`，`attribute_transfer` 只用于画面）。
 
 长旁白和画外音直接 TTS 进混音，不经 H3；H3 的画外音只用于 15 s 内 ≤ 20 字的贴画面短句。
 

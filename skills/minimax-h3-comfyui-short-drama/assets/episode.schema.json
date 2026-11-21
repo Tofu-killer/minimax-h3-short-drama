@@ -52,7 +52,15 @@
      },
      "identity_phrase": {
       "type": "string",
-      "description": "Invariants only (age, bone structure, hair, outfit colours); reused verbatim in every segment"
+      "description": "English noun phrase \"a <who> with <features>\": what tells this person apart at a glance - hair, main garment and colour, one marker (about 12-25 words). Written into every prompt; repeated where the person first appears."
+     },
+     "short_phrase": {
+      "type": "string",
+      "description": "How prompts call this person: \"the grey-haired doctor in the white coat\". Default: \"the\" + the head of identity_phrase (\"the man in his fifties\"). People are never called by name in a prompt."
+     },
+     "sheet_phrase": {
+      "type": "string",
+      "description": "The full look used only to GENERATE the reference pictures (face structure, build, height ...). Never written into a video prompt."
      },
      "voice_phrase": {
       "type": "string"
@@ -71,6 +79,10 @@
        "null"
       ],
       "description": "2–15 s clean speech; attached only in segments where the character speaks"
+     },
+     "name_en": {
+      "type": "string",
+      "description": "English name for people reading the files. Prompts never use a person's name (see short_phrase)."
      }
     }
    }
@@ -100,7 +112,12 @@
       "maxItems": 2,
       "items": {
        "type": "string"
-      }
+      },
+      "description": "Paths are relative to the folder of this JSON; paths relative to the project root (where the scripts are run) are accepted too."
+     },
+     "name_en": {
+      "type": "string",
+      "description": "English label used inside prompts (the display `name` may be Chinese). Default: `name` when it is ASCII, otherwise derived from the id (xu_qing -> Xu Qing, prop_old_key -> the old key)"
      }
     }
    }
@@ -130,7 +147,7 @@
       "items": {
        "type": "string"
       },
-      "description": "A prop without an image WILL be invented by the model"
+      "description": "A prop without an image WILL be invented by the model Paths are relative to the folder of this JSON; paths relative to the project root (where the scripts are run) are accepted too."
      },
      "rarity": {
       "type": [
@@ -138,6 +155,10 @@
        "null"
       ],
       "description": "UI tier overlaid in post, never rendered"
+     },
+     "name_en": {
+      "type": "string",
+      "description": "English label used inside prompts (the display `name` may be Chinese). Default: `name` when it is ASCII, otherwise derived from the id (xu_qing -> Xu Qing, prop_old_key -> the old key)"
      }
     }
    }
@@ -201,7 +222,8 @@
        "setup",
        "turn",
        "cliffhanger"
-      ]
+      ],
+      "description": "Planning label only (hook / setup / turn / cliffhanger); never written into the prompt"
      },
      "first_frame": {
       "type": [
@@ -225,11 +247,11 @@
      },
      "continuity": {
       "type": "string",
-      "description": "State inherited from the previous segment (positions, props held, light); must not be empty after segment 1. Write \"@observed\" (optionally followed by wardrobe / light notes) to open from where the previous segment's ACCEPTED take really ended: build_prompts.py then inserts that segment's observed_end_state, and refuses to build until it exists (--allow-planned for drafts)"
+      "description": "The state the segment opens from, written as a state (who is where, facing what, holding what, light) with {asset_id} placeholders; leave empty for the first segment. \"@observed\" (optionally followed by wardrobe / light notes) opens from where the previous segment's ACCEPTED take really ended: build_prompts.py inserts that segment's observed_end_state and refuses to build until it exists (--allow-planned for drafts)"
      },
      "end_state": {
       "type": "string",
-      "description": "Named end state for the next segment; no trailing period needed"
+      "description": "The room-wide state at the end of the segment (positions, facing, props held, light), written as a state with {asset_id} placeholders, no trailing period. Always describe everyone present, even when the last shot is an insert - it is the hand-off for the next segment (the builder leaves it out of the prompt when the segment closes on an insert)"
      },
      "status": {
       "type": "string",
@@ -286,7 +308,7 @@
      "shots": {
       "type": "array",
       "minItems": 1,
-      "maxItems": 5,
+      "maxItems": 4,
       "items": {
        "type": "object",
        "required": [
@@ -349,6 +371,10 @@
            "offscreen": {
             "type": "boolean",
             "default": false
+           },
+           "after_line": {
+            "type": "string",
+            "description": "Optional full sentence: what the speaker does right after the words end (\"He closes his lips and lowers his eyes to {prop_folder}.\"). Default: the speaker closes the lips."
            }
           }
          }
@@ -380,6 +406,15 @@
      "first_frame_prompt": {
       "type": "string",
       "description": "i2va/fl2va only: English still-image prompt for the shot's literal first frame (see assets/image-prompts.md)"
+     },
+     "summary": {
+      "type": "string",
+      "description": "Optional: one English sentence saying what happens in the segment ({asset_id} placeholders allowed); goes into the prompt's summary section"
+     },
+     "use_scene_reference": {
+      "type": "boolean",
+      "default": true,
+      "description": "False: do not attach the scene picture for this segment (a scene reference roughly halves camera movement); the scene description text carries the place"
      }
     }
    }
@@ -391,8 +426,7 @@
     "type": "object",
     "required": [
      "scene_id",
-     "segment",
-     "places"
+     "segment"
     ],
     "properties": {
      "scene_id": {
@@ -404,7 +438,7 @@
      },
      "places": {
       "type": "array",
-      "minItems": 1,
+      "minItems": 0,
       "items": {
        "type": "object",
        "required": [
@@ -418,7 +452,7 @@
         },
         "at": {
          "type": "string",
-         "description": "what they are next to, as a phrase that follows the verb: \"at the left end of the grey sofa\", \"by the door\". Use things the scene master actually shows"
+         "description": "What they are next to, as a phrase that follows the verb: \"at the left end of the grey sofa\", \"by the door\"; use things the scene master actually shows, or a position relative to another placed person (\"two steps behind {lao_chen}\")"
         },
         "side": {
          "type": "string",
@@ -440,11 +474,19 @@
          "description": "\"frame right\", \"the camera\", \"{other_character_id}\""
         }
        }
-      }
+      },
+      "description": "Who is already there when the scene opens (may be empty when everybody walks in)"
      },
      "others": {
       "type": "string",
       "description": "a positive statement about the rest of the space: \"the other seats stay empty\""
+     },
+     "enters_later": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Characters of this segment who are not there at the start and walk in during it"
      }
     }
    }

@@ -39,7 +39,7 @@
 npx skills add https://github.com/Tofu-killer/minimax-h3-short-drama --skill minimax-h3-comfyui-short-drama
 ```
 
-调研底稿：[`docs/13-github-survey/`](docs/13-github-survey/00-catalog.md)——1924 个 GitHub 仓库枚举 → 1750+ 相关 → 7 簇 ~170 个仓库源码级精读 + 2 轮长尾扫描（~300 个）。评测：5 个用例「带 skill / 不带」对照，23/24 vs 6/24（[`skills/.../evals/results/`](skills/minimax-h3-comfyui-short-drama/evals/results/iteration-1-benchmark.md)）。
+调研底稿：[`docs/13-github-survey/`](docs/13-github-survey/00-catalog.md)——1924 个 GitHub 仓库枚举 → 1750+ 相关 → 7 簇 ~170 个仓库源码级精读 + 2 轮长尾扫描（~300 个）。评测：5 个用例「带 skill / 不带」对照，23/24 vs 6/24（[`skills/.../evals/results/`](skills/minimax-h3-comfyui-short-drama/evals/results/iteration-1-benchmark.md)）。之后做过两轮独立可用性测试（一个没有上下文的 agent 只凭 skill 文档完成任务并报告每处卡点）：[后期链路](skills/minimax-h3-comfyui-short-drama/evals/results/iteration-4-post-chain-usability.md)、[创作链路 + 对照官方原文复核](skills/minimax-h3-comfyui-short-drama/evals/results/iteration-5-authoring-chain-usability.md)。
 
 给本地 agent 的提示词在 [`prompts/`](prompts/)：推荐直接发 [`05-use-the-skill.md`](prompts/05-use-the-skill.md)（安装 skill 并按流程接管）；`01` 盘点环境、`02` 接管现有工作流、`03` 迭代手册、`04` 新项目简报。
 

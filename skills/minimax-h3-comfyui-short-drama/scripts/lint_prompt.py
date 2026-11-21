@@ -8,9 +8,14 @@ official guides (see references/prompt-format.md §0–§5 and §8):
 field names + order, [Shot 1] without timecode, strictly increasing MM:SS.mmm
 below the effective duration (17k+5 frame grid), >=1.2 s per shot, <d> tags
 paired and starting with [Language], (S1..) numbering, labels defined before
-use / no phantom media / no unused media, retention keywords, negation words,
-"completely still", curly quotes / full-width brackets, markdown fences, and
-word budget (350-500 for ref2va detailed_description).  ERRORs exit 1.
+use / no phantom media / no unused media, retention keywords (audio lines must use the audio
+markers), unresolved {placeholders}, negation words, "completely still", curly quotes / full-width
+brackets, markdown fences, and length - all warnings: under 350 words the model improvises; over 700 words, or
+240 words in one shot (300 in [Shot 1], which carries the set-up), it follows less closely; over 7000 characters
+the cloud API refuses the text (the local ComfyUI node has no limit).
+ERRORs exit 1.
+
+    python3 lint_prompt.py prompts/ep01/s03.txt            # reads prompts/ep01/s03.media.json written by build_prompts.py
 """
 import argparse, re, sys
 from pathlib import Path
@@ -30,12 +35,16 @@ _utf8_console()
 
 SIX = ["subject_definitions", "summary", "retention_analysis", "detailed_description", "overall_soundscape", "non_diegetic_music"]
 THREE = ["integrated_multimodal_description", "overall_soundscape", "non_diegetic_music"]
-RETENTION = {"fully_preserved", "partially_preserved", "attribute_transfer", "weak_reference", "fully_copy"}
+RETENTION = {"fully_preserved", "partially_preserved", "attribute_transfer", "weak_reference", "fully_copy", "partially_copy", "reference"}
+AUDIO_MARKERS = ("fully_copy", "partially_copy", "reference", "weak_reference")      # official markers for <Audio N> lines
 NEG = re.compile(r"\b(no|not|never|without|don't|doesn't|do not|does not|avoid|nothing)\b", re.I)
-NEG_OK = re.compile(r"with no camera movement whatsoever|no other (item|garment|person|people)|is not transferred|never transfer facial traits", re.I)
+NEG_OK = re.compile(r"with no camera movement whatsoever|no other (item|garment|person|people)|is not transferred|never transfer facial traits"
+                    r"|without copying the original signal", re.I)
 STILL = re.compile(r"completely still|doing nothing|does not move at all|remains? (perfectly )?motionless", re.I)
 CUT = re.compile(r"\[Shot (\d+)\]\s*(?:At (\d{2}):(\d{2})\.(\d{3}),)?")
 LABEL = re.compile(r"<(Picture|Video|Audio|Subject) (\d+)>")
+BARE_PICTURE = re.compile(r"(?<![<\w])Picture (\d+)\b")      # the official FL2VA wording writes Picture 1 / Picture 2 without brackets
+UNFILLED = re.compile(r"\{[A-Za-z0-9_\u4e00-\u9fff-]+\}")
 BAD_LABEL = re.compile(r"<(Image|Environment|Ref|Reference) \d+>")
 
 
@@ -46,11 +55,31 @@ def effective_seconds(req):
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("prompt"); ap.add_argument("--seconds", type=float, required=True)
-    ap.add_argument("--images", type=int, default=None); ap.add_argument("--videos", type=int, default=0); ap.add_argument("--audios", type=int, default=0)
-    ap.add_argument("--mode", default=None)
+    ap = argparse.ArgumentParser(description="Lint a MiniMax H3 prompt before submitting it. With the .media.json that "
+                                             "build_prompts.py writes next to the prompt, no other argument is needed.")
+    ap.add_argument("prompt", help="prompt text file")
+    ap.add_argument("--media", help="the segment's .media.json (default: <prompt>.media.json next to the prompt, when it exists); "
+                                    "supplies --seconds, --images, --audios and --mode")
+    ap.add_argument("--seconds", type=float, help="requested segment length in seconds")
+    ap.add_argument("--images", type=int, default=None, help="number of reference / frame images wired")
+    ap.add_argument("--videos", type=int, default=0, help="number of reference videos wired")
+    ap.add_argument("--audios", type=int, default=None, help="number of reference audios wired")
+    ap.add_argument("--mode", default=None, help="ref2va | i2va | fl2va | l2va | t2va")
     a = ap.parse_args()
+    media_path = Path(a.media) if a.media else Path(a.prompt).with_suffix(".media.json")
+    if a.media and not media_path.exists():
+        sys.exit(f"media file not found: {media_path}")
+    if media_path.exists():
+        import json
+        meta = json.loads(media_path.read_text(encoding="utf-8"))
+        kinds = [m.get("type") for m in meta.get("media", [])]
+        if a.seconds is None: a.seconds = float(meta["duration"])
+        if a.images is None: a.images = kinds.count("image")
+        if a.audios is None: a.audios = kinds.count("audio")
+        if a.mode is None: a.mode = meta.get("mode")
+    if a.seconds is None:
+        sys.exit("--seconds is required when there is no <prompt>.media.json next to the prompt (or pass --media)")
+    if a.audios is None: a.audios = 0
     text = Path(a.prompt).read_text(encoding="utf-8")
     errs, warns = [], []
     eff = effective_seconds(a.seconds)
@@ -66,8 +95,14 @@ def main():
     body = m.group(1) if m else text
 
     if "```" in text or "<think>" in text: errs.append("markdown fence or <think> present")
-    if re.search(r"[“”‘’＜＞（）［］]", text): errs.append("curly quotes or full-width brackets present")
-    if "\n" in body.strip(): warns.append("line breaks inside the description are read as cuts")
+    for bad in re.finditer(r"[“”‘’＜＞（）［］]", text):
+        errs.append(f"curly quote or full-width bracket {bad.group(0)!r} at …{text[max(0, bad.start() - 25):bad.end() + 25].strip()}… "
+                    f"(often Chinese text pasted into an English field: write the field in English and refer to assets as {asset_id})")
+        break
+    for um in UNFILLED.finditer(text):
+        errs.append(f"unresolved placeholder {um.group(0)} at …{text[max(0, um.start() - 30):um.end() + 30].strip()}…")
+    if re.search(r"\n(?!\[Shot \d+\])", body.strip()):
+        warns.append("a line break inside the description that does not start a new [Shot N] is read as a cut")
 
     shots = list(CUT.finditer(body))
     if not shots: errs.append("no [Shot N] markers")
@@ -97,7 +132,8 @@ def main():
         if fm and "<d>" in fm.group(1): errs.append(f"<d> inside {f}")
     if "(S?)" in text: errs.append("unresolved speaker marker (S?)")
     speakers = sorted({int(x) for x in re.findall(r"\(S(\d+)", text)})
-    n_audio_defs = len(re.findall(r"<Audio \d+> is the voice", text))
+    sd_block = re.search(r"subject_definitions:(.*?)(?:\n\s*\n|\Z)", text, re.S)
+    n_audio_defs = len(re.findall(r"<Audio \d+> is the voice", sd_block.group(1) if sd_block else ""))
     if n_audio_defs > len(speakers): warns.append(f"{n_audio_defs} voice references but only {len(speakers)} speaker(s): attach timbre only for characters who speak in this segment")
     if speakers and speakers != list(range(1, len(speakers) + 1)): errs.append(f"speaker ids not contiguous from 1: {speakers}")
     for vo in re.finditer(r"off-screen voiceover[^<]*<d>.*?</d>(.{0,400})", text, re.S):
@@ -106,6 +142,7 @@ def main():
     labels = LABEL.findall(text)
     if BAD_LABEL.search(text): errs.append("non-standard label (<Image N>/<Environment N>) used")
     counts = {k: {int(n) for t, n in labels if t == k} for k in ("Picture", "Video", "Audio", "Subject")}
+    counts["Picture"] |= {int(n) for n in BARE_PICTURE.findall(text)}
     for k, n in (("Picture", a.images), ("Video", a.videos), ("Audio", a.audios)):
         if n is None: continue
         used = counts[k]
@@ -117,6 +154,9 @@ def main():
         if ra:
             if "(S" in ra.group(1): errs.append("retention_analysis contains a speaker marker")
             if not any(w in ra.group(1) for w in RETENTION): errs.append("retention_analysis has no retention keyword")
+            for am in re.finditer(r"<Audio \d+>[^:\n]*:\s*([a-z_]+)", ra.group(1)):
+                if am.group(1) not in AUDIO_MARKERS:
+                    errs.append(f"audio retention marker {am.group(1)!r}: the official markers for audio are {', '.join(AUDIO_MARKERS)}")
         sd = re.search(r"subject_definitions:(.*?)(?:\n\s*\n|\Z)", text, re.S)
         if sd:
             defined = {int(n) for n in re.findall(r"<Subject (\d+)>", sd.group(1))}
@@ -125,7 +165,15 @@ def main():
             if defined - used: warns.append(f"subjects defined but unused in description: {sorted(defined - used)}")
         words = len(body.split())
         if words < 350: warns.append(f"detailed_description {words} words (<350: model may invent or burn subtitles)")
-        if words > 700: errs.append(f"detailed_description {words} words (>700)")
+        if words > 700: warns.append(f"detailed_description {words} words (>700): long descriptions get followed less closely - split the segment or trim the shots")
+        for sm in re.finditer(r"\[Shot (\d+)\](.*?)(?=\[Shot \d+\]|\Z)", body, re.S):
+            n_words = len(sm.group(2).split())
+            cap = 300 if sm.group(1) == "1" else 240          # [Shot 1] also carries the setting, the positions and the looks
+            if n_words > cap: warns.append(f"[Shot {sm.group(1)}] runs to {n_words} words (over {cap}): one shot holds one action and one camera move")
+    if len(text) > 7000: warns.append(f"prompt is {len(text)} characters: the MiniMax cloud API rejects text over 7000; the local "
+                                      f"ComfyUI node has no length limit, but a prompt this long is followed less closely")
+    if fields is SIX:
+        pass
     else:
         if mode in ("i2va", "fl2va", "l2va") and "aligns with" not in text and "is fully referenced" not in text:
             errs.append(f"{mode} prompt missing the alignment instruction line")
@@ -147,7 +195,8 @@ def main():
     micro = re.findall(r"\b(winks?|blows? a kiss|raises? (?:an |one |her |his )?eyebrows?|licks?)\b", body, re.I)
     if micro: warns.append(f"micro-expression verbs {sorted(set(m.lower() for m in micro))} tend to force a face close-up")
     if d_open == 0 and not re.search(r"nobody speaks|no words|no dialogue|without speaking", body, re.I):
-        warns.append("no dialogue in this segment: state it ('Nobody speaks, there are no words at all') or the model may improvise speech")
+        warns.append("no dialogue in this segment: state it ('Nobody speaks in this clip; every mouth stays closed.') or the model may "
+                     "improvise speech - build_prompts.py adds this sentence by itself")
     sound = re.search(r"overall_soundscape:(.*?)(?:\n\s*\n|\Z)", text, re.S)
     music = re.search(r"non_diegetic_music:(.*?)(?:\n\s*\n|\Z)", text, re.S)
     for name, fm in (("overall_soundscape", sound), ("non_diegetic_music", music)):

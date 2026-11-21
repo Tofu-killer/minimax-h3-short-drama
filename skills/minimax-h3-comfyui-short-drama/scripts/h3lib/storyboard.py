@@ -21,10 +21,16 @@ ACTING_MARGIN = 2.0
 class Character:
     id: str
     name: str
-    identity_phrase: str            # reused verbatim in every segment
+    identity_phrase: str            # what tells this person apart at a glance, as "a <who> with <features>": hair, main
+                                    # garment and colour, one marker (about 12-25 words). Goes into every prompt.
     voice_phrase: str = ""          # e.g. "a woman in her late twenties with a low, slightly husky voice"
     reference_images: list[str] = field(default_factory=list)   # face / outfit / full-body
     voice_reference: Optional[str] = None                        # 2–15 s clean speech
+    name_en: str = ""               # English name for people reading the files (prompts never use a person's name)
+    sheet_phrase: str = ""          # the long look used only to GENERATE the reference pictures (face structure, build,
+                                    # height ...). Never written into a video prompt.
+    short_phrase: str = ""          # how prompts call this person after the first mention, e.g. "the grey-haired doctor in the
+                                    # white coat"; default: "the" + the head of identity_phrase ("the man in his fifties")
 
 
 @dataclass
@@ -33,6 +39,7 @@ class Scene:
     name: str
     description: str                # written once, pasted unchanged
     reference_images: list[str] = field(default_factory=list)
+    name_en: str = ""               # English label used inside prompts; default: `name` if ASCII, else derived from the id
 
 
 @dataclass
@@ -42,6 +49,7 @@ class Prop:
     description: str
     reference_images: list[str] = field(default_factory=list)
     rarity: Optional[str] = None     # 三角洲 loot tier: red/gold/purple/blue/green/white; overlaid in post, not rendered
+    name_en: str = ""               # English label used inside prompts; default: `name` if ASCII, else derived from the id
 
 
 @dataclass
@@ -51,6 +59,8 @@ class Dialogue:
     text: str
     delivery: str = ""              # "softly", "calm and quiet", ...
     offscreen: bool = False         # voice-over -> lips closed
+    after_line: str = ""            # optional sentence: what the speaker does right after the words end
+                                    # ("He closes his lips and looks down at {prop_folder}."); default: closes the lips
 
 
 @dataclass
@@ -85,7 +95,9 @@ class Segment:
     style: str = "Live-action, cinematic"
     continuity: str = ""            # inherited state from previous segment
     end_state: str = ""             # named end state for the next segment
-    hook_type: str = ""             # hook / setup / turn / cliffhanger
+    hook_type: str = ""             # hook / setup / turn / cliffhanger (planning label, never written into the prompt)
+    summary: str = ""               # optional: one English sentence saying what happens, {asset_id} placeholders allowed
+    use_scene_reference: bool = True   # False: do not attach the scene picture (it halves camera movement); the description carries the place
     negatives: str = ""             # "no other people, no signage"
     # -- written back after generation (observe_take.py); optional ------------------------------------
     status: str = "planned"         # planned | generated | accepted | accepted_with_deviation | rejected
@@ -129,9 +141,13 @@ def _from_dict(cls, d):
 
 
 def _resolve(base: Path, src: Optional[str]) -> Optional[str]:
-    """Local asset paths are relative to the episode JSON; URLs / mm_file:// / data: pass through."""
+    """Local asset paths are relative to the episode JSON's folder. A path that only exists relative to the
+    folder the script is run from (the project root, e.g. "bible/chars/a.png" with the JSON in episodes/) is
+    accepted as well. URLs / mm_file:// / data: pass through."""
     if not src or src.startswith(("http://", "https://", "mm_file://", "data:")) or Path(src).is_absolute():
         return src
+    if not (base / src).exists() and Path(src).exists():
+        return str(Path(src).resolve())
     return str((base / src).resolve())
 
 
@@ -168,6 +184,7 @@ def dump_episode(ep: Episode) -> str:
 # ---------------------------------------------------------------- hand-off between segments
 
 OBSERVED = "@observed"
+PLACEHOLDER_RE = re.compile(r"\{([A-Za-z0-9_\u4e00-\u9fff-]+)\}")
 
 
 def effective_continuity(ep: "Episode", seg: "Segment", allow_planned: bool = False) -> tuple[str, str]:
@@ -208,15 +225,22 @@ def staging_for(ep: "Episode", seg: "Segment") -> Optional[dict]:
 
 
 def blocking_sentence(ep: "Episode", seg: "Segment") -> str:
-    """One sentence, generated from data, that pins who is where when a scene opens. Written by code so that the
-    same positions are stated the same way every time: "{a} sits at the left end of the sofa on the left side of
-    the frame, facing frame right; {b} stands by the door on the right side of the frame, facing {a}. Exactly two
-    people are in the scene; the other seats stay empty." Returns "" when the segment has no staging entry."""
+    """One passage, generated from data, that pins who is where when a scene opens. Written by code so that the
+    same positions are stated the same way every time:
+        "At the start {a} sits at the left end of the sofa on the left side of the frame, facing frame right;
+         {b} stands by the door on the right side of the frame, facing {a}. Exactly two people are in the scene
+         at the start; {c} enters later; the other seats stay empty."
+    `places` lists only who is present when the scene opens; `enters_later` names who walks in during the
+    segment. Returns "" when the segment has no staging entry."""
     st = staging_for(ep, seg)
-    if not st or not st.get("places"):
+    if not st:
+        return ""
+    places = st.get("places") or []
+    later = st.get("enters_later") or []
+    if not places and not later:
         return ""
     parts = []
-    for pl in st["places"]:
+    for pl in places:
         bits = [f"{{{pl['character']}}} {pl.get('posture', 'stands')} {pl['at'].strip()}"]
         if pl.get("side"):
             bits.append(SIDES.get(pl["side"].lower(), pl["side"]))
@@ -224,11 +248,19 @@ def blocking_sentence(ep: "Episode", seg: "Segment") -> str:
         if pl.get("facing"):
             text += f", facing {pl['facing'].strip()}"
         parts.append(text)
-    n = len(st["places"])
+    n = len(places)
     count = NUMBER_WORDS[n] if n < len(NUMBER_WORDS) else str(n)
-    tail = f" Exactly {count} {'person is' if n == 1 else 'people are'} in the scene"
-    tail += f"; {st['others'].strip().rstrip('.')}." if st.get("others") else "."
-    return "; ".join(parts) + "." + tail
+    if n:
+        out = "At the start " + "; ".join(parts) + "." + \
+              f" Exactly {count} {'person is' if n == 1 else 'people are'} in the scene at the start"
+    else:
+        out = "At the start nobody is in the scene"
+    if later:
+        names = [f"{{{c}}}" for c in later]
+        who = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+        out += f"; {who} {'enters' if len(names) == 1 else 'enter'} later"
+    out += f"; {st['others'].strip().rstrip('.')}." if st.get("others") else "."
+    return out
 
 
 def staging_problems(ep: "Episode") -> list[str]:
@@ -243,41 +275,96 @@ def staging_problems(ep: "Episode") -> list[str]:
         if st.get("scene_id") != seg.scene_id:
             out.append(f"{tag}: segment {seg.id} plays in {seg.scene_id}, not {st.get('scene_id')}")
         places = st.get("places") or []
-        if not places:
-            out.append(f"{tag}: no places")
+        later = st.get("enters_later") or []
+        if not places and not later:
+            out.append(f"{tag}: neither places nor enters_later")
+        placed = {pl.get("character") for pl in places}
+        for c in later:
+            if c not in seg.character_ids:
+                out.append(f"{tag}: enters_later names {c}, who is not in segment {seg.id}'s character_ids")
+            if c in placed:
+                out.append(f"{tag}: {c} is both placed at the start and listed in enters_later")
         seen = set()
         for pl in places:
             cid = pl.get("character")
             if cid not in seg.character_ids:
-                out.append(f"{tag}: {cid} is placed but is not in segment {seg.id}'s character_ids "
-                           f"(someone who enters later is not part of the opening positions)")
-            if not (pl.get("at") or "").strip():
+                out.append(f"{tag}: {cid} is placed but is not in segment {seg.id}'s character_ids")
+            at = (pl.get("at") or "").strip()
+            if not at:
                 out.append(f"{tag}: {cid} has no 'at' (what they stand / sit next to)")
             if pl.get("side") and pl["side"].lower() not in SIDES:
                 out.append(f"{tag}: side {pl['side']!r} for {cid} - use left / centre / right")
-            key = ((pl.get("at") or "").strip().lower(), (pl.get("side") or "").lower())
+            key = (at.lower(), (pl.get("side") or "").lower())
             if key in seen:
                 out.append(f"{tag}: two characters share {pl.get('at')!r} on the {pl.get('side')} - give each their own spot")
             seen.add(key)
-            try:
-                desc = ep.scene(seg.scene_id).description.lower()
-                words = [w for w in re.findall(r"[a-z]{4,}", (pl.get("at") or "").lower()) if w not in
-                         ("the", "left", "right", "side", "near", "next", "from", "with", "behind", "front", "centre", "center", "edge", "end")]
-                if words and not any(w in desc for w in words):
-                    out.append(f"{tag}: WARN {pl.get('at')!r} is not mentioned in the scene description - anchor positions to "
-                               f"things the scene master actually shows")
-            except StopIteration:
-                pass
-        missing = [c for c in seg.character_ids if c not in {pl.get("character") for pl in places}]
+            refs = set(PLACEHOLDER_RE.findall(at + " " + (pl.get("facing") or "")))
+            for r in refs:
+                if r not in placed and r not in seg.prop_ids and r != seg.scene_id:
+                    out.append(f"{tag}: {cid}'s position refers to {{{r}}}, who has no place at the start")
+            if not refs & placed:                           # "two steps behind {a}" is anchored to a person, not to the set
+                try:
+                    desc = ep.scene(seg.scene_id).description.lower()
+                    words = [w for w in re.findall(r"[a-z]{4,}", at.lower()) if w not in
+                             ("the", "left", "right", "side", "near", "next", "from", "with", "behind", "front", "centre",
+                              "center", "edge", "end", "middle", "steps", "step", "past")]
+                    if words and not any(w in desc for w in words):
+                        out.append(f"{tag}: WARN {pl.get('at')!r} is not mentioned in the scene description - anchor positions "
+                                   f"to things the scene master actually shows")
+                except StopIteration:
+                    pass
+        missing = [c for c in seg.character_ids if c not in placed and c not in later]
         if missing:
-            out.append(f"{tag}: WARN {', '.join(missing)} appear in segment {seg.id} but have no opening position")
-    # a scene with two or more people that opens without positions is where left/right mix-ups start
-    opened = set()
+            out.append(f"{tag}: WARN {', '.join(missing)} {'is' if len(missing) == 1 else 'are'} in segment {seg.id} but "
+                       f"{'has' if len(missing) == 1 else 'have'} neither an opening position nor an enters_later entry")
+    # a scene with two or more people that opens without positions is where left / right mix-ups start
+    current = None
     for seg in ep.segments:
-        first_visit = seg.scene_id not in opened
-        opened = {seg.scene_id}
-        if first_visit and len(seg.character_ids) >= 2 and not staging_for(ep, seg) and ep.stagings:
-            out.append(f"segment {seg.id}: WARN opens scene {seg.scene_id} with {len(seg.character_ids)} people but has no staging entry")
+        first_visit = seg.scene_id != current
+        current = seg.scene_id
+        if first_visit and len(seg.character_ids) >= 2 and not staging_for(ep, seg):
+            out.append(f"segment {seg.id}: WARN opens scene {seg.scene_id} with {len(seg.character_ids)} people but has no "
+                       f"`stagings` entry - add one so the opening positions are stated the same way every time")
+    return out
+
+
+PUNCT_RE = re.compile(r"[\s，。！？、；：“”‘’…—·,.!?;:\"'()（）《》〈〉<>\[\]【】~～\-]+")
+
+
+def spoken_chars(text: str) -> int:
+    """Characters that are actually spoken (punctuation and spaces do not take time)."""
+    return len(PUNCT_RE.sub("", text or ""))
+
+
+def placeholder_problems(ep: "Episode") -> list[str]:
+    """Every {asset_id} in any text that reaches a prompt must be an asset bound to that segment - otherwise the
+    builder cannot replace it."""
+    out = []
+    for i, seg in enumerate(ep.segments):
+        bound = set(seg.character_ids) | set(seg.prop_ids) | {seg.scene_id}
+        texts = [("summary", seg.summary), ("continuity", seg.continuity), ("end_state", seg.end_state),
+                 ("negatives", seg.negatives), ("soundscape", seg.soundscape)]
+        for sh in seg.shots:
+            for name in ("framing", "camera", "action", "lighting", "performance", "sound_cue"):
+                texts.append((f"shot {sh.index} {name}", getattr(sh, name, "")))
+            for d in sh.dialogue:
+                texts.append((f"shot {sh.index} after_line", d.after_line))
+        st = staging_for(ep, seg)
+        if st:
+            for pl in st.get("places") or []:
+                texts.append(("staging", f"{pl.get('at', '')} {pl.get('facing', '')}"))
+        for where, text in texts:
+            for key in PLACEHOLDER_RE.findall(text or ""):
+                if key not in bound:
+                    out.append(f"segment {seg.id} {where}: {{{key}}} is not an asset bound to this segment "
+                               f"(bound: {', '.join(sorted(bound))})")
+        if seg.observed_end_state and i + 1 < len(ep.segments) and ep.segments[i + 1].continuity.strip().startswith(OBSERVED):
+            nxt = ep.segments[i + 1]
+            nb = set(nxt.character_ids) | set(nxt.prop_ids) | {nxt.scene_id}
+            for key in PLACEHOLDER_RE.findall(seg.observed_end_state):
+                if key not in nb:
+                    out.append(f"segment {seg.id} observed_end_state: {{{key}}} is not bound in {nxt.id}, which opens from this "
+                               f"text - bind it there or describe it in words")
     return out
 
 
@@ -291,11 +378,12 @@ def shot_spans(seg: "Segment") -> list[tuple["Shot", float, float]]:
 
 
 def _framing_class(framing: str) -> str:
-    f = framing.lower()
+    """Shot size from the first matching phrase; hyphens and spaces are interchangeable ("medium-wide" = "medium wide")."""
+    f = framing.lower().replace("-", " ")
     for key, cls in (("extreme close", "extreme close-up"), ("medium close", "medium close-up"), ("insert", "insert"),
-                     ("close-up", "close-up"), ("close up", "close-up"), ("closeup", "close-up"),
+                     ("close up", "close-up"), ("closeup", "close-up"),
                      ("medium wide", "medium wide"), ("medium long", "medium wide"), ("cowboy", "medium wide"),
-                     ("medium", "medium"), ("mid shot", "medium"), ("two-shot", "medium"),
+                     ("medium", "medium"), ("mid shot", "medium"), ("two shot", "medium"),
                      ("full shot", "wide"), ("wide", "wide"), ("long shot", "wide"), ("establishing", "wide"), ("aerial", "wide")):
         if key in f:
             return cls
@@ -320,17 +408,17 @@ def rhythm_warnings(ep: "Episode") -> list[str]:
             out.append(f"segment {seg.id}: all {len(durs)} shots last about {sum(durs) / len(durs):.1f}s - even pacing reads "
                        f"as mechanical; give the key shot more time and shorten a reaction")
         for sh, s0, e0 in spans:
-            chars = sum(len(re.sub(r"\s", "", d.text)) for d in sh.dialogue)
+            chars = sum(spoken_chars(d.text) for d in sh.dialogue)
             if chars and chars > 3 * (e0 - s0) + 1:
                 out.append(f"segment {seg.id} shot {sh.index}: {chars} characters in a {e0 - s0:.1f}s shot "
                            f"(about {3 * (e0 - s0):.0f} fit) - the line will be rushed or cut off")
-            all_shots.append((seg.id, sh.index, _framing_class(sh.framing)))
+            all_shots.append((seg.id, sh.index, _framing_class(sh.framing), seg.scene_id))
             events_by_t.append(offset + s0)
             events_by_t += [offset + s0] * len(sh.dialogue)
         offset += seg.duration
     run = 1
     for (a, b) in zip(all_shots, all_shots[1:]):
-        run = run + 1 if (a[2] == b[2] and a[2] != "other") else 1
+        run = run + 1 if (a[2] == b[2] and a[2] != "other" and a[3] == b[3]) else 1       # a new scene starts a new run
         if run == 3:
             out.append(f"segment {b[0]} shot {b[1]}: third {b[2]} shot in a row - change the shot size")
     total = offset
@@ -351,6 +439,98 @@ def frames_for_seconds(seconds: float) -> int:
     n = int(round(seconds * 24))
     k = max(0, -(-(n - 5) // 17))
     return 17 * k + 5
+
+
+# ---------------------------------------------------------------- how people are written into prompts
+
+_ARTICLE_RE = re.compile(r"^(?:an?|the)\s+", re.I)
+IDENTITY_WORDS = 30       # the look is repeated where a person first appears; official examples use 10-20 words
+
+
+def identity_head(phrase: str) -> str:
+    """"a woman in her early thirties with short black hair, ..." -> "woman in her early thirties" (the part
+    prompts use to call the person; prompt_builder.split_identity cuts at the same place)."""
+    t = _ARTICLE_RE.sub("", (phrase or "").strip().rstrip(". "))
+    cuts = [c for c in (t.find(" with "), t.find(",")) if c > 0]
+    return t[:min(cuts)].strip() if cuts else t
+
+
+def designation_of(c: "Character") -> str:
+    s = (c.short_phrase or "").strip().rstrip(". ")
+    return ("the " + _ARTICLE_RE.sub("", s if s else identity_head(c.identity_phrase))).lower()
+
+
+def identity_problems(ep: "Episode") -> list[str]:
+    out = []
+    for c in ep.characters:
+        p = (c.identity_phrase or "").strip()
+        if not p:
+            out.append(f"character {c.id}: identity_phrase is empty")
+            continue
+        if not _ARTICLE_RE.match(p):
+            out.append(f"character {c.id}: WARN identity_phrase should read \"a <who> with <features>\" "
+                       f"(\"a woman in her thirties with short black hair, ...\"); prompts call the person "
+                       f"\"{designation_of(c)}\" - it starts with {p.split()[0]!r}")
+        elif " with " not in p and "," not in p:
+            out.append(f"character {c.id}: WARN identity_phrase has no feature list (\"a <who> with <hair>, <main garment>, "
+                       f"<one marker>\"); the person will only be called \"{designation_of(c)}\"")
+        n = len(p.split())
+        if n > IDENTITY_WORDS:
+            out.append(f"character {c.id}: WARN identity_phrase is {n} words and is repeated where the person first appears in "
+                       f"every segment. With a reference picture the prompt only needs what tells this person apart at a "
+                       f"glance - hair, main garment and colour, one marker (about 12-25 words). Move the fine detail to "
+                       f"sheet_phrase, which only the image stage reads")
+        if c.voice_phrase.strip() and " with " not in c.voice_phrase and "voice" not in c.voice_phrase.lower():
+            out.append(f"character {c.id}: WARN voice_phrase should read \"a <who> with a <pitch / texture> voice and a <pace> "
+                       f"pace\"")
+    for seg in ep.segments:
+        seen: dict[str, str] = {}
+        for cid in seg.character_ids:
+            try:
+                d = designation_of(ep.char(cid))
+            except StopIteration:
+                continue
+            for other, od in seen.items():
+                if d == od or d.startswith(od + " ") or od.startswith(d + " "):
+                    out.append(f"segment {seg.id}: WARN {other} and {cid} are both called \"{od if len(od) <= len(d) else d}\" in "
+                               f"prompts - give each a short_phrase that tells them apart (\"the grey-haired doctor in the "
+                               f"white coat\")")
+            seen[cid] = d
+    return out
+
+
+_LOOK_WORD = re.compile(r"[a-z]{4,}")
+_LOOK_STOP = {"with", "over", "from", "into", "that", "this", "left", "right", "hand", "hands", "side", "back", "around",
+              "about", "early", "late", "years", "woman", "girl", "person", "each", "both"}
+_RESTATED = re.compile(r"\{([A-Za-z0-9_\u4e00-\u9fff-]+)\}\s*,\s*([^,.;{}]{3,90})[,.;]")
+
+
+def restated_look_problems(ep: "Episode") -> list[str]:
+    """"{a}, short black hair and beige trench coat, sits ..." - the builder already repeats the look where a
+    person first appears and adds a short reminder at later cuts; a second copy in the action doubles it."""
+    out = []
+    for seg in ep.segments:
+        hits = []
+        for sh in seg.shots:
+            for name in ("framing", "action", "performance"):
+                for m in _RESTATED.finditer(getattr(sh, name, "") or ""):
+                    cid = m.group(1)
+                    if cid not in seg.character_ids:
+                        continue
+                    try:
+                        c = ep.char(cid)
+                    except StopIteration:
+                        continue
+                    own = set(_LOOK_WORD.findall(f"{c.identity_phrase} {c.short_phrase}".lower())) - _LOOK_STOP
+                    if len(set(_LOOK_WORD.findall(m.group(2).lower())) & own) >= 2:
+                        hits.append((sh.index, f"{{{cid}}}, {m.group(2).strip()}"))
+        if hits:
+            shots = ", ".join(str(i) for i in sorted({i for i, _ in hits}))
+            out.append(f"segment {seg.id}: WARN shot {shots} restate{'s' if len({i for i, _ in hits}) == 1 else ''} a person's look "
+                       f"after the placeholder (\"{hits[0][1]}\"{f' and {len(hits) - 1} more' if len(hits) > 1 else ''}). "
+                       f"build_prompts.py already repeats the look where the person first appears and adds a reminder at later "
+                       f"cuts - write the placeholder and go straight on with the action")
+    return out
 
 
 # ---------------------------------------------------------------- validation
@@ -411,10 +591,14 @@ def validate_episode(ep: Episode) -> list[str]:
             for d in sh.dialogue:
                 if d.speaker != "narrator" and d.speaker not in cids:
                     problems.append(f"{tag} shot {sh.index}: unknown speaker {d.speaker}")
-                total_chars += len(re.sub(r"\s", "", d.text))
+                elif d.speaker != "narrator" and d.speaker not in seg.character_ids:
+                    problems.append(f"{tag} shot {sh.index}: speaker {d.speaker} is not in this segment's character_ids "
+                                    f"(add the character to the segment, or use narrator for a voice with no body)")
+                total_chars += spoken_chars(d.text)
         need = total_chars / CHARS_PER_SECOND + ACTING_MARGIN if total_chars else 0
         if need > seg.duration:
-            problems.append(f"{tag}: dialogue needs ~{need:.1f}s (chars/4.5 + 2) but duration is {seg.duration}s")
+            problems.append(f"{tag}: {total_chars} spoken characters need ~{need:.1f}s (characters / 4.5 + 2 s of acting) "
+                            f"but the segment is {seg.duration}s")
         if any(w in seg.soundscape.lower() for w in ("tense", "sad", "紧张", "悲伤")) and len(seg.soundscape) < 40:
             problems.append(f"{tag}: soundscape is a mood word, write concrete sounds")
 
@@ -443,7 +627,10 @@ def validate_episode(ep: Episode) -> list[str]:
         for sh in seg.shots:
             if len(sh.action.split()) < 8:
                 problems.append(f"segment {seg.id} shot {sh.index}: action is too short to be a start→change→end description")
+    problems += identity_problems(ep)
+    problems += restated_look_problems(ep)
     problems += staging_problems(ep)
+    problems += placeholder_problems(ep)
     # consecutive static dialogue segments (Short-Drama-Studio rule)
     static_run = 0
     for seg in ep.segments:

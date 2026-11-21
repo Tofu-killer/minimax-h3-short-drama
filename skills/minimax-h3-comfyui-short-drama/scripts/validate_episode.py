@@ -14,7 +14,7 @@ import argparse, sys
 from pathlib import Path
 sys.dont_write_bytecode = True      # keep the skill folder free of __pycache__
 sys.path.insert(0, str(Path(__file__).parent / "h3lib"))
-from storyboard import load_episode, validate_episode, rhythm_warnings  # noqa: E402
+from storyboard import load_episode, validate_episode, rhythm_warnings, frames_for_seconds  # noqa: E402
 
 
 def _utf8_console() -> None:
@@ -76,8 +76,11 @@ def main():
         for p in errors:
             print(" -", p)
         sys.exit(1)
-    print(f"OK: {ep.title} — {len(ep.segments)} segments, "
-          f"{sum(s.duration for s in ep.segments)} s total")
+    gen = sum(frames_for_seconds(s.duration) for s in ep.segments) / 24.0
+    holds = sum(1 for s in ep.segments if s.shots and s.shots[-1].end_hold)
+    cut = gen - holds * 1.0 - len(ep.segments) * 2 / 24.0
+    print(f"OK: {ep.title} — {len(ep.segments)} segments, {sum(s.duration for s in ep.segments)} s requested = {gen:.1f} s generated "
+          f"(17k+5 frame grid); about {cut:.1f} s in the cut after trimming {holds} declared end hold(s) and the lead frames")
 
 
 if __name__ == "__main__":
