@@ -78,6 +78,10 @@ def main():
         except ValueError as e:
             blocked.append(str(e))
             continue
+        except FileNotFoundError as e:                 # a reference file named in the storyboard is not on disk
+            blocked.append(f"{seg.id}: {e} - fix the path in the storyboard, or put the file there "
+                           "(validate_episode.py lists every missing file at once)")
+            continue
         text = next(c["text"] for c in bp.content if c["type"] == "text")
         media = [c for c in bp.content if c["type"] != "text"]
         frames = frames_for_seconds(seg.duration)

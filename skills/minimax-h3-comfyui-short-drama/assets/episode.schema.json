@@ -429,6 +429,15 @@
       "type": "boolean",
       "default": true,
       "description": "False: do not attach the scene picture for this segment (a scene reference roughly halves camera movement); the scene description text carries the place"
+     },
+     "character_refs": {
+      "type": "object",
+      "additionalProperties": {
+       "type": "integer",
+       "minimum": 0,
+       "maximum": 3
+      },
+      "description": "Per-segment picture budget: {character_id: how many of that character's reference pictures to attach in this segment}. Default: all (at most 3). 1 = the first picture only (the face); 0 = none - the person is then written in words. Use it when a segment would carry more than 6 references."
      }
     }
    }

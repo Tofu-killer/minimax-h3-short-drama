@@ -29,6 +29,13 @@ ComfyUI 0.37.2 已内置 Qwen-Image 2.1（`TextEncodeQwenImage21`、`QwenImage21
 | 编辑·草稿 | 同上 + Lightning LoRA | `lightx2v/Qwen-Image-Edit-2511-Lightning`：`Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors`（另有 8steps） | 0.85 GB | 4 步 CFG 1（infinite-creation 2511 工作流的 4 步开关）；对身份保持的影响未测 |
 | 场景母版、九宫格、道具、海报（**只出不含指定人物身份的图**；要 16 MP 或强提示词遵循时用） | MiniMax-H3-Image（2026-11-03 发布，33.1B；需 ComfyUI ≥ 0.45） | `Comfy-Org/MiniMax-H3-Image`：`diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors` + `vae/minimax_h3_image_vae_fp16.safetensors` + 现有 H3 文本编码器（`qwen3vl_32b_minimax_h3_*`，CLIPLoader type `minimax`；必须是完整的 32B，讨论区 #8、#10） | 20.98 + 1.17 GB（HF；已装 H3 的机器只多下约 22 GB） | `MiniMaxH3ImageConditioning` → 6 步 CFG 1 euler / simple（官方模板 `image_minimax_h3_image_edit`）；工作区间 4–20 MP（16:9 的 16 MP = 5472×3072）；肤质 / 质感发糙换 LCM（`SamplerLCM` s_noise 1.1 → 0.9、simple、6 步；讨论区 #5、Fizgig 文档）；提示词写长的英文整图描述或接提示词扩写；2688×1536 暖机后 11–12 s / 张、16.5 MP 约 41 s、内存占用约 41 GB（单机实测 RTX 4070 SUPER 12 GB + 96 GB 内存，LIOSAM007；4090 无实测） |
 
+- **不确定选哪个就这样**：自己看、不营利 → Qwen-Image 2.1（表里第一行）；要营利 → Z-Image-Turbo；Krea 2 只在前两者出的真人质感不够时再下来试，不用一开始三个都下。编辑模型只有一个选择：Edit 2511。
+- **现成的工作流**（ComfyUI 模板面板；你的版本里没有就从 GitHub `Comfy-Org/workflow_templates` 的 `templates/` 下载同名 JSON。下面的默认值是 2026-11-21 逐个读模板 JSON 的连线得到的，不是看节点上的残留数字）：
+  - `image_qwen_image_2_1_t2i`（Qwen-Image 2.1 文生图）：默认 25 步、CFG 1、euler / simple；模板自己的说明写着官方管线是 40–50 步，成品按上表的 50 步改。尺寸由 `ResolutionSelector` 给（默认 1:1、1 MP；要 2K 把 megapixels 调到 4）。里面有一条默认关闭的提示词扩写支路，要另一个 9.5 GB 的文件 `text_encoders/qwen3.5_9b_qwen_image_2.1_pe_t2i.int8_convrot.safetensors`（同仓库）；ComfyUI 提交时会校验图里每个加载节点的文件名，开关关着也一样（0.37.2 `execution.py` 的 `validate_inputs` 沿所有连线检查），缺文件会报 `Value not in list`——要么下载它，要么把扩写用的 `TextGenerate`、它的 `CLIPLoader` 和那个开关删掉，提示词直接连 `TextEncodeQwenImage21`。本流程的生图提示词由模板填好，不需要扩写。
+  - `image_qwen_image_edit_2511_int8`（Edit 2511 int8 版）：`ModelSamplingAuraFlow 3.1` → `CFGNorm 1` → KSampler euler / simple，默认 **40 步 CFG 4**；打开「Enable 4steps LoRA?」变成 4 步 CFG 1（Lightning LoRA；这个 LoRA 文件同样会被校验，关着开关也得放在 `models/loras`，或把那个节点删掉）。模板里的对照表：Qwen 官方 40 步、Comfy 20 步，CFG 都是 4——上表的 20 步 CFG 4 即后者。模板说明里文本编码器的下载链接指向另一个仓库的同名文件，和上表 `Comfy-Org/Qwen-Image` 里的是同一个文件，下一份就够。
+  - **这个编辑模板的出图尺寸跟着第 1 张图走**：`image` 先过 `FluxKontextImageScale`（缩到一组固定的约 1 MP 尺寸里比例最近的一个），再编码成采样用的潜空间。1024×1024 → 1024×1024、1024×1536 → 832×1248，做派生视图正合适；但 16:9 出不来——1344×768 的图会变成 1328×800，1920×1080 的图会变成 1392×752（0.37.2 `nodes_flux.py` 的尺寸表逐项算的）。做逐镜首帧时在子图里加一个 `EmptySD3LatentImage`（1344×768），接到 KSampler 的 `latent_image`，换掉原来 `VAEEncode` 那条线；三张参考图照旧从 `image` / `image2` / `image3` 进（降噪 1.0 时那条线只决定尺寸，这是 ComfyUI 的通用做法，本流程没在 4090 上实跑过）。
+  - `image_z_image_turbo_int8`（Z-Image-Turbo）。
+  - 批量出候选和选择卡可以用 `comfy_submit.py`（`comfyui-nodes.md` §3 末尾）。
 - 显存：表中都是 HF 文件大小，**4090 峰值显存无人实测**；Edit 2511 的 DiT 20.5 GB + 编码器 9.4 GB 靠 ComfyUI 自动卸载，mathruffian 在「16 GB 显存 + 32 GB 内存」模拟下跑通 → 24 GB + 32 GB 内存足够，int8_convrot 版在 4090 上未验证。
 - 许可：**Qwen-Image 2.1 是 qwen-research（非商用）**（HF 模型卡；mathruffian `THIRD_PARTY_NOTICES`）；Edit 2511、Z-Image-Turbo、Lightning 为 Apache-2.0；Krea 2 为 krea-2-community，公司收入 ≥ 100 万美元需企业授权（经 Identity Edit 许可转述，许可原文未读）；**MiniMax-H3-Image**：年收入 ≤ 100 万美元且不做托管服务可商用、产品界面须显示模型名，**排除地区（欧盟 / 英 / 韩 / 美）连输出也不能用**（LICENSE §V.4）；FLUX.2 Klein 9B 非商用、**4B 为 Apache-2.0**；FLUX 3 Image Klein 为 FLUX Kommunity（年收入 < 500 万美元可商用，二手来源，原文未读）；Anima 模型与 LoRA 非商用、**输出可商用**（LICENSE §2e）；**InsightFace `buffalo_l` / `antelopev2` 权重仅限非商用研究**（InsightFace README）。要营利：定妆照 / 母版改 Z-Image-Turbo 或 Edit 2511 文生图，首帧仍用 Edit 2511（mathruffian「首幀不用換」）。
 - **Edit-2511 怎么吃参考图**（v0.46.2 `comfy_extras/nodes_qwen.py`）：`TextEncodeQwenImageEditPlus` 只有 `image1`–`image3` 三个图像输入，并在提示词前自动拼 `Picture 1: `、`Picture 2: `、`Picture 3: ` 标签；每张参考给 Qwen2.5-VL 看的是 384×384 面积的缩略图、给 DiT 的参考潜变量缩到 1 MP → **参考图里脸占画面越大越像**，多格板缩到 1 MP 后每张脸只剩一两百像素。所以参考合计 ≤ 3 张，身份参考用单人图，脸部参考用脸占满画面的头肩特写。
@@ -71,6 +78,11 @@ ComfyUI 0.37.2 已内置 Qwen-Image 2.1（`TextEncodeQwenImage21`、`QwenImage21
 | ③ 按镜裁切 | 裁到该镜景别，长边 ≤ 1344 | 附整张母版会被照抄成大全景（mathruffian `masters()`） |
 | ④ 道具 | 1:1，2048×2048（Qwen 2.1 原生 2K） | 纯白背景、只有该物件、真实文字写清内容和位置（infinite-creation 道具规则）；要透明底：`This is an RGBA format image with transparency. … The image has an alpha channel and a transparent background.` 存 PNG（Comfy 模板注释） |
 | ⑤ 首帧 | **等于 H3 生成画布**：1344×768（竖屏 768×1344） | 字面首帧，不是拼贴设定板、无标签无 UI（05 survey #30；chiphoton）；动作镜画「动作开始前」的姿势，跳跃留头顶空间（mathruffian docs/03）；场景里的实物文字（屏幕、招牌）画进首帧，UI / 字幕 / 等级框仍后期叠（mathruffian checklists；本 skill 铁律 6） |
+
+这两步没有专门的脚本，用 ffmpeg 一行就行（下面两条在 ffmpeg 6.1 上跑过）：
+
+- **从母版裁一张单机位图**：`ffmpeg -i bible/scenes/corridor_master.png -vf "crop=2016:1152:300:200,scale=1344:768:flags=lanczos" bible/scenes/corridor_s03_crop.png`——`crop=宽:高:左上角x:左上角y`，宽高按 7:4 取（2016×1152、1680×960、1344×768…），最后缩到 1344×768。
+- **几张静帧并排审**（尺寸不同也行，统一缩到 720 高）：`ffmpeg -i a.png -i b.png -i c.png -filter_complex "[0:v]scale=-2:720[x0];[1:v]scale=-2:720[x1];[2:v]scale=-2:720[x2];[x0][x1][x2]hstack=inputs=3" qc/stills_lin_lan.png`。`contact_sheet.py` 只处理视频。
 
 ## 3. 提示词模板（英文，正向写法；全文另存 `../assets/image-prompts.md`）
 
@@ -116,7 +128,12 @@ ComfyUI 0.37.2 已内置 Qwen-Image 2.1（`TextEncodeQwenImage21`、`QwenImage21
 1. **定妆照**（Qwen 2.1 50 步，或 Z-Image-Turbo）：同一外观文字跑 4–8 个 seed，人挑一张，存 `bible/chars/<id>_bust.png`，之后不再换（mathruffian）；「冻结」要落成机器可读，记进 `bible/assets.json`（布局见本节「冻结与过期记录」）。外观文字（LOOK）存进系列圣经，**每一镜首帧原样照抄**，少写一次就掉眼镜换发型（mathruffian `frames()`）。
 2. **正面全身 + 派生视图**：Edit 2511 以 bust 为 Picture 1 套【派生视图】模板出一张**正面全身**（`<id>_full.png`），人确认后与 bust 一起冻结（待 A/B）；再逐张出 face.png（参考 bust）、纯 90° 侧与背（参考正面全身），每张单人单视图、只参考锚点、互不引用（编辑模型保脸，mathruffian「長相像」；shuohao character-refs）。16:9 角色板用脚本把这几张拼起来（`<id>_sheet.png`）只给人审。备选：Contact Sheet 从 bust 出五视图，逐视图存成单人图再拼板。infinite-creation 的做法是把一张现成三视图板当第 1 张参考让 2511 照「排版格式」出新人物（它的 2511 工作流示例提示）；这条路把版式当参考，身份另靠文字，出的是合成板，只作备选且只给人审。
 3. **变体**：换装 / 年龄变体用【换装子资产】从冻结的正面全身编辑（侧 / 背再从变体全身派生），每套变体也是一组单人单视图，优先级 `costume > age > 原图`（`storyboard-and-assets.md` §3 资产表）。
-4. **逐镜首帧**：Edit 2511，参考合计 ≤ 3 张（节点只有 `image1`–`image3`），顺序 = 每个入画角色的 bust / face.png（2 人实测可行）→ 最后一张场景裁切（mathruffian）；超槽（≥ 3 个具名角色 + 场景）就停下来，不静默丢图（AIMovieStudiov2）——非商用可换 10 图的 Qwen-Image 2.1，或按本节「什么时候花钱用云端出关键帧」的条件走云端；把几张身份图 `ImageStitch` 拼成一张等于多格板（§6 第 1 条），不用。1344×768 直接出。
+4. **逐镜首帧**：Edit 2511，参考合计 ≤ 3 张（节点只有 `image1`–`image3`），顺序 = 每个入画角色的 bust / face.png（2 人实测可行）→ 最后一张场景裁切（mathruffian）；超槽（≥ 3 个具名角色 + 场景）就停下来，不静默丢图（AIMovieStudiov2）——非商用可换 10 图的 Qwen-Image 2.1，或按本节「什么时候花钱用云端出关键帧」的条件走云端；把几张身份图 `ImageStitch` 拼成一张等于多格板（§6 第 1 条），不用。1344×768 直接出（用官方模板时要先按 §1「现成的工作流」换成固定尺寸的空潜空间，否则出不了 16:9）。
+   - **首帧里要有关键道具**：三个图像输入不够放「两个人 + 场景 + 道具」。道具入画的首帧尽量设计成单人镜（人 + 道具 + 场景裁切，正好 3 张）；一定要两人加道具同框，就分两步——先出「两人 + 场景」，再以这张为 Picture 1、道具图为 Picture 2 编辑一次，把道具放进手里或桌上。
+   - **和实拍末态的先后**：从上一段接着演的段（`continuity` 是 `"@observed"`），等上一段选好片、`observe_take.py` 写回之后再做它的首帧，按实拍的站位和持物来画；提前做的首帧和实拍对不上时，以实拍为准重做首帧。
+   - 模板里写死的镜头 / 胶片描述（`Kodak Vision3 500T … anamorphic 50mm`）换成和分镜 `style` 一致的说法，首帧的质感会一直带到这一段结束。
+   - 身份参考用 bust（头肩定妆照）；没有单独的 bust 就用 `face.png`。
+   - **首帧的宽高比要和生成画布一致**（1344×768 出片就做 1344×768 的首帧；960×544 的草稿画布和它只差 0.8%，同一张首帧通用）：`i2va` / `fl2va` 的首帧会被**直接拉伸**到画布，不裁切（0.37.2 `nodes_minimax_h3.py`：`first_frame` 用 `crop="disabled"`，尾帧才是居中裁切）——比例差 5% 脸就会变宽或变窄。`ref2va` 里首帧是作为 `<Picture 1>` 进去的，保持原比例，不会被拉伸，但构图会和画布对不齐。`comfy_submit.py` 的批次预览会在 `i2va` / `fl2va` 的首帧、尾帧和画布比例差超过 1% 时提醒。
    - **同场多机位**：同一场的不同机位从**同一张底图**编辑，首尾帧也从同一张图改（mathruffian docs/03：换机位背景会跑）；转机位用 Multiple-Angles LoRA 的 96 机位语法（§3【多机位】），正反打两张都从同一张双人底图转（官方模板 `templates-1_click_multiple_character_angles-v1.0`、`template_rob_split_stack_qwen_multi_wan22` 都是一张输入图出多个机位）。转完人审 + 过门禁。
    - **姿势**：靠文字写不稳时，接一张 3D 假人渲染或深度图当姿势参考并在提示词里点名（占一个槽；编辑模型吃假人 / 深度图比吃 OpenPose 骨架稳，AnyPose 作者、PoseAtlas 的经验，未在 4090 验证）；写实单人可用【姿势迁移】，漫剧不用。
    - **不过怎么办**：每镜一批 2 个 seed，连续两批仍不对就改提示词或换参考裁切（本 skill 铁律 10 的同一逻辑）；第三条出路——构图 / 光线 / 姿势都对、只有脸不像 → 用【换头】修复，不重抽，修完重新过门禁。换头的量化只有一组单机实测，且测的是 Qwen 2.1 + BFS：InsightFace 余弦原图 0.129、ReActor 0.216、换头 0.735、先放大到 1536×2048 再换 0.783，同人上限约 0.94（moss-qwen-faceswap）；2511 + v5 无量化。多人镜只有一个人不对：SAM3 把他涂成 `#FF00FF`，用 `bfs_body_swap_selective_magenta_v1.0_qwen_2.1` 只换这一个人（BFS 工作流；Qwen 2.1，非商用）。
@@ -160,7 +177,7 @@ ComfyUI 0.37.2 已内置 Qwen-Image 2.1（`TextEncodeQwenImage21`、`QwenImage21
 
 - 上面示例里的路径是相对项目根目录写的；分镜 JSON 放在 `episodes/` 下时两种写法都认（相对 JSON 所在目录，或相对运行脚本的项目根目录）。
 - 角色图顺序有语义：`build_prompts.py` 把第 1 张写成「脸与发型的来源」、第 2 张写成「体型、服装与轮廓的来源」（`h3lib/prompt_builder.py`；只有一张时四样都取自它）→ **face.png 放第一、正面全身 `_full.png` 放第二**，两张都是单人单视图；拼出来的角色板只给人审，不进 `reference_images`（shuohao 的 H3 实测：只挂正面全身，服装和背影都对但脸会走样，加一张大头照脸最接近；本 skill 待 A/B）。口型近景用半身裁图而非全身三视图（ancient-rap-battle，05 survey #27）。
-- 场景只接 `reference_images[0]`（同上源码）；要九宫格就把它排第一，母版 / 九宫格二选一占槽。场景参考会让运镜减半，但去掉就丢地点一致性（egguy886 h3-drama-kit 175 段实测，11 survey）。
+- 场景只接 `reference_images[0]`（同上源码）；排第一的用无人母版；九宫格带格线和数字，直接当参考会被画进画面，用来裁单机位图和生首帧。场景参考会让运镜减半，但去掉就丢地点一致性（egguy886 h3-drama-kit 175 段实测，11 survey）。
 - 道具：剧情里出现即必须有图（本 skill 铁律 6）。
 - **段内每镜一张关键帧（规划中的可选字段，待 A/B）**：`"keyframes": [{"t": 0.0, "image": "first/s04_k1.png"}, {"t": 3.0, "image": "first/s04_k2.png"}]`——每个子镜头一张关键帧，主帧钉在 0.00 s、子帧钉在各自切点（`t` 取该镜的 `shots[].start`），用 `MiniMaxH3AddGuide.frame_idx` 钉帧（shuohao novel-storyboard）。**脚本尚未支持，需手工在 ComfyUI 里用 MiniMaxH3AddGuide 接线**：`episode.schema.json` 没有这个字段，`load_episode()` 读入时会静默丢掉它，`validate_episode.py` / `build_prompts.py` 既不校验也不出对齐句（`Picture k … aligns with the X.XX-second mark of the target video` 要手写；`t` 到 `frame_idx` 的换算与吸附以节点 tooltip 为准）。开放权重 FL2VA 官方只支持 ≤ 2 张图，≥ 3 张为实验性（musubi 单帧文档）→ 先限制在 ≤ 2 张并做样片。
 

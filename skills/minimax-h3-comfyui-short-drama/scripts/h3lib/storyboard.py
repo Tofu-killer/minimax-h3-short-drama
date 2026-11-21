@@ -101,6 +101,8 @@ class Segment:
     hook_type: str = ""             # hook / setup / turn / cliffhanger (planning label, never written into the prompt)
     summary: str = ""               # optional: one English sentence saying what happens, {asset_id} placeholders allowed
     use_scene_reference: bool = True   # False: do not attach the scene picture (it halves camera movement); the description carries the place
+    character_refs: dict = field(default_factory=dict)   # {character_id: how many of its reference pictures to attach HERE};
+                                    # default all (at most 3). 1 = the face only, 0 = none (the person is written in words)
     negatives: str = ""             # one positive lock ("The corridor behind them stays empty."), never a bare "no X"
     # -- written back after generation (observe_take.py); optional ------------------------------------
     status: str = "planned"         # planned | generated | accepted | accepted_with_deviation | rejected
@@ -502,8 +504,9 @@ def reference_count(ep: "Episode", seg: "Segment") -> tuple[int, int]:
             c = ep.char(cid)
         except StopIteration:
             continue
-        pics += min(3, len(c.reference_images))
-        if c.voice_reference and c.reference_images and cid in speakers:
+        n = min(3, len(c.reference_images), int((seg.character_refs or {}).get(cid, 3)))
+        pics += n
+        if c.voice_reference and n and cid in speakers:
             audio += 1
     try:
         if ep.scene(seg.scene_id).reference_images and seg.use_scene_reference:
@@ -520,6 +523,12 @@ def reference_count(ep: "Episode", seg: "Segment") -> tuple[int, int]:
 
 def reference_problems(ep: "Episode") -> list[str]:
     out = []
+    for seg in ep.segments:
+        for cid, n in (seg.character_refs or {}).items():
+            if cid not in seg.character_ids:
+                out.append(f"segment {seg.id}: character_refs names {cid}, who is not in this segment's character_ids")
+            elif not isinstance(n, int) or not 0 <= n <= 3:
+                out.append(f"segment {seg.id}: character_refs[{cid}] must be 0, 1, 2 or 3 (how many of the reference pictures to attach)")
     bare = [seg.id for seg in ep.segments if seg.mode == "ref2va" and reference_count(ep, seg) == (0, 0)]
     if bare:
         which = "every segment" if len(bare) == len(ep.segments) else "segment " + ", ".join(bare)
@@ -531,7 +540,8 @@ def reference_problems(ep: "Episode") -> list[str]:
         pics, audio = reference_count(ep, seg)
         if seg.mode == "ref2va" and pics + audio > 6:
             out.append(f"segment {seg.id}: WARN {pics} picture(s) + {audio} voice reference(s) = {pics + audio} references; community "
-                       f"tests found 6 or fewer the most stable. Options: one picture per person instead of two, "
+                       f"tests found 6 or fewer the most stable. Options: fewer pictures for a secondary character in this "
+                       f"segment (\"character_refs\": {{\"<id>\": 1}}), "
                        f"use_scene_reference false, or leave out a prop that is only glimpsed")
     return out
 

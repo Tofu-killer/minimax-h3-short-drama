@@ -458,7 +458,7 @@ def build_ref2va(ep: Episode, seg: Segment) -> BuiltPrompt:
     # characters first (identity), then scene, then props
     for cid in seg.character_ids:
         c = ep.char(cid)
-        imgs = c.reference_images[:3]
+        imgs = c.reference_images[:min(3, int((seg.character_refs or {}).get(cid, 3)))]      # per-segment budget
         if not imgs:
             continue
         pics = []

@@ -89,7 +89,7 @@ Anime prop illustration of {ITEM}, one object centered on a pure white backgroun
 
 ## 6. 逐镜首帧（字面首帧，Qwen-Image-Edit-2511）
 
-_1344×768（竖屏 768×1344）；参考合计 ≤ 3 张（节点只有 `image1`–`image3`），顺序 = 入画角色 bust/face.png → 最后一张场景裁切（模板里的 `Picture {K}`）；20 步 CFG 4，AuraFlow 3.1，CFGNorm 1.0；`Picture N` 写法待 A/B_
+_1344×768（竖屏 768×1344）；参考合计 ≤ 3 张（节点只有 `image1`–`image3`），顺序 = 入画角色 bust/face.png → 最后一张场景裁切（模板里的 `Picture {K}`）；20 步 CFG 4，AuraFlow 3.1，CFGNorm 1.0（官方 int8 模板默认 40 步 CFG 4，两种都在模板自带的对照表里）；官方模板的出图尺寸跟着第 1 张图走，做 16:9 首帧要换成 1344×768 的空潜空间（`../references/image-stage.md` §1「现成的工作流」）；模板里的胶片 / 镜头描述换成和分镜 `style` 一致的说法；`Picture N` 写法待 A/B_
 
 **电影质感**
 

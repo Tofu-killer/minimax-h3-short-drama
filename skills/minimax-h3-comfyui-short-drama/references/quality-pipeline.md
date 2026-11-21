@@ -4,6 +4,8 @@
 
 ## 0. 几条路线一览
 
+速度一列都是原作者机器上的数字（多为 5090）。**4090 上的二采、20 步定稿、分块放大都没有实测**——第一次跑时记下耗时和显存峰值再排期，不要拿表里的数向用户承诺时间。
+
 | 路线 | 机制 | 保不保 take | 速度（作者硬件） | 适用 |
 |------|------|------------|-----------------|------|
 | **ResCascade / Tr1dae 二采**（首选） | LBH 3D latent 放大 → 同条件在 1920×1088 低 σ 重采，音频钉死 | 保（σ 0.45 起） | +1 min / 5 s（5090） | 电影质感成片 |
@@ -25,7 +27,10 @@
 
 - 864×480–1344×768，Turbo 8 步（只看构图、没有运镜的镜头可 4 步），CFG 1，见 `local-stack-and-acceleration.md`。
 - **保存一采 latent**（SaveLatent / Tr1dae Save Package / CGlide `.h3latent`），音频一并保留；后续精修与续接都从 latent 走，不要解码再编码（6 段后饱和 −14%、边缘脆化 +55%）。
-- 电影质感且时间允许：中选镜头改用 **1 MP 原生 20 步 beta57** 重跑一采（或 Fast Tail：前 12 步 euler + 4 步 dpmpp_2m，−20%）；ResCascade 实测 Turbo 一采会丢细节 / 换 take，而精修阶段用 Turbo 无损。
+  - **默认做法（不用存文件）**：精修工作流 = 草稿工作流原样 + 后面接放大二采。提交时用 `comfy_submit.py --seed <中选那条的 seed> --tag <段号>_refine`，一采按同 seed、同设置重跑一遍，得到的就是中选的那一条，再往下精修。`--tag` 要另起一个：不加的话精修结果会落进中选草稿的同一个目录，草稿被挪进 `_prev_…`，之前记下的片段路径就对不上了（批次预览里会提醒）。多花一次一采的时间，但不用搬文件，`--media` 的接线也不用改。
+  - **想省掉这次重跑**：草稿时把 latent 存下来。ComfyUI 自带的 `SaveLatent` 直接接 H3 的输出会报错——H3 的 latent 是视频 + 音频两个张量合在一起的，`SaveLatent` 只会存单个张量（0.37.2 `nodes.py` 对它调 `.contiguous()`，合并 latent 没有这个方法）。先接自带的 `LTXVSeparateAVLatent` 拆成 video / audio 两路，各接一个 `SaveLatent`（文件名前缀带上段号，落在 ComfyUI 的 `output/latents/`）；精修时把这两个 `.latent` 文件拷进 ComfyUI 的 `input/`（`LoadLatent` 只列 `input/` 里的文件），两个 `LoadLatent` → `LTXVConcatAVLatent` 拼回去。`comfy_submit.py` 只下载图片、视频、音频，latent 文件要自己按日志里的 seed 对上号。社区的 Tr1dae Save Package / CGlide `.h3latent` 是把这几步包起来的节点。
+  - 两种做法都是按源码和节点说明推出来的，没有在 4090 上实跑过。
+- 电影质感且时间允许：中选镜头改用 **1 MP 原生 20 步 beta57** 重跑一采（或 Fast Tail：前 12 步 euler + 4 步 dpmpp_2m，−20%）；ResCascade 实测 Turbo 一采会丢细节 / 换 take，而精修阶段用 Turbo 无损。重跑出来的是另一条片段，要重新选片和观测。
 - 音频差但画面好：`H3 Audio Refine Sampler` 冻结视频、6 步 `audio_denoise 0.5`，精修分支从 Turbo LoRA **之前**的 MODEL 分出。TTS 对白的锁音频接法以 `audio-and-post.md` 链路 B 为准（逐句用 `MiniMaxH3DialogueAudioLock`，整条歌 / 口播用 `MiniMaxH3ExactAudioLock`）：`MiniMax H3 Timed Audio(start_frame)` → 锁音频节点，同一 `start_frame` 接 `MiniMaxH3AddGuide.frame_idx`，成片混 `exact_audio`。
 
 ## 3. Stage 2 · 1 MP 阶段修补（放大前做）
@@ -38,9 +43,17 @@
 
 ## 4. Stage 3 · 放大精修到 1920×1088
 
-**首选 ResCascade**：`LTXVSeparateAVLatent` → `H3 Hires Fix`（内置 LBH 3D，`lbh_model` fp16，`width 1920 / height 1088`，**`sigma_start 0.45`**，DMAD 4step LoRA 0.8 + `steps_override 2`；无 DMAD 时 `steps_override 0` 走原生 4 步；有 FaceRefine 结果接 `face_atlas`）→ `SamplerCustomAdvanced` euler + 节点输出 sigmas → 解码；音频自动钉死为一采原声。
+**首选 ResCascade 的 `H3 Hires Fix`**——放大和二采在一个节点里做完。下面的接法是 2026-11-21 读它 main 分支源码（`hires.py`）和 README 得到的：
 
-**手搓等价**：`MinimaxH3LatentUpscaler3D`（`minimax_h3_latent_upscaler_3d_fp16.safetensors`，放 `models/latent_upscale_models/`；或原生 `MiniMaxH3LatentUpscaleWithModel`）只放大 video latent → `LTXVConcatAVLatent` 拼回原音频 → 在 1920×1088 **重建**同 prompt / 参考的 conditioning（Ref2VA 必须重建 Guider）→ `ManualSigmas 1.0, 0.7, 0.4, 0`（1 步 turbo 头 + 2 步 euler 尾；3 步尾 +17% 闪烁）→ euler + DisableNoise。这组数是该工作流作者配合自己的加噪方式用的，起点不是下一条说的 0.45；要严格保住中选片段就用上面的 ResCascade（`sigma_start 0.45`），手搓时用同 seed 对比确认没有换片。
+- **接线**：一采采样器输出的 latent 直接接它的 `latent`（音画合并的那个，不用先拆）；一采的 `positive` 接 `positive`；`model` 接一采用的模型；`width 1920 / height 1088`、**`sigma_start 0.45`**、`lbh_model` 选 LBH 的 fp16 权重。采样在节点内部完成（euler），输出就是 1920×1088 的成品 latent，后面直接接 `VAEDecode` + `VAEDecodeAudio`，不用再接采样器；音频是钉死的一采原声。
+- **参考条件不用重建**：Ref2VA 的参考原样沿用（它们有自己的网格）；`i2va` / `fl2va` 的首帧、尾帧关键帧是按一采尺寸编码的，节点会自动丢掉（放大的画面里已经有了）。所以精修工作流里仍然只有一个 H3 条件节点，`comfy_submit.py --media` 照常接线。
+- **`model` 和步数有三种配法**：① 一采的模型原样接进来（同样的 LoRA 和 shift），`steps_override` 填 2——节点自己的说明是「turbo LoRA 配 `steps_override` 可用」；② 作者实测过的配方：挂 DMAD LoRA 0.8 的模型 + `steps_override 2`（DMAD 要挂在没有 Turbo 的底模上，两个蒸馏 LoRA 不叠，铁律 8）；③ 不挂任何蒸馏 LoRA 的底模 + `steps_override 0`（原生调度的最后 4 步，最慢）。本流程的一采是 lightx2v Turbo 8 步，先试 ①。三种在 4090 上都没有实跑过，定下来之前各出一条对比。
+- **作者的主张和本流程的差别**：作者建议一采用原生 20 步（他的测试里 Turbo 一采细节少，而且 Turbo 和原生出的是两条不同的片段）。本流程默认一采就是 Turbo 8 步的草稿，精修保住的是这条草稿；想要原生一采的细节，就得 20 步重出——那是一条新片段，要重新选片和观测（铁律 16）。
+- 有 FaceRefine 结果接 `face_atlas`（σ 0.45 会把只占一两个 token 的小脸重画坏）。作者的耗时是 5090 上 5 s 片段多花约 1 分钟；24 GB 上 10 s 以上的段没有数字。
+- 来源：ResCascade = GitHub `tazmannner/ComfyUI-H3-ResCascade`；它要求先装 LBH 放大器（GitHub `LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler`，权重在 HF `LBH-123-AI/Minimax_h3_latent_Upscaler`，放 `models/latent_upscale_models/`）；DMAD LoRA 在 HF `Kijai/MiniMax-H3-experimental` 的 `loras/`。
+- 1344×768 是 7:4（1.750），1920×1088 是 1.765，差 0.8%：二采是在新尺寸上重新采样，不是把画面拉过去，这点差别看不出来；交付时上下各裁 4 px 到 1920×1080。
+
+**手搓等价**（不装 ResCascade 时；`LTXVSeparateAVLatent` / `LTXVConcatAVLatent` 是 ComfyUI 自带节点，0.37.2 的 `comfy_extras/nodes_lt.py`；这条路要在 1920×1088 另建一个 H3 条件节点，工作流里就有两个，`--media` 一次只接一个（用 `--h3-node` 指定），另一个得手工保持一致，不建议第一次就这么做）：`MinimaxH3LatentUpscaler3D`（`minimax_h3_latent_upscaler_3d_fp16.safetensors`，放 `models/latent_upscale_models/`；或原生 `MiniMaxH3LatentUpscaleWithModel`）只放大 video latent → `LTXVConcatAVLatent` 拼回原音频 → 在 1920×1088 **重建**同 prompt / 参考的 conditioning（Ref2VA 必须重建 Guider）→ `ManualSigmas 1.0, 0.7, 0.4, 0`（1 步 turbo 头 + 2 步 euler 尾；3 步尾 +17% 闪烁）→ euler + DisableNoise。这组数是该工作流作者配合自己的加噪方式用的，起点不是下一条说的 0.45；要严格保住中选片段就用上面的 ResCascade（`sigma_start 0.45`），手搓时用同 seed 对比确认没有换片。
 - σ 起点含义：0.31 软、**0.45 保 take**、0.56 重画五官、0.9 换片。**按目的选三档**：保道具 / 文字 `0.6316, 0.3158, 0`；保纹理一致 σ 0.45 起；`0.9035` 起只用于「换尺寸再抽」（会把纸箱标签改色变透明）。
 - 二采永远钉死一采音频（Tr1dae `audio_denoise=0`、bbaudio / T8 `preserve_first_pass`、LongMedia Refine 音频 exact passthrough：audio noise 0 + mask 0，16 GB 卡 refine 窗 73 帧）。
 - 二采用 euler / res_multistep 非祖先采样器；LMS 类多步法会把逐帧纹理外推成颗粒。
@@ -52,6 +65,8 @@
 - VDN 二采：VDN 8 → 2× → VDN 4 或原生 H3 + EMA-B LoRA，VDN 分支不再叠 Turbo。
 
 **漫剧**：RelayHires：AnimeSR 放大 → taeh3 编码 → 1 步 DMAD 0.8 从 σ 0.60，`window 4 / anchor_stride 8`；真人改 `RealESRGAN_x2plus`。
+
+**本流程的对白段是 8–13 s，按这个顺序试**：先整段直接二采（上面的首选）；1920×1088 × 243–328 帧在 24 GB 上够不够没人测过，爆显存或者慢到不可接受，就改下面的分块方案——分块只换放大方式，中选的片段和音频不变。
 
 **10–15 s 或 OOM**：bbaudio `MMH3 Ultimate Upscale`（tile 576–768（32 倍数）、overlap 128、chunk 136–170 帧（17 倍数）/ overlap 17、anchor 0.999，二采 1–2 步 denoise 0.2–0.3，音频不重采）或 LBH `MMH3 Split Upscale`（`seam_denoise 0.5–0.8`）。多段续接的精修用 CGlide `Upscale Hold` 钉上一段精修尾。
 - LBH 3D 对 > 32 latent 帧（> ~110 帧）走时间分块，检查首帧网格状字形伪影；短片关 `enable_temporal_chunking`。

@@ -10,7 +10,7 @@
 | `CLIPLoader` | `qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors`, type **`minimax`** | 32B 视觉语言编码器；编码完会被卸载 |
 | `VAELoader` ×2 | `minimax_h3_video_vae_int8_convrot.safetensors`（或 fp16）+ `minimax_h3_audio_vae_fp32.safetensors` | 视频 / 音频两个 VAE 都要接 |
 | `EmptyMiniMaxH3LatentAV` | width 1344, height 768, length 124（步进 17，自动吸到 17k+5） | 纯文生用 |
-| `MiniMaxH3ImageToVideo` | prompt, width, height, length, `first_frame?`, `last_frame?` → positive + latent | FL2VA 权重；0/1/2 张图 = T2VA / I2VA（或 L2VA）/ FL2VA。官方模板默认 1344×768、`res_multistep` + `simple`、Turbo 8 步 LoRA 强度 1 |
+| `MiniMaxH3ImageToVideo` | prompt, width, height, length, `first_frame?`, `last_frame?` → positive + latent | FL2VA 权重；0/1/2 张图 = T2VA / I2VA（或 L2VA）/ FL2VA。`first_frame` 被直接拉伸到画布（不裁切），`last_frame` 居中裁切（0.37.2 源码）→ 首帧要按画布比例出图。官方模板默认 1344×768、`res_multistep` + `simple`、Turbo 8 步 LoRA 强度 1 |
 | `MiniMaxH3AddGuide` | positive, vae, audio_vae, latent, `image?`（单帧或 5/22/39…帧的片段）, `audio?`, `frame_idx`（负数从尾部数） → positive | **多关键帧 / 片段锚定**：把一张图或一小段视频（含音轨）钉在任意帧；可链式多个。续接类节点大多基于它：上一段最后 22 帧锚在 frame 0 |
 | `MiniMaxH3ReferenceToVideo` | prompt, vae, audio_vae, width, height, length, `ref_image_size`（`match`/`max`）, 参考图 / 视频 / 视频音轨 / 独立音频（界面上是可增长的插槽；API 键名见下「Autogrow 键名」）→ positive + latent | Ref2VA 权重。**编号顺序 = 先图（Picture 1..i）、再视频（每个视频的音轨 Audio j 紧跟在 Video k 前）、最后独立音频**。`match`（默认）把每张参考**等比缩到生成画布的像素面积**（只缩不放、不裁切，宽高吸附到 32；1344×768 画布 ≈ 1 MP），`max` 只把短边限制到 2048（身份更准；参考 token 每一步都要带着走，可能慢几倍）。竖幅全身图不会被裁成横幅；多视图拼板在 `match` 下和单人图占同样的像素面积，所以板上每个人更小。不接 vae 时参考只进文本编码器 |
 | `MiniMaxH3SigmaShift`（显示名 ModelSamplingMiniMaxH3） | model, shift_video 12, shift_audio 3 | FL2V 768p Turbo LoRA 改 6 / 3；Ref2V 与 544p 版保持 12 / 3 |
@@ -39,27 +39,45 @@
 - 0.37.2 上没有 `MiniMaxH3LatentUpscaleWithModel` 时用社区节点 `LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler`；FunControl 在 0.37.2 已是原生，不必装社区版。
 - **要不要升级**：升到 ≥ 0.45 能拿到官方滑窗、原生 latent 放大、两个出图节点和 RelayVSR；升级前逐个核对已装节点的版本窗口（Spark-H3 跳过 0.41、只支持 0.38.x–0.40.x 与 0.42.x–0.44.x；Motion-Context 启动时会自检并拒绝不匹配的核心；FeiHou 流式块不与 kitchen 同用），并先整目录备份或另装一份便携版做 A/B，不要在唯一能出片的环境上直接升。
 
-## 2. 官方模板默认值（Comfy-Org/workflow_templates）
+## 2. 官方模板默认值（Comfy-Org/workflow_templates，模板 JSON 2026-11-21 核对）
 
-| 模板 | 权重 | LoRA | 步数 | 分辨率/帧 |
+| 模板（面板里的名字 / 文件名） | 权重 | 模板默认的 LoRA | 步数 | 采样链 |
 |------|------|------|------|-----------|
-| t2v / i2v / i2v_continuation | fl2va_pruned_int8 | fl2v_turbo_8step_v1.0 | 4（模板值，建议 8） | 1344×768 / 73 |
-| r2v / multiframe_reference | ref2va_pruned_int8 | ref2v_turbo_4step_v0.1 | 20（模板值；用 Turbo 时改 4–8） | 1344×768 / 124，`match` |
-| fun_controlnet_union | fl2va + Fun-Controlnet-Union | — | — | — |
+| MiniMax H3: Text / Image to Video（`video_minimax_h3_t2v` / `video_minimax_h3_i2v`） | `fl2va_pruned_int8_convrot` | `minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16`（544p 档） | 调度器控件值 4（步数由模板里的开关驱动） | 同下 |
+| MiniMax H3: Reference to Video（`video_minimax_h3_r2v`；`video_minimax_h3_multiframe_reference` 类似） | `ref2va_pruned_int8_convrot` | `minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16`（544p 档、4 步） | 调度器控件值 20（同样由开关驱动） | `RandomNoise` → `KSamplerSelect(res_multistep)` → `BasicScheduler(simple)` → `BasicGuider` → `SamplerCustomAdvanced` → `VAEDecode` + `VAEDecodeAudio` → `CreateVideo` → `SaveVideo` |
+| MiniMax H3 Fun ControlNet Union（`video_minimax_h3_fun_controlnet_union`） | fl2va + Fun-Controlnet-Union | — | — | — |
 
-模板里 LoRA 与步数不完全匹配（8 步 LoRA 配 4 步），自己用时把步数改成 LoRA 的训练步数。
+模板里的文本编码器是 `qwen3vl_32b_minimax_h3_nvfp4_awq`（CLIPLoader type `minimax`），VAE 是 `minimax_h3_video_vae_int8_convrot` + `minimax_h3_audio_vae_fp32`。提示词、帧数、分辨率、是否用 Turbo 都接在模板自带的原始值 / 开关节点上（`PrimitiveStringMultiline`、`PrimitiveInt`、`ResolutionSelector`、`ComfySwitchNode`），所以**步数和 LoRA 不要只看控件上的数**：模板默认的两个 LoRA 都是 544p 档，跑 1344×768 要换成 `_768p_` 版，步数改成 LoRA 的训练步数。
 
-## 3. 接线骨架（Ref2VA 草稿档）
+## 3. 把官方模板改成脚本能用的草稿档工作流
+
+`comfy_submit.py` 不带工作流，它往**你导出的 API 版工作流**里写提示词、帧数和参考接线。照下面改一次、导出两份就够用：
+
+1. 打开模板 `video_minimax_h3_r2v`，先原样跑通一次。
+2. LoRA 换成 `minimax_h3_ref2v_turbo_8step_v1.1_768p_comfyui_bf16.safetensors`，强度 1.0；步数设 8（模板用开关控制步数时，把开关拨到 Turbo 那一档并确认 `BasicScheduler` 实际拿到的是 8）。
+3. 在 LoRA 之后、采样之前依次接 KJNodes 的 `PathchSageAttentionKJ(auto)` → `MiniMaxH3MemoryEfficientSageAttentionPatch`（界面里搜到的名字是 `Patch Sage Attention KJ` 和 `MiniMax H3 Mem Eff Sage Attention Patch`；第一个的 `sage_attention` 选 `auto`），再接 `MiniMaxH3SigmaShift`（Ref2V：12 / 3）。
+4. 分辨率 1344×768；`MiniMaxH3ReferenceToVideo` 的 `vae` 和 `audio_vae` 两个输入都要接上（不接的话参考图只进文本编码器、音色参考完全不起作用），`ref_image_size` 用 `match`。
+5. 输出保持 `VAEDecode` + `VAEDecodeAudio` → `CreateVideo(24)` → `SaveVideo`。精修默认是在精修工作流里按同 seed 把一采重跑一遍再接放大，草稿工作流不用为它改什么；想把一采的 latent 存下来省掉重跑，要先用 `LTXVSeparateAVLatent` 拆开再各接一个 `SaveLatent`（自带的 `SaveLatent` 直接接 H3 的合并 latent 会报错，做法见 `quality-pipeline.md` §2；`comfy_submit.py` 只下载图片 / 视频 / 音频，latent 留在 ComfyUI 的 `output/latents/` 里）。
+6. 菜单「工作流 → 导出（API）」存成 `workflows/draft_ref2va.api.json`（旧界面要先在设置里打开开发者模式才有这一项）。
+7. 需要 `i2va` / `fl2va` / `t2va` 的段再用模板 `video_minimax_h3_i2v` 同样改一份（FL2VA 权重、`minimax_h3_fl2v_turbo_8step_v1.1_768p_comfyui_bf16`、shift 6 / 3），导出成 `workflows/draft_fl2va.api.json`。`--media` 按段的模式找节点：`ref2va` 找 `MiniMaxH3ReferenceToVideo`，其余找 `MiniMaxH3ImageToVideo`，所以**每种权重各要一份工作流**。
+
+脚本怎么认这份工作流：
+- **种子**：任何带字面值 `seed` 或 `noise_seed` 的节点（模板里是 `RandomNoise`），`--batch N` 依次加一。
+- **提示词 / 帧数 / 参考**：`--media` 直接写在 H3 节点上（原来连着的原始值节点会被字面值替换），参考图和音色按 `.media.json` 的顺序新建 `LoadImage` / `LoadAudio` 接上，模板里原有的参考输入会被清掉。
+- **预览里的设置**：接在原始值节点上的数能读出来；由开关或公式算出来的（模板的步数、`ResolutionSelector` 的宽高）读不到，预览会写明「在工作流里计算」——这种情况要在 ComfyUI 窗口里确认一次，或者把它们改成直接填数字再导出，预览和 advice 才能替你把关。
 
 ```
 UNETLoader(ref2va_pruned_int8) → LoraLoaderModelOnly(ref2v_turbo_8step_v1.1_768p, 1.0)
   → PathchSageAttentionKJ(auto) → MiniMaxH3MemoryEfficientSageAttentionPatch [两个都是 KJNodes] → MiniMaxH3SigmaShift(12, 3)（FL2V 768p 用 6, 3）→ model
-CLIPLoader(qwen3vl nvfp4, minimax) → clip
-LoadImage ×N（按 media.json 顺序）→ MiniMaxH3ReferenceToVideo(prompt, 1344×768, 243, match) → positive, latent
-SamplerCustomAdvanced(noise seed, model, positive, res_multistep, simple 8, latent) → latent
-VAEDecode(video vae) + 音频解码(audio vae) → CreateVideo(24) → SaveVideo
+CLIPLoader(qwen3vl nvfp4, minimax) → clip；VAELoader ×2 → vae / audio_vae
+LoadImage ×N（按 media.json 顺序）→ MiniMaxH3ReferenceToVideo(clip, vae, audio_vae, prompt, 1344×768, 243, match) → positive, latent
+RandomNoise(noise_seed) + KSamplerSelect(res_multistep) + BasicScheduler(simple, 8) + BasicGuider(model, positive) → SamplerCustomAdvanced → latent
+VAEDecode(video vae) + VAEDecodeAudio(audio vae) → CreateVideo(24) → SaveVideo
 ```
-草稿档把分辨率降到 864×480 或 960×544 抽卡（Turbo LoRA 换成 544p 训练版，即文件名里**不带** `768p` 的那个），中选后在 1344×768 重跑（换了分辨率就是一条新片段，同 seed 也不保证相同，要重新选片）；想保住中选的那一条就直接在 1344×768 出草稿、再走 latent 二采（见 `quality-pipeline.md`）。
+
+出图也可以用同一个脚本排队：把 `image_qwen_image_2_1_t2i` 或 `image_qwen_image_edit_2511_int8` 模板导出成 API 版，`comfy_submit.py workflows/qwen_t2i.api.json --set <提示词节点id>.<输入名>=@bible/prompts/lin_lan_bust.txt --batch 6 --out bible/candidates/lin_lan --tag bust --dry-run`，预览确认后带 `--confirm` 提交——这样出图也有批次预览、不会重复提交。
+
+草稿分两档（见 `local-stack-and-acceleration.md` §2）：默认直接在 1344×768 出，片段可以采纳并走 latent 二采；864×480 / 960×544 只作快速预览，选中后在 1344×768 重跑出来的是一条新片段，要重新选片。
 
 ## 4. 社区节点分类（详见各精读文件）
 

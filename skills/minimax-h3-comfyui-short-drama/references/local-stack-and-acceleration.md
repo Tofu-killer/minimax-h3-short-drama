@@ -6,6 +6,17 @@
 
 按 `assets/local-inventory-checklist.md` 产出：GPU / 驱动 / CUDA / PyTorch 版本、ComfyUI 版本与启动参数（是否带 `--use-sage-attention`）、`models/` 下的 H3 文件名与大小、custom_nodes 列表（重点：KJNodes、sageattention 包版本、comfy-kitchen、任何 cache / TE-Speed / Spark / Sol / Veda / Spectrum 节点）、现有工作流的注意力 / LoRA / 步数 / shift / 分辨率、ffmpeg 是否在 PATH、Windows 的 CUDA「系统内存回退」是否关闭、系统内存大小。
 
+## 0b. 装机补充（Windows 便携版；仓库与文件名 2026-11-21 逐个核对过）
+
+- **跑本 skill 脚本用哪个 Python**：另装一个 Python 3.10+（或建一个 venv），不要往 ComfyUI 便携版的 `python_embeded` 里装东西——脚本只通过 HTTP 找 ComfyUI，不需要和它共用环境。可选依赖按用到的装进这个 Python：`pip install numpy faster-whisper pypinyin opencv-python onnxruntime pyJianYingDraft opentimelineio`。`faster-whisper` 第一次运行会从 HuggingFace 下载模型（`Systran/faster-whisper-small`，约 500 MB）。
+- **ffmpeg / ffprobe**：`winget install Gyan.FFmpeg`，或从 GitHub `BtbN/FFmpeg-Builds` 的 Releases 下载 win64 包、把 `bin` 目录加进 PATH。装完跑 `scripts/selfcheck.py`。
+- **KJNodes**（两个 Sage 节点都在里面）：GitHub `kijai/ComfyUI-KJNodes`。用 ComfyUI-Manager 装，或 `git clone` 到 `ComfyUI/custom_nodes/` 后用便携版自带的解释器装依赖：`python_embeded\python.exe -m pip install -r ComfyUI\custom_nodes\ComfyUI-KJNodes\requirements.txt`。
+- **SageAttention 在 Windows 上有两条路**（二选一，别叠）：
+  - 走 KJ 节点：需要 ComfyUI 的 Python 环境里有 `sageattention` 包。Windows 预编译包在 GitHub `woct0rdho/SageAttention` 的 Releases：先 `pip install triton-windows`，再按 PyTorch 版本挑 wheel（torch ≥ 2.10 用文件名带 `torch2.10.0andhigher` 的；`cp310-abi3` 的包对 Python ≥ 3.10 通用；CUDA 12 与 13 的包不通用）。不需要装 Visual Studio 或 CUDA toolkit。装完后 `MiniMaxH3MemoryEfficientSageAttentionPatch` 如果报 `sageattention is not new enough version or could not determine CUDA architecture`，是包太旧或装的不是对应 CUDA 版本的那个；报 `This ComfyUI version does not support MiniMax H3`，是 ComfyUI 自带的 comfy-kitchen 太旧（两句都出自 KJNodes main 分支源码，2026-11-21）。
+  - 走启动参数：该仓库 README 写明，用 ComfyUI 的话可以不装它的 wheel，改用 comfy-kitchen 自带的 SageAttention——启动时加 `--use-ck-attention`（不是 `--use-sage-attention`）。你的 ComfyUI 版本有没有这个参数，以 `python main.py --help` 为准。
+  - 两条路谁快没有定论：各跑一次同一段、seed+1，以日志和计时为准，然后固定用一种。
+- **官方模板的名字**（ComfyUI「模板」面板里搜；也可以从 GitHub `Comfy-Org/workflow_templates` 的 `templates/<名字>.json` 下载后拖进界面，新模板可能要求更新的 ComfyUI）：视频 `video_minimax_h3_r2v` / `video_minimax_h3_i2v` / `video_minimax_h3_t2v`；出图 `image_qwen_image_2_1_t2i`、`image_qwen_image_edit_2511_int8`、`image_z_image_turbo_int8`。怎么把视频模板改成脚本能用的草稿档工作流，见 `comfyui-nodes.md` §3。
+
 ## 1. 三个杠杆与叠加原则
 
 | 杠杆 | 代表 | 有损？ | 规则 |
@@ -14,21 +25,24 @@
 | 便宜的步 | 注意力核：SageAttention（无损）、Sol-Attn 稠密核（近无损）、核心 `BlockSparseAttention`（已合并 Sol/SLA/VSA，稀疏=有损）、Veda / Spark-H3 / Kablex VSA（有损稀疏）；跳步缓存：Spectrum、FirstBlockCache、T8 BlockCache、EasyCache（有损） | 核无损；稀疏与缓存有损 | 同一模型分支只能有一个「跳步/缓存」、只能有一个 attention 补丁；精修档只留 Sage |
 | 便宜的模型 | pruned（AdaLN 剪枝）int8、nvfp4、GGUF、VDN 架构替换、ClipProj 小文本编码器 | 剪枝略损细节 | 24 GB 用 int8_convrot（pruned 更省显存，不剪枝画质更稳） |
 
-**基线链**（所有加速都在它之上同 seed A/B）：
+**基线链**（「先跑一次基线」指的就是它：int8 底模 + Turbo 8 步 + Sage，别的加速全关，用一段固定的 10 s 提示词记下耗时；之后每开一个加速项都和它比）：
 `UNETLoader(int8_convrot)` → `LoraLoaderModelOnly(lightx2v *_turbo_8step_v1.1*_comfyui_bf16, 1.0)` → KJ `PathchSageAttentionKJ(auto)`（KJNodes 里这个节点名本身就拼成 Pathch，搜节点时照这个拼） → KJ `MiniMaxH3MemoryEfficientSageAttentionPatch` → `MiniMaxH3SigmaShift` → Guider。先全关跑一次基线，再逐个开，一次只改一个变量。同 seed 同参数重跑会命中 ComfyUI 结果缓存秒出，计时与对比用 seed+1。
 
-- **int8_convrot 底模上挂 LoRA 默认用运行时分支 / bypass，不反量化合并**（也有人在 3090 上测到合并更快、皮肤更干净——见下「路线 A」，两种各跑一次同 seed，以自己机器的结果为准）：合并往返注入 ~1.5% 权重噪声而 H3 LoRA delta 只有 0.01–0.08%；多 LoRA 用 PowerLoraStack `quantized_layers=auto`，视频风格 LoRA 的 audio 模态缩到 0–0.25。装 LoRA 后日志必须出现 `208 patches attached`。
+- **int8_convrot 底模上挂 LoRA**：官方模板用 ComfyUI 自带的 `LoraLoaderModelOnly`，第一次照它来就行。「合并进权重，还是运行时另挂一条分支（bypass）」是社区节点才有的选项：Larryvrh `ComfyUI-MiniMax-H3-Turbo` 的 `low_vram` 开关（开 = 合并）、cicalooo `ComfyUI-H3-PowerLoraStack` 的 `quantized_layers=auto`（运行时低秩分支；多 LoRA 时视频风格 LoRA 的 audio 模态缩到 0–0.25）。两边的说法相反——一说合并往返会注入约 1.5% 的权重噪声、而 H3 LoRA 的改动量只有 0.01–0.08%，所以运行时分支更锐；另一位在 3090 上测到合并快 25%、近景皮肤更干净。装了这类节点就两种各跑一次、seed+1 对比，以自己机器的结果为准；没装就不用管。装 LoRA 后日志里要能看到 `208 patches attached`（社区的经验值，看不到说明 LoRA 没挂上）。
 - 8 步 Turbo 上叠风格 / 运镜 LoRA，**额外 LoRA 强度之和 ≤ 1.3**（0.6+0.3+0.4 实心；0.8+0.5+0.6 小物件透明重影）。
 
 ## 2. 推荐组合（RTX 4090 24 GB，Ref2VA 短剧）
 
-### 草稿档（抽卡，目标 ≤ 2–3 min / 条）
+### 草稿档（两档：快速预览 ≤ 2–3 min / 条；同构图草稿预计 5–8 min / 条）
 - 权重：`ref2va_pruned_int8_convrot`（或 fl2va）+ `qwen3vl_32b_minimax_h3_nvfp4_awq` + int8 视频 VAE + fp32 音频 VAE
 - LoRA：`minimax_h3_ref2v_turbo_8step_v1.1_768p_comfyui_bf16` 强度 1.0（抽卡可降 `ref2v_turbo_4step_v1.0_768p`；声音不稳降 0.75）
-- 采样：8 步 Euler + `simple`（或 `res_multistep`），CFG 1.0；`MiniMaxH3SigmaShift`：Ref2V 12 / 3，FL2V 768p 版 6 / 3
-- 注意力：KJ Sage 两节点；**不接** `MiniMaxLowVRAMAttention`（与 Sage 同开实测第一步 693 s）；工作流里只留这一个注意力补丁，不再接 kitchen / BlockSparse 的注意力节点（启动参数 `--use-ck-attention` 是另一回事，见文末「出图与出视频分实例」；它和 KJ Sage 同开时谁生效以日志为准，配好后用同 seed 各跑一次计时）；省显存改 KJ `MiniMaxChunkFeedForward` 或 star7 分块（`chunk_tokens 8192 / mlp 4096 / qkv 4096`）
-- 分辨率：求快用 864×480 或 960×544（Turbo LoRA 换成同系列的 544p 训练版——文件名里**不带** `768p` 的那个；LoRA 档位要和分辨率配对，见 SKILL.md 铁律 7）；要和成片同构图、之后同 seed 精修就直接 1344×768 配上面的 768p 版。5–10 s；`ref_image_size = match`（参考 token 预算：2 张角色图 `match` ≈ 1,550 token、`max` ≈ 12,320；124 帧参考视频 14k–27k token——**重者胜**，否定句与「视频里的人就是 Subject 1」都压不过它）；每段 2–3 个 seed
-- 实测：864×480 × 10 s × 8 步 ≈ 134 s（4090）
+- 采样：8 步，`res_multistep` + `simple`（官方模板的组合；Euler + `simple` 也可以），CFG 1.0（官方模板用 `BasicGuider`，本来就没有 CFG 分支）；`MiniMaxH3SigmaShift`：Ref2V 12 / 3，FL2V 768p 版 6 / 3
+- 注意力：KJ Sage 两节点；**不接** `MiniMaxLowVRAMAttention`（与 Sage 同开实测第一步 693 s——这是用户机器上当时那版 KJNodes 的结果；新版源码里这两个节点是按能配合来写的，更新 KJNodes 之后想用它省显存，先单独拿同一段比一次再决定）；工作流里只留这一个注意力补丁，不再接 kitchen / BlockSparse 的注意力节点（启动参数 `--use-ck-attention` 是另一回事，见文末「出图与出视频分实例」；它和 KJ Sage 同开时谁生效以日志为准，配好后用同 seed 各跑一次计时）；省显存改 KJ `MiniMaxChunkFeedForward` 或 star7 分块（`chunk_tokens 8192 / mlp 4096 / qkv 4096`）
+- 分辨率与 LoRA，两档各有用途：
+  - **快速预览档** 864×480 或 960×544：只用来看构图和调度对不对，选中后要在 1344×768 重跑（那是一条新片段，要重新选片）。Ref2V 没有 8 步的 544p 版 LoRA（仓库里不带 `768p` 的 Ref2V 文件只有 4 步的 `minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16`，官方 r2v 模板默认挂的就是它）；下面那条 134 s 的实测用的是 8 步 LoRA 直接跑 864×480。FL2V 有 8 步的 544p 版：`minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16`。
+  - **同构图草稿档** 1344×768 + `…_768p_…` 版 LoRA：出来的片段可以直接采纳、之后走 latent 二采——**默认用这一档**，除非只是想快速看个大概。544p 版 LoRA 不要用在 768p 上（又慢又糊）。
+- 5–10 s；`ref_image_size = match`（参考 token 预算：2 张角色图 `match` ≈ 1,550 token、`max` ≈ 12,320；124 帧参考视频 14k–27k token——**重者胜**，否定句与「视频里的人就是 Subject 1」都压不过它）；每段 2–3 个 seed
+- 耗时：864×480 × 10 s × 8 步 ≈ 134 s（用户的 4090 实测）；1344×768 × 10 s × 8 步预计 5–8 min（按像素数外推，没有实测）；每次开机第一条另加 8–14 min 冷启动。20 步定稿、latent 二采、出图在 4090 上都没有实测数字——第一次跑的时候记下来（`comfy_submit.py --log` 会记耗时）
 - 同一提示词多 seed 抽卡时把条件编码落盘复用（pepikir `H3SaveConditioning/LoadConditioning` 或 CLIPCached），采样图里不放 CLIPLoader；多段接力先编码所有段的条件再连续采样（E/E/E/S/S/S），避免 TE / VAE / DiT 往返加载，−25~45%；32 GB 内存机器单图 `--cache-none`；TE 与 DiT 放 NVMe（编码 90→25 s）
 - 可选（ComfyUI ≥ 0.38 后）：Veda `VedaSparseAttention` 放在 LoRA 与 Sage 补丁之后、Guider 之前，预测器只保证 1344×768 / 768×1344 / 768×768 / 1024×768 × 5/10/14 s × 8 步 Turbo；首次 Ctrl+B 旁路同 seed 对比再默认开；5090 实测（mathruffian）Veda 开着会在第 51/119/187 帧闪帧
 - 激进替代（仅 Ref2VA、放弃 Sage）：Kablex `Ref2VAVSAGatePatch(sparsity 0.5–0.75)` + ref2v 4 步 v0.1 + shift 12/3，1344×768 × 5 s ≈ 72 s（作者自报），模型分支上不得有任何 Sage/Sol 节点
@@ -100,12 +114,12 @@
 
 Spark-H3 跳过 0.41（要 0.38.x–0.40.x 或 0.42.x–0.44.x）；Spectrum 需 ≥ `e377e263`；Veda ≥ 0.38；HyperFlow 在 0.37 有「Model Initializing」卡住报告（诊断 `--disable-fast-disk`）；FeiHou 流式块模式不与 kitchen 同用；核心 INT8 已进主线（旧 I8Fast 文件要转换）。
 
-**出图与出视频分实例**：comfy-kitchen ≥ 0.2.36 的 `--use-ck-attention` 会让 Qwen-Image 2.1 在 mask 存活 token > 64 时崩图，但 H3 不受影响且不开 CK 慢 2.7× → 给 Qwen-Image 的 ComfyUI 不带该参数，给 H3 的实例保留。
+**出图与出视频分实例**：comfy-kitchen ≥ 0.2.36 的 `--use-ck-attention` 会让 Qwen-Image 2.1 在 mask 存活 token > 64 时崩图（社区报告）。如果你的 H3 实例是带这个参数启动的，出图另开一个不带它的 ComfyUI；H3 这边带不带，按 §0b 的办法实测后固定。
 
 ## 7. 下载清单（HuggingFace，澳洲可直连）
 
-- Comfy-Org/MiniMax-H3：`diffusion_models/`、`text_encoders/`、`vae/`、`loras/`
-- lightx2v/Minimax-h3-Turbo：`minimax_h3_{fl2v,ref2v}_turbo_{4,8}step_v1.x_768p_comfyui_bf16.safetensors`
+- Comfy-Org/MiniMax-H3：`diffusion_models/minimax_h3_{ref2va,fl2va}_pruned_int8_convrot.safetensors`、`text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors`、`vae/minimax_h3_video_vae_int8_convrot.safetensors`（或 `…_fp16`）+ `vae/minimax_h3_audio_vae_fp32.safetensors`；`loras/` 里是官方模板默认挂的三个 LoRA（`fl2v_turbo_4step_v1.0_768p`、`fl2v_turbo_8step_v1.0`、`ref2v_turbo_4step_v0.1`）
+- lightx2v/Minimax-h3-Turbo（文件名都带 `_comfyui_bf16.safetensors` 的才是 ComfyUI 用的）：Ref2V `minimax_h3_ref2v_turbo_8step_v1.1_768p`（草稿档默认）、`…ref2v_turbo_4step_v1.0_768p`、`…ref2v_turbo_4step_v0.1`（544p 档）；FL2V `minimax_h3_fl2v_turbo_8step_v1.1_768p`（另有更新的 `v1.2_768p`）、`…fl2v_turbo_4step_v1.3_768p`、`…fl2v_turbo_8step_v1.0`（544p 档）
 - larryvrh/MiniMax-H3-Turbo-Lora：`minimax_h3_turbo_v4_step600_ema.safetensors`（FL2VA 4 步备选，漫剧友好）
 - alibaba-pai/MiniMax-H3-Acc-LoRAs（PDD 8 步；新版 ComfyUI 原生 LoRA-bank 可直接加载，旧版用 Jalen-Brunson 节点或 aptech0081 重打包）
 - LBH-123-AI/Minimax_h3_latent_Upscaler（latent 二采权重，装原版节点，不装 xmarre `-Plus` 分支）

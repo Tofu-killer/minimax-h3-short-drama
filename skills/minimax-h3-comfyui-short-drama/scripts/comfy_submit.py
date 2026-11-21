@@ -29,7 +29,8 @@ Overrides
     value `@path` reads a text file (prompts) or, for media (image / audio / video inputs or media file
     extensions), uploads the file to ComfyUI's input folder and substitutes the returned name.
     Other values are parsed as JSON when possible (numbers / booleans).
-  --batch N queues N runs with seed+i on every node that has a literal `seed` input, each saved under
+  --batch N queues N runs with seed+i on every node that has a literal `seed` or `noise_seed` input (KSampler-style
+  nodes, or RandomNoise / SamplerCustom as in the official H3 templates), each saved under
     <out>/<tag>_<seed>/.
 
 Before anything is queued (skip with --no-preflight; --preflight-only stops after it)
@@ -171,6 +172,69 @@ H3_REF, H3_I2V, H3_EMPTY = "MiniMaxH3ReferenceToVideo", "MiniMaxH3ImageToVideo",
 REF_GROUPS = ("ref_images.", "ref_videos.", "ref_video_audios.", "ref_audios.")
 
 
+def image_size(path: Path) -> tuple[int, int] | None:
+    """(width, height) of a PNG / JPEG / WebP read from the file header - no imaging library needed. None if unknown."""
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(32)
+            if head[:8] == b"\x89PNG\r\n\x1a\n" and head[12:16] == b"IHDR":
+                return int.from_bytes(head[16:20], "big"), int.from_bytes(head[20:24], "big")
+            if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+                kind = head[12:16]
+                if kind == b"VP8X":
+                    return int.from_bytes(head[24:27], "little") + 1, int.from_bytes(head[27:30], "little") + 1
+                if kind == b"VP8 ":
+                    return int.from_bytes(head[26:28], "little") & 0x3FFF, int.from_bytes(head[28:30], "little") & 0x3FFF
+                if kind == b"VP8L":
+                    bits = int.from_bytes(head[21:25], "little")
+                    return (bits & 0x3FFF) + 1, ((bits >> 14) & 0x3FFF) + 1
+                return None
+            if head[:2] == b"\xff\xd8":                                   # JPEG: walk the segments to the frame header
+                fh.seek(2)
+                while True:
+                    byte = fh.read(1)
+                    if not byte:
+                        return None
+                    if byte != b"\xff":
+                        continue
+                    marker = fh.read(1)
+                    while marker == b"\xff":
+                        marker = fh.read(1)
+                    if not marker:
+                        return None
+                    m = marker[0]
+                    if m in (0x00, 0x01, 0xD8) or 0xD0 <= m <= 0xD7:      # stuffing / standalone markers carry no length
+                        continue
+                    size = fh.read(2)
+                    if len(size) < 2:
+                        return None
+                    if 0xC0 <= m <= 0xCF and m not in (0xC4, 0xC8, 0xCC):  # a start-of-frame segment
+                        data = fh.read(5)
+                        return (int.from_bytes(data[3:5], "big"), int.from_bytes(data[1:3], "big")) if len(data) == 5 else None
+                    fh.seek(int.from_bytes(size, "big") - 2, 1)
+    except OSError:
+        return None
+    return None
+
+
+def frame_fit(role: str, path: Path, canvas: dict) -> str | None:
+    """A first frame is stretched to the canvas (the node does not crop it); a last frame is cover-cropped.
+    Say so when the picture's shape differs from the canvas enough to be seen."""
+    size, w, h = image_size(path), canvas.get("width"), canvas.get("height")
+    if not size or not isinstance(w, int) or not isinstance(h, int) or not size[1] or not h:
+        return None
+    img, can = size[0] / size[1], w / h
+    if abs(img / can - 1) <= 0.01:
+        return None
+    shapes = f"advice: {path.name} is {size[0]}x{size[1]} ({img:.3f}:1) and the canvas is {w}x{h} ({can:.3f}:1): "
+    if role == "first_frame":
+        factor = can / img
+        change = f"{(factor - 1) * 100:.1f}% wider" if factor > 1 else f"{(1 - factor) * 100:.1f}% narrower"
+        return (shapes + f"the node stretches a first frame to the canvas without cropping, so everything in it becomes {change} "
+                         f"- make the first frame at the canvas ratio")
+    return shapes + f"the node crops a last frame to the canvas from the centre, {(1 - min(img, can) / max(img, can)) * 100:.1f}% of it is cut away"
+
+
 def apply_media(wf: dict, media_json: Path, server: str, media: dict, do_upload: bool, node_id: str | None) -> list[str]:
     """Put a segment into the workflow exactly as build_prompts.py numbered it: prompt text, frame count, and one
     Load node per reference wired to ref_images.ref_image_0.. / ref_audios.ref_audio_0.. (Ref2VA) or to
@@ -227,6 +291,9 @@ def apply_media(wf: dict, media_json: Path, server: str, media: dict, do_upload:
             new = load_node("image", path, item["role"])
             inputs[item["role"]] = [new, 0]
             lines.append(f"{item['role']:12s} <- {path.name}")
+            fit = frame_fit(item["role"], path, literals(wf, inputs)) if want == H3_I2V else None
+            if fit:
+                lines.append(fit)
         elif item["type"] == "image":
             if mode != "ref2va":
                 die(f"--media: a reference image in a {mode} segment has nowhere to go ({path.name})")
@@ -242,13 +309,39 @@ def apply_media(wf: dict, media_json: Path, server: str, media: dict, do_upload:
     return lines
 
 
+def literal(wf: dict, value, depth: int = 0):
+    """A value as the server will see it, where that can be told without running the graph: a literal stays as it
+    is; a link to a Primitive* node (the official templates feed width, steps, prompt ... through those) yields
+    that node's `value`. Anything computed inside the graph (switches, math, selectors) -> None."""
+    if not isinstance(value, (list, dict)):
+        return value
+    if isinstance(value, list) and len(value) == 2 and depth < 4:
+        node = wf.get(str(value[0]))
+        if node and str(node.get("class_type", "")).startswith("Primitive"):
+            return literal(wf, node.get("inputs", {}).get("value"), depth + 1)
+    return None
+
+
+def literals(wf: dict, inputs: dict) -> dict:
+    out = {}
+    for name, value in inputs.items():
+        got = literal(wf, value)
+        if got is not None:
+            out[name] = got
+    return out
+
+
 def settings_summary(wf: dict) -> list[str]:
     """What this workflow will actually run with - for the batch preview."""
     out = []
     for k, v in wf.items():
         cls, inp = v.get("class_type", ""), v.get("inputs", {})
-        lit = {n: x for n, x in inp.items() if not isinstance(x, (list, dict))}
-        if cls in (H3_REF, H3_I2V, H3_EMPTY) and "width" in lit:
+        lit = literals(wf, inp)
+        if cls in (H3_REF, H3_I2V, H3_EMPTY) and not {"width", "height"} <= set(lit):
+            refs = sum(1 for n in inp if n.startswith("ref_images.")), sum(1 for n in inp if n.startswith("ref_audios."))
+            out.append(f"{cls} [{k}]: canvas is computed inside the workflow (not readable here), {lit.get('length', '?')} frames"
+                       + (f", {refs[0]} reference image(s), {refs[1]} audio" if cls == H3_REF else ""))
+        elif cls in (H3_REF, H3_I2V, H3_EMPTY) and "width" in lit:
             secs = f" = {lit['length'] / 24:.2f}s" if isinstance(lit.get("length"), int) else ""
             refs = sum(1 for n in inp if n.startswith("ref_images.")), sum(1 for n in inp if n.startswith("ref_audios."))
             extra = f", {refs[0]} reference image(s), {refs[1]} audio" if cls == H3_REF else ""
@@ -256,6 +349,15 @@ def settings_summary(wf: dict) -> list[str]:
                        + (f", ref_image_size {lit['ref_image_size']}" if "ref_image_size" in lit else "") + extra)
         elif "steps" in lit and ("cfg" in lit or "sampler_name" in lit):
             out.append(f"{cls} [{k}]: {lit.get('steps')} steps, cfg {lit.get('cfg')}, {lit.get('sampler_name', '?')} / {lit.get('scheduler', '?')}")
+        elif cls == "BasicScheduler" and "steps" not in lit:
+            out.append(f"{cls} [{k}]: steps are computed inside the workflow (a switch or a formula) - check them in the ComfyUI window")
+        elif "steps" in lit and "scheduler" in lit:                       # BasicScheduler of the SamplerCustomAdvanced chain
+            out.append(f"{cls} [{k}]: {lit['steps']} steps, scheduler {lit['scheduler']}"
+                       + (f", denoise {lit['denoise']}" if lit.get("denoise") not in (None, 1, 1.0) else ""))
+        elif cls == "KSamplerSelect" and "sampler_name" in lit:
+            out.append(f"{cls} [{k}]: sampler {lit['sampler_name']}")
+        elif cls in ("CFGGuider", "DualCFGGuider") and "cfg" in lit:
+            out.append(f"{cls} [{k}]: cfg {lit['cfg']}")
         elif "lora_name" in lit:
             out.append(f"{cls} [{k}]: {lit['lora_name']} @ {lit.get('strength_model', lit.get('strength', '?'))}")
         elif "unet_name" in lit:
@@ -268,7 +370,7 @@ def settings_summary(wf: dict) -> list[str]:
 def job_size(wf: dict) -> tuple[int, int]:
     """(frames, pixels per frame) of the H3 job in this workflow, (0, 0) when it cannot be read."""
     for v in wf.values():
-        inp = v.get("inputs", {})
+        inp = literals(wf, v.get("inputs", {}))
         if v.get("class_type") in (H3_REF, H3_I2V, H3_EMPTY) and all(isinstance(inp.get(k), int) for k in ("width", "height", "length")):
             return inp["length"], inp["width"] * inp["height"]
     return 0, 0
@@ -281,9 +383,14 @@ def advice(wf: dict, ratio: str | None) -> list[str]:
     """Things the server cannot object to but that usually mean a mistake. Printed with the preview; never blocks."""
     out, steps, cfg, loras = [], None, None, []
     for v in wf.values():
-        cls, inp = v.get("class_type", ""), v.get("inputs", {})
+        cls, raw = v.get("class_type", ""), v.get("inputs", {})
+        inp = {**raw, **literals(wf, raw)}                      # links to Primitive* nodes read as their values
         if isinstance(inp.get("steps"), int) and ("cfg" in inp or "sampler_name" in inp):
             steps, cfg = inp["steps"], inp.get("cfg")
+        elif isinstance(inp.get("steps"), int) and "scheduler" in inp and steps is None:      # BasicScheduler
+            steps = inp["steps"]
+        if cls in ("CFGGuider", "DualCFGGuider") and isinstance(inp.get("cfg"), (int, float)):
+            cfg = inp["cfg"]
         if isinstance(inp.get("lora_name"), str):
             loras.append(inp["lora_name"])
         if cls == H3_REF:
@@ -301,6 +408,17 @@ def advice(wf: dict, ratio: str | None) -> list[str]:
                 out.append(f"the canvas {inp['width']}x{inp['height']} is {got:.3f}:1, the episode is {ratio} ({RATIOS[ratio]:.3f}:1): "
                            f"crop or scale to {ratio} in the edit (1344x768 -> crop 6 px top and bottom, then scale)")
     distilled = [x for x in loras if any(t in x.lower() for t in ("turbo", "pdd", "lightx2v", "distill", "step"))]
+    canvas = next((literals(wf, v.get("inputs", {})) for v in wf.values() if v.get("class_type") in (H3_REF, H3_I2V, H3_EMPTY)), {})
+    px = canvas.get("width", 0) * canvas.get("height", 0) if isinstance(canvas.get("width"), int) and isinstance(canvas.get("height"), int) else 0
+    for name in distilled:
+        low = name.lower()
+        if "minimax_h3" in low and "turbo" in low:
+            if px >= 1344 * 768 * 0.9 and "768p" not in low:
+                out.append(f"{name} is the 544p-tier Turbo LoRA and the canvas is {canvas['width']}x{canvas['height']}: at 768p use the "
+                           f"file with `_768p_` in its name (slower and softer otherwise)")
+            want = 4 if "4step" in low else 8 if "8step" in low else None
+            if want and steps is not None and steps != want:
+                out.append(f"{name} is a {want}-step LoRA but the workflow runs {steps} steps")
     if steps is not None and steps <= 10 and not distilled:
         out.append(f"{steps} steps and no distillation LoRA in the workflow: the base model wants about 20 steps - "
                    f"is the Turbo LoRA missing?")
@@ -337,12 +455,17 @@ def estimate(history: list[tuple[float, int, int]], frames: int, pixels: int, n:
         note = f"median of {len(scaled)} finished take(s) {where}, scaled to this job's frame count and canvas"
     else:
         per = statistics.median(sec for sec, _f, _px in history)
-        note = f"median of {len(history)} finished take(s) {where}; their size is unknown, so this is not scaled"
+        note = f"median of {len(history)} finished take(s) {where}; frame count or canvas is not known for both, so this is not scaled"
     return f"about {per * n / 60:.1f} min at {per:.0f}s per take ({note})"
 
 
-def seed_nodes(wf):
-    return [k for k, v in wf.items() if "seed" in v.get("inputs", {}) and not isinstance(v["inputs"]["seed"], list)]
+SEED_KEYS = ("seed", "noise_seed")      # KSampler-style nodes / RandomNoise and SamplerCustom (the official H3 templates use the latter)
+
+
+def seed_nodes(wf) -> list[tuple[str, str]]:
+    """(node id, input name) of every literal seed in the workflow."""
+    return [(k, key) for k, v in wf.items() for key in SEED_KEYS
+            if key in v.get("inputs", {}) and not isinstance(v["inputs"][key], (list, dict))]
 
 
 def fingerprint(wf: dict, media: dict) -> str:
@@ -546,6 +669,14 @@ def take_state(dest: Path, fp: str) -> str:
     return "new"
 
 
+def holds_earlier_run(dest: Path) -> bool:
+    """True when the take folder already has files that a new, different run would push aside."""
+    try:
+        return dest.is_dir() and any(not p.name.startswith("_prev_") for p in dest.iterdir())
+    except OSError:
+        return False
+
+
 def archive_previous(dest: Path) -> None:
     """Keep what an earlier, different run left in this take folder."""
     old = [p for p in dest.iterdir() if not p.name.startswith("_prev_")] if dest.exists() else []
@@ -621,9 +752,10 @@ def main():
     except urllib.error.URLError as e:
         die(f"cannot reach ComfyUI at {a.server}: {e.reason}")
     snodes = seed_nodes(wf)
-    if a.batch > 1 and not snodes:
-        die("--batch needs a node with a literal `seed` input; this workflow has none")
-    base_seed = a.seed if a.seed is not None else (wf[snodes[0]]["inputs"]["seed"] if snodes else 0)
+    if (a.batch > 1 or a.seed is not None) and not snodes:
+        die("--batch / --seed need a node with a literal `seed` or `noise_seed` input (KSampler, RandomNoise, SamplerCustom ...); "
+            "this workflow has none - if the seed comes from a primitive or another node, set it on that node with --set")
+    base_seed = a.seed if a.seed is not None else (wf[snodes[0][0]]["inputs"][snodes[0][1]] if snodes else 0)
 
     version = print_system(a.server)
     if version is None and not offline:
@@ -643,8 +775,8 @@ def main():
     plan = []
     for i in range(a.batch):
         seed = base_seed + i
-        for n in snodes:
-            wf[n]["inputs"]["seed"] = seed
+        for n, key in snodes:
+            wf[n]["inputs"][key] = seed
         fp = fingerprint(wf, media)
         dest = out / f"{a.tag}_{seed}"
         state = "new" if a.force else take_state(dest, fp)
@@ -686,6 +818,10 @@ def main():
     for p in plan:
         note = {"done": "already finished with identical inputs - skipped", "resume": "was queued before - will be collected, not resubmitted",
                 "new": "will be queued"}[p["state"]]
+        if p["state"] == "new" and holds_earlier_run(p["dest"]):
+            note += ("; this folder already holds an earlier run (another workflow or other inputs) - its files will be "
+                     "moved into _prev_... inside it. To keep both side by side, give this run its own --tag "
+                     f"(e.g. --tag {a.tag}_refine)")
         print(f"  seed {p['seed']:<12} {p['dest']}  [{p['state']}] {note}")
     if a.dry_run:
         print(f"nothing queued (--dry-run). To run exactly this batch: add --confirm {batch_id}")
@@ -702,8 +838,8 @@ def main():
             if p["state"] == "done":
                 continue
             seed, fp, dest = p["seed"], p["fp"], p["dest"]
-            for n in snodes:
-                wf[n]["inputs"]["seed"] = seed
+            for n, key in snodes:
+                wf[n]["inputs"][key] = seed
             pid, t0, entry = None, time.time(), None
             if p["state"] == "resume":
                 h = json.loads((dest / "handle.json").read_text(encoding="utf-8"))

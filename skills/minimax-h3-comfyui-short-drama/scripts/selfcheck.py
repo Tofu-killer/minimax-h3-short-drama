@@ -90,6 +90,13 @@ def main():
     import signals  # noqa: E402
     font = signals.find_font()
     record("font for stamps", "PASS" if font else "SKIP", str(font) if font else "no TrueType font found: sheets will be unstamped (set H3_QC_FONT)")
+    skill_md = HERE.parent / "SKILL.md"
+    if skill_md.exists():                                  # the limits an installer checks before it accepts the skill
+        head = skill_md.read_text(encoding="utf-8").split("\n---", 1)[0].splitlines()
+        size = {k: len(line.split(":", 1)[1].strip()) for line in head for k in ("description", "compatibility") if line.startswith(k + ":")}
+        over = [f"{k} {size[k]} > {cap}" for k, cap in (("description", 1024), ("compatibility", 500)) if size.get(k, 0) > cap]
+        record("skill header within the install limits", "FAIL" if over else "PASS",
+               "; ".join(over) if over else f"description {size.get('description', 0)}/1024, compatibility {size.get('compatibility', 0)}/500 characters")
 
     with tempfile.TemporaryDirectory() as td:
         work = Path(a.keep).resolve() if a.keep else Path(td)
