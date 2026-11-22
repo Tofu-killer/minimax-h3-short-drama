@@ -31,6 +31,9 @@
 | **精修要下的放大器权重文件名写错了**：文档写的 `minimax_h3_latent_upscaler_3d_fp16.safetensors` 在 HF 上不存在，真实文件是 `minimax_h3_latent_upscaler_3d_conv_v1/minimax_h3_latent_upscaler_3d_conv_v1_fp16.safetensors`；同仓库新出的 2D 版和精修节点不通用 | HF 文件清单 + 两个仓库的 README | 改成真实文件名，写明用 3D 版 |
 | **改 shift 时调度器会接错位置**：FL2V 的 768p Turbo LoRA 要把 shift 设成 6 / 3，而 Comfy 官方模板里调度器的模型直接来自加载节点。只把 shift 节点接到引导器那一路，步数表仍按默认的 12 算，模型却按 6 换算 | 0.37.2 的 shift 节点源码 + 官方模板与 LoRA 作者示例工作流的连线对比 | 文档写明两处都要接 shift 节点的输出；`comfy_submit.py` 预览检查这一点，也检查 Turbo LoRA 和 shift 是否配对 |
 | **Turbo LoRA 的作者有现成的 ComfyUI 示例工作流**（LoRA、shift、VAE 都接好了，只用自带节点），比手改 Comfy 官方模板少改很多；他们用的采样器是 euler；FL2V 的 8 步 LoRA 已经出到 v1.2 | GitHub `ModelTC/Minimax-H3-Turbo` 的 README、安装说明和三个示例 JSON | `comfyui-nodes.md` §3 把它列为推荐起点（A），官方模板降为备选（B）；挂 Turbo 的采样器统一成 euler；FL2V 默认 LoRA 换成 v1.2 |
+| **`ref2va` 段的首帧只被当成了参考图**：提示词里写「这是第一镜的首帧」，但画面并没有被钉在这一帧上。ComfyUI 官方多帧模板的做法是同一张图既接成 `<Picture 1>`、又用 `MiniMaxH3AddGuide` 钉在第 0 帧；只接后者时文本编码器看不到它 | ComfyUI 官方 H3 多帧教程 + 0.37.2 节点源码 | `comfy_submit.py --media` 自动加这个节点（`--no-anchor` 可关），预览里写明；在模拟服务上端到端跑通，真机上没有验证过钉帧和只当参考哪个更稳 |
+| **H3 本身的许可没写**：社区许可的适用地区不含美国、欧盟、英国、韩国，输出也受这条限制；商用有年收入门槛和界面标注要求 | HF 上的许可原文 + Comfy 的许可页 | `model-and-modes.md` 加条款摘录；开工前要问的事项里加上「片子打算发到哪里」 |
+| **官方文档明说 Turbo 会削弱参考和音频的约束**（参考必须守住时建议 20–25 步）；多说话人加音色参考可能分错人，官方给了补救办法 | ComfyUI 官方 H3 教程与提示词指南 | 写进 `pitfalls.md` 的症状表和草稿档说明 |
 | 精修如果用同一个 seed、同一个 `--tag` 提交，结果会落进中选草稿的目录，草稿被挪进 `_prev_…`，之前记下的片段路径失效 | 读脚本 + 在模拟服务上复现 | 预览里对这种情况提醒并建议另起 `--tag`；文档的精修命令带上 `--tag <段号>_refine` |
 | `build_prompts.py` 遇到分镜里写了、磁盘上没有的参考文件，会抛一长串 Python 回溯 | 回归时撞到 | 改成一行说明，其它段照常生成 |
 | `SKILL.md` 头部的 compatibility 字段这一轮被我加到 566 字，超过安装器 500 字的上限，打包会被拒 | 打包器的校验规则 | 缩到 473 字；自检新增一项检查头部长度 |

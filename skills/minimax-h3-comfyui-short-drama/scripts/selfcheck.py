@@ -121,6 +121,7 @@ def main():
              str(work / "music.wav")], work)
         for n in ("face.png", "room.png"):
             run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=512x512:d=1", "-frames:v", "1", str(work / "bible" / n)], work)
+        run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=1344x768:d=1", "-frames:v", "1", str(work / "bible" / "first_s03.png")], work)
         record("make synthetic clips", "PASS" if ok else "FAIL", "" if ok else "ffmpeg could not encode test clips (libx264 / aac missing?)")
         if not ok:
             sys.exit(1)
@@ -167,6 +168,7 @@ def main():
                    "shots": [shot(1, 0, "a medium shot from behind Hero", "Hero turns from the window toward the chair and walks to it slowly."),
                              shot(2, 3.0, "a close-up on Hero's face", "Hero sits down, looks into the lens and speaks one calm sentence.", "开始吧")]},
                   {"id": "s03", "duration": 5, "scene_id": "room", "character_ids": ["hero"], "soundscape": "The hum fades under a soft breath.",
+                   "first_frame": "bible/first_s03.png",
                    "continuity": "Hero sits on the chair at frame left, facing the camera.", "end_state": "Hero sits still at frame left, eyes closed.",
                    "shots": [dict(shot(1, 0, "a medium close-up on Hero", "Hero breathes out, lowers his shoulders and closes his eyes, then holds still."), end_hold=True)]}]}
         (work / "ep.json").write_text(json.dumps(ep, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -178,6 +180,36 @@ def main():
         record("build_prompts.py", "PASS" if ok else "FAIL", note)
         ok, note = script("lint_prompt.py", ["prompts/s02.txt", "--seconds", "6", "--images", "2", "--audios", "0"], work)
         record("lint_prompt.py", "PASS" if ok else "FAIL", note)
+
+        # comfy_submit.py without a server: a dry run must wire the references in the numbered order and pin the first frame
+        wf = {"1": {"class_type": "UNETLoader", "inputs": {"unet_name": "minimax_h3_ref2va_pruned_int8_convrot.safetensors", "weight_dtype": "default"}},
+              "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors", "type": "minimax"}},
+              "4": {"class_type": "VAELoader", "inputs": {"vae_name": "minimax_h3_video_vae_int8_convrot.safetensors"}},
+              "5": {"class_type": "VAELoader", "inputs": {"vae_name": "minimax_h3_audio_vae_fp32.safetensors"}},
+              "3": {"class_type": "MiniMaxH3ReferenceToVideo", "inputs": {"clip": ["2", 0], "vae": ["4", 0], "audio_vae": ["5", 0], "prompt": "",
+                                                                          "width": 1344, "height": 768, "length": 124, "ref_image_size": "match"}},
+              "10": {"class_type": "RandomNoise", "inputs": {"noise_seed": 1}},
+              "11": {"class_type": "KSamplerSelect", "inputs": {"sampler_name": "euler"}},
+              "12": {"class_type": "BasicScheduler", "inputs": {"model": ["1", 0], "scheduler": "simple", "steps": 20, "denoise": 1.0}},
+              "13": {"class_type": "BasicGuider", "inputs": {"model": ["1", 0], "conditioning": ["3", 0]}},
+              "14": {"class_type": "SamplerCustomAdvanced", "inputs": {"noise": ["10", 0], "guider": ["13", 0], "sampler": ["11", 0],
+                                                                      "sigmas": ["12", 0], "latent_image": ["3", 1]}}}
+        (work / "wf.api.json").write_text(json.dumps(wf), encoding="utf-8")
+        r = run([sys.executable, str(HERE / "comfy_submit.py"), "wf.api.json", "--server", "http://127.0.0.1:9", "--media", "prompts/s03.media.json",
+                 "--batch", "2", "--dry-run", "--write-workflow", "qc/wired.api.json"], work)
+        try:
+            wired = json.loads((work / "qc/wired.api.json").read_text(encoding="utf-8"))
+            h3 = wired["3"]["inputs"]
+            pics = [wired[h3[k][0]]["inputs"]["image"] for k in sorted(k for k in h3 if k.startswith("ref_images."))]
+            guide = [k for k, v in wired.items() if v["class_type"] == "MiniMaxH3AddGuide"]
+            pinned = bool(guide) and wired["13"]["inputs"]["conditioning"] == [guide[0], 0] \
+                and wired[wired[guide[0]]["inputs"]["image"][0]]["inputs"]["image"] == pics[0]
+            good = r.returncode == 0 and pics[:1] == ["first_s03.png"] and len(pics) == 3 and pinned and h3["length"] == 124 \
+                and "2 take(s)" in r.stdout
+            record("comfy_submit.py --dry-run (references wired in order, first frame pinned at frame 0)", "PASS" if good else "FAIL",
+                   f"pictures {pics}, guide node {guide}" if good else (r.stderr.strip() or r.stdout.strip())[-300:])
+        except Exception as e:  # noqa: BLE001
+            record("comfy_submit.py --dry-run", "FAIL", f"{type(e).__name__}: {e}; {(r.stderr.strip() or r.stdout.strip())[-200:]}")
 
         r = run([sys.executable, str(HERE / "qc_probe.py"), "selects/*.mp4", "--episode", "ep.json", "--freeze-tail", "1.0",
                  "--expect-size", "1344x768", "--out", "qc/probe"], work)

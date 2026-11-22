@@ -21,8 +21,11 @@ inside any agent sandbox or on Windows with the ComfyUI-embedded python.
 
 --media replaces whatever references the exported workflow carried: it adds one LoadImage / LoadAudio node per
 reference and links them as "ref_images.ref_image_0", "ref_audios.ref_audio_0", ... on the single
-MiniMaxH3ReferenceToVideo node (I2VA / FL2VA: first_frame / last_frame on MiniMaxH3ImageToVideo). Everything else
-in the workflow - models, LoRA, sampler, resolution - stays as you exported it; --set still works on top.
+MiniMaxH3ReferenceToVideo node (I2VA / FL2VA: first_frame / last_frame on MiniMaxH3ImageToVideo). A Ref2VA
+segment that has a first frame gets it as <Picture 1> and, in addition, pinned at frame 0: the script adds one
+MiniMaxH3AddGuide node behind the reference node (the wiring of ComfyUI's multiframe reference template;
+--no-anchor keeps it a reference only). Everything else in the workflow - models, LoRA, sampler, resolution -
+stays as you exported it; --set still works on top.
 
 Overrides
   --set <node_id>.<input>=<value> / --set-title "<title>".<input>=<value>
@@ -170,6 +173,7 @@ def apply_sets(wf, sets, server, media, do_upload, by_title=False):
 
 H3_REF, H3_I2V, H3_EMPTY = "MiniMaxH3ReferenceToVideo", "MiniMaxH3ImageToVideo", "EmptyMiniMaxH3LatentAV"
 H3_SHIFT = "MiniMaxH3SigmaShift"
+H3_GUIDE = "MiniMaxH3AddGuide"
 REF_GROUPS = ("ref_images.", "ref_videos.", "ref_video_audios.", "ref_audios.")
 
 
@@ -233,14 +237,18 @@ def frame_fit(role: str, path: Path, canvas: dict) -> str | None:
         change = f"{(factor - 1) * 100:.1f}% wider" if factor > 1 else f"{(1 - factor) * 100:.1f}% narrower"
         return (shapes + f"the node stretches a first frame to the canvas without cropping, so everything in it becomes {change} "
                          f"- make the first frame at the canvas ratio")
-    return shapes + f"the node crops a last frame to the canvas from the centre, {(1 - min(img, can) / max(img, can)) * 100:.1f}% of it is cut away"
+    what = "a last frame" if role == "last_frame" else "a pinned frame"
+    return shapes + f"the node crops {what} to the canvas from the centre, {(1 - min(img, can) / max(img, can)) * 100:.1f}% of it is cut away"
 
 
-def apply_media(wf: dict, media_json: Path, server: str, media: dict, do_upload: bool, node_id: str | None) -> list[str]:
+def apply_media(wf: dict, media_json: Path, server: str, media: dict, do_upload: bool, node_id: str | None,
+                anchor: bool = True) -> list[str]:
     """Put a segment into the workflow exactly as build_prompts.py numbered it: prompt text, frame count, and one
     Load node per reference wired to ref_images.ref_image_0.. / ref_audios.ref_audio_0.. (Ref2VA) or to
     first_frame / last_frame (I2VA / FL2VA). Whatever references the workflow carried before are replaced.
-    Returns the lines of the wiring table."""
+    A Ref2VA segment's first frame is <Picture 1> and, unless `anchor` is off, is also pinned at frame 0 with a
+    MiniMaxH3AddGuide node placed between the reference node and whatever read its conditioning - the wiring of
+    ComfyUI's multiframe reference template. Returns the lines of the wiring table."""
     spec = json.loads(media_json.read_text(encoding="utf-8"))
     mode = spec.get("mode", "ref2va")
     want = H3_REF if mode == "ref2va" else H3_I2V
@@ -286,6 +294,8 @@ def apply_media(wf: dict, media_json: Path, server: str, media: dict, do_upload:
         return new
 
     n_img = n_aud = 0
+    guides = [k for k, v in wf.items() if v.get("class_type") == H3_GUIDE]        # guide nodes the export already carried
+    has_first = False
     for item in spec.get("media", []):
         path = Path(item["path"])
         if item["type"] == "image" and item.get("role") in ("first_frame", "last_frame"):
@@ -301,12 +311,41 @@ def apply_media(wf: dict, media_json: Path, server: str, media: dict, do_upload:
             new = load_node("image", path, f"Picture {n_img + 1}")
             inputs[f"ref_images.ref_image_{n_img}"] = [new, 0]
             n_img += 1
-            lines.append(f"<Picture {n_img}>  <- {path.name}")
+            if item.get("anchor") != "first_frame":
+                lines.append(f"<Picture {n_img}>  <- {path.name}")
+                continue
+            has_first = True
+            if not anchor:
+                lines.append(f"<Picture {n_img}>  <- {path.name}   (the first frame, as a reference only: --no-anchor)")
+            elif guides:
+                lines.append(f"<Picture {n_img}>  <- {path.name}   (the first frame, as a reference only)")
+            elif not isinstance(inputs.get("vae"), list):
+                lines.append(f"<Picture {n_img}>  <- {path.name}   (the first frame, as a reference only)")
+                lines.append(f"advice: the first frame cannot be pinned at frame 0: the H3 reference node has no `vae` input - connect the video VAE")
+            else:
+                guide = str(next_id)
+                next_id += 1
+                for other in wf.values():                # whatever read the reference node's conditioning now reads the guide's
+                    for name, val in other.get("inputs", {}).items():
+                        if isinstance(val, list) and len(val) == 2 and str(val[0]) == nid and val[1] == 0:
+                            other["inputs"][name] = [guide, 0]
+                wf[guide] = {"class_type": H3_GUIDE, "_meta": {"title": "first frame anchor"},
+                             "inputs": {"positive": [nid, 0], "vae": inputs["vae"], "latent": [nid, 1], "image": [new, 0], "frame_idx": 0}}
+                lines.append(f"<Picture {n_img}>  <- {path.name}   (the first frame: also pinned at frame 0 - {H3_GUIDE} [{guide}] added)")
+                fit = frame_fit("anchor", path, literals(wf, inputs))
+                if fit:
+                    lines.append(fit)
         elif item["type"] == "audio":
             new = load_node("audio", path, f"Audio {n_aud + 1}")
             inputs[f"ref_audios.ref_audio_{n_aud}"] = [new, 0]
             n_aud += 1
             lines.append(f"<Audio {n_aud}>    <- {path.name}")
+    if guides and want == H3_REF:
+        ids = ", ".join(guides)
+        lines.append(f"advice: the exported workflow already has {H3_GUIDE} node(s) [{ids}]; they are left as exported, so whatever "
+                     "picture they load is pinned into this take"
+                     + (" and this segment's first frame is not pinned by the script" if has_first and anchor else "")
+                     + " - export the draft workflow without guide nodes and let --media add the first-frame anchor")
     return lines
 
 
@@ -378,6 +417,9 @@ def settings_summary(wf: dict) -> list[str]:
             out.append(f"{cls} [{k}]: {lit['unet_name']}")
         elif "shift_video" in lit:
             out.append(f"{cls} [{k}]: shift video {lit['shift_video']} / audio {lit.get('shift_audio')}")
+        elif cls == H3_GUIDE:
+            out.append(f"{cls} [{k}]: pins " + ("a picture" if isinstance(inp.get("image"), list) else "audio only")
+                       + f" at frame {lit.get('frame_idx', '?')}")
     return out
 
 
@@ -745,6 +787,12 @@ def main():
     ap.add_argument("--media", help="<segment>.media.json from build_prompts.py: sets the prompt and the frame count on the H3 node and "
                                     "wires every reference in the order that numbered <Picture N> / <Audio N>")
     ap.add_argument("--h3-node", help="node id of the H3 conditioning node when the workflow has more than one")
+    ap.add_argument("--write-workflow", metavar="PATH",
+                    help="also write the workflow exactly as it will be queued (after --media / --set, before the seed is set) "
+                         "to this file - to see the wiring the script made, or to open it in ComfyUI")
+    ap.add_argument("--no-anchor", action="store_true",
+                    help="Ref2VA segments with a first frame: use it as <Picture 1> only; by default it is also pinned at frame 0 "
+                         "with a MiniMaxH3AddGuide node, as ComfyUI's multiframe reference template does")
     ap.add_argument("--server", default="http://127.0.0.1:8188")
     ap.add_argument("--set", action="append", default=[], help="node_id.input=value (value may be @file)")
     ap.add_argument("--set-title", action="append", default=[], help='"Node title".input=value')
@@ -785,11 +833,14 @@ def main():
     a.tag = a.tag or "take"
     try:
         if a.media:
-            wiring = apply_media(wf, Path(a.media), a.server, media, do_upload=not offline, node_id=a.h3_node)
+            wiring = apply_media(wf, Path(a.media), a.server, media, do_upload=not offline, node_id=a.h3_node, anchor=not a.no_anchor)
         apply_sets(wf, a.set, a.server, media, do_upload=not offline)
         apply_sets(wf, a.set_title, a.server, media, do_upload=not offline, by_title=True)
     except urllib.error.URLError as e:
         die(f"cannot reach ComfyUI at {a.server}: {e.reason}")
+    if a.write_workflow:
+        Path(a.write_workflow).parent.mkdir(parents=True, exist_ok=True)
+        Path(a.write_workflow).write_text(json.dumps(wf, ensure_ascii=False, indent=1), encoding="utf-8")
     snodes = seed_nodes(wf)
     if (a.batch > 1 or a.seed is not None) and not snodes:
         die("--batch / --seed need a node with a literal `seed` or `noise_seed` input (KSampler, RandomNoise, SamplerCustom ...); "
