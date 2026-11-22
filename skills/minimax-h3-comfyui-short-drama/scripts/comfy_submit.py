@@ -61,6 +61,7 @@ import difflib
 import hashlib
 import json
 import mimetypes
+import re
 import statistics
 import sys
 import time
@@ -435,6 +436,17 @@ def job_size(wf: dict) -> tuple[int, int]:
 RATIOS = {"21:9": 21 / 9, "16:9": 16 / 9, "4:3": 4 / 3, "1:1": 1.0, "3:4": 3 / 4, "9:16": 9 / 16}
 
 
+# Video flow shift each lightx2v Turbo file is run at by its authors: the spec table of ModelTC/Minimax-H3-Turbo and the
+# configs of ModelTC/LightX2V (read 2026-11-22). Files that are not listed there have no published value -> no advice.
+TURBO_SHIFT = {("fl2v", 4, "1.0", True): 6.0, ("fl2v", 8, "1.0", True): 6.0, ("fl2v", 8, "1.2", True): 12.0,
+               ("fl2v", 4, "0.1", False): 12.0, ("fl2v", 8, "1.0", False): 12.0, ("ref2v", 4, "0.1", False): 12.0}
+
+
+def turbo_shift(lora_name: str) -> float | None:
+    m = re.search(r"minimax_h3_(fl2v|ref2v)_turbo_(\d+)step_v(\d+\.\d+)(_768p)?", lora_name.lower())
+    return TURBO_SHIFT.get((m.group(1), int(m.group(2)), m.group(3), bool(m.group(4)))) if m else None
+
+
 def advice(wf: dict, ratio: str | None) -> list[str]:
     """Things the server cannot object to but that usually mean a mistake. Printed with the preview; never blocks."""
     out, steps, cfg, loras = [], None, None, []
@@ -481,14 +493,12 @@ def advice(wf: dict, ratio: str | None) -> list[str]:
                 out.append(f"BasicScheduler [{k}] takes its model from before {H3_SHIFT}: the step schedule is then built with the "
                            f"default video shift 12 while the model is told {shift:g} - feed the scheduler from the shift node's output too")
     for name in distilled:
-        low = name.lower()
-        if "minimax_h3" in low and "turbo" in low and shift is not None:
-            if "fl2v" in low and "768p" in low and abs(shift - 6.0) > 1e-6:
-                out.append(f"{name}: its authors list training shifts 6 / 3 for the FL2V 768p files; this workflow runs video shift "
-                           f"{shift:g}" + ("" if shift_nodes else " (the model default - there is no shift node)")
-                           + f" - set {H3_SHIFT} to 6 / 3 and wire the guider and the scheduler after it")
-            elif "768p" not in low and abs(shift - 12.0) > 1e-6:
-                out.append(f"{name} is a 544p-tier file trained at shifts 12 / 3 (the model default); this workflow runs video shift {shift:g}")
+        want = turbo_shift(name)
+        if want is not None and shift is not None and abs(shift - want) > 1e-6:
+            fix = (f"set {H3_SHIFT} to 6 / 3 and wire the guider and the scheduler after it" if want == 6.0
+                   else f"leave the shift at the model default (no {H3_SHIFT} node, or 12 / 3)")
+            out.append(f"{name}: its authors run this file at video shift {want:g} / audio 3; this workflow runs video shift {shift:g}"
+                       + ("" if shift_nodes else " (the model default - there is no shift node)") + f" - {fix}")
     canvas = next((literals(wf, v.get("inputs", {})) for v in wf.values() if v.get("class_type") in (H3_REF, H3_I2V, H3_EMPTY)), {})
     px = canvas.get("width", 0) * canvas.get("height", 0) if isinstance(canvas.get("width"), int) and isinstance(canvas.get("height"), int) else 0
     for name in distilled:

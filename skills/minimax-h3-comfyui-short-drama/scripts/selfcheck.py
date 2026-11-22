@@ -181,6 +181,16 @@ def main():
         ok, note = script("lint_prompt.py", ["prompts/s02.txt", "--seconds", "6", "--images", "2", "--audios", "0"], work)
         record("lint_prompt.py", "PASS" if ok else "FAIL", note)
 
+        # the linter must report a broken prompt, not crash on it: full-width brackets are the classic paste accident
+        (work / "prompts" / "broken.txt").write_text(
+            "integrated_multimodal_description: [Shot 1] Live-action, a medium shot of a man （the doctor） who stops at the door. "
+            "The camera holds a static shot.\n\noverall_soundscape: A quiet room tone.\n\nnon_diegetic_music: N/A\n", encoding="utf-8")
+        r = run([sys.executable, str(HERE / "lint_prompt.py"), "prompts/broken.txt", "--seconds", "5"], work)
+        caught = r.returncode == 1 and "full-width bracket" in r.stdout and "Traceback" not in (r.stdout + r.stderr)
+        record("lint_prompt.py rejects a prompt with full-width brackets", "PASS" if caught else "FAIL",
+               "" if caught else (r.stderr.strip() or r.stdout.strip())[-200:])
+        (work / "prompts" / "broken.txt").unlink()
+
         # comfy_submit.py without a server: a dry run must wire the references in the numbered order and pin the first frame
         wf = {"1": {"class_type": "UNETLoader", "inputs": {"unet_name": "minimax_h3_ref2va_pruned_int8_convrot.safetensors", "weight_dtype": "default"}},
               "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors", "type": "minimax"}},
@@ -190,8 +200,10 @@ def main():
                                                                           "width": 1344, "height": 768, "length": 124, "ref_image_size": "match"}},
               "10": {"class_type": "RandomNoise", "inputs": {"noise_seed": 1}},
               "11": {"class_type": "KSamplerSelect", "inputs": {"sampler_name": "euler"}},
-              "12": {"class_type": "BasicScheduler", "inputs": {"model": ["1", 0], "scheduler": "simple", "steps": 20, "denoise": 1.0}},
-              "13": {"class_type": "BasicGuider", "inputs": {"model": ["1", 0], "conditioning": ["3", 0]}},
+              "6": {"class_type": "LoraLoaderModelOnly", "inputs": {"model": ["1", 0], "strength_model": 1.0,
+                                                                    "lora_name": "minimax_h3_ref2v_turbo_8step_v1.1_768p_comfyui_bf16.safetensors"}},
+              "12": {"class_type": "BasicScheduler", "inputs": {"model": ["6", 0], "scheduler": "simple", "steps": 8, "denoise": 1.0}},
+              "13": {"class_type": "BasicGuider", "inputs": {"model": ["6", 0], "conditioning": ["3", 0]}},
               "14": {"class_type": "SamplerCustomAdvanced", "inputs": {"noise": ["10", 0], "guider": ["13", 0], "sampler": ["11", 0],
                                                                       "sigmas": ["12", 0], "latent_image": ["3", 1]}}}
         (work / "wf.api.json").write_text(json.dumps(wf), encoding="utf-8")

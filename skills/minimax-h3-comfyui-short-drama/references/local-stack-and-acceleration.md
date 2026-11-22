@@ -36,7 +36,7 @@
 ### 草稿档（两档：快速预览 ≤ 2–3 min / 条；同构图草稿预计 5–8 min / 条）
 - 权重：`ref2va_pruned_int8_convrot`（或 fl2va）+ `qwen3vl_32b_minimax_h3_nvfp4_awq` + int8 视频 VAE + fp32 音频 VAE
 - LoRA：`minimax_h3_ref2v_turbo_8step_v1.1_768p_comfyui_bf16` 强度 1.0（抽卡可降 `ref2v_turbo_4step_v1.0_768p`；声音不稳降 0.75）
-- 采样：8 步，`euler` + `simple`（Turbo LoRA 作者 lightx2v 的示例工作流和说明用的就是它；Comfy 官方模板的 `res_multistep` + `simple` 也能跑，想换就拿同一段、seed+1 比一次），CFG 1.0（用 `BasicGuider`，本来就没有 CFG 分支）；shift：Ref2V 12 / 3 就是模型默认值，接不接 `MiniMaxH3SigmaShift` 都一样；FL2V 768p 版要用这个节点改成 6 / 3，并且**调度器的 `model` 也要接它的输出**（`comfyui-nodes.md` §1）
+- 采样：8 步，`euler` + `simple`（Turbo LoRA 作者 lightx2v 的示例工作流和说明用的就是它；Comfy 官方模板的 `res_multistep` + `simple` 也能跑，想换就拿同一段、seed+1 比一次），CFG 1.0（用 `BasicGuider`，本来就没有 CFG 分支）；shift：12 / 3 是模型默认值，Ref2V 和 FL2V 的 v1.2 都用它，接不接 `MiniMaxH3SigmaShift` 一样；只有 FL2V 的 v1.0 768p 版要用这个节点改成 6 / 3，那时**调度器的 `model` 也要接它的输出**（各版本的值见 `comfyui-nodes.md` §1）
 - 注意力：KJ Sage 两节点；**不接** `MiniMaxLowVRAMAttention`（与 Sage 同开实测第一步 693 s——这是用户机器上当时那版 KJNodes 的结果；新版源码里这两个节点是按能配合来写的，更新 KJNodes 之后想用它省显存，先单独拿同一段比一次再决定）；工作流里只留这一个注意力补丁，不再接 kitchen / BlockSparse 的注意力节点（启动参数 `--use-ck-attention` 是另一回事，见文末「出图与出视频分实例」；它和 KJ Sage 同开时谁生效以日志为准，配好后用同 seed 各跑一次计时）；省显存改 KJ `MiniMaxChunkFeedForward` 或 star7 分块（`chunk_tokens 8192 / mlp 4096 / qkv 4096`）
 - 分辨率与 LoRA，两档各有用途：
   - **快速预览档** 864×480 或 960×544：只用来看构图和调度对不对，选中后要在 1344×768 重跑（那是一条新片段，要重新选片）。Ref2V 没有 8 步的 544p 版 LoRA（仓库里不带 `768p` 的 Ref2V 文件只有 4 步的 `minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16`，官方 r2v 模板默认挂的就是它）；下面那条 134 s 的实测用的是 8 步 LoRA 直接跑 864×480。FL2V 有 8 步的 544p 版：`minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16`。
@@ -59,7 +59,7 @@
 - 预计：1344×768 × 10 s × 8 步 ≈ 5–8 min（4090，含 VAE）
 
 ### FL2VA（I2VA 首帧 / 尾帧衔接）
-`fl2va_pruned_int8_convrot` + `minimax_h3_fl2v_turbo_8step_v1.2_768p_comfyui_bf16`（2026-11 的新版；作者在模型卡里拿 v1.1 出问题的例子重测，v1.2 更贴提示词、更清晰；手里已有 v1.1 也能用），shift 6 / 3（`BasicGuider` 和 `BasicScheduler` 都接 shift 节点的输出）；其余同上。
+`fl2va_pruned_int8_convrot` + `minimax_h3_fl2v_turbo_8step_v1.2_768p_comfyui_bf16`（2026-11 的新版；作者在模型卡里拿 v1.1 出问题的例子重测，v1.2 更贴提示词、更清晰），8 步 euler，shift 用默认的 12 / 3——作者自己的 8 步配置文件就是这么跑 v1.2 的，不用加 shift 节点。v1.0 的 768p 版是另一组值：6 / 3，要加 `MiniMaxH3SigmaShift`，并且 `BasicGuider` 和 `BasicScheduler` 都接它的输出。v1.1 的值作者没有公布；其余同上。
 
 - **可选：FastH3（只支持 `t2va` / `i2va` / `fl2va`，没有 Ref2VA 版）**——FastVideo 团队的蒸馏整模，固定 8 步，改步数会掉质量。ComfyUI ≥ 0.36 自带模板 `video_fastvideo_fasth3_t2v` / `video_fastvideo_fasth3_i2v`；权重是 HF `FastVideo/FastVideo-FastH3-Comfy` 的 `diffusion_models/fastvideo_fasth3_8step_v2_pruned_int8_convrot.safetensors`，文本编码器和两个 VAE 与 H3 共用。模板里的设置：`MiniMaxH3SigmaShift` 10 / 3、`res_multistep` + `simple` 8 步、`BlockSparseAttention`（VSA，`keep_percent` 10，从调度的 20% 处开始）。官方的定位是牺牲一些动作和音频保真换速度，用于草稿和迭代；它本身就是蒸馏模型，不再挂 Turbo LoRA（铁律 8）。4090 上没有实测，想用就拿同一张首帧、同一段提示词和 Turbo 那一档各出一条，比时间、口型和音质再决定（ComfyUI 官方 FastH3 教程，2026-11-21 读）。
 

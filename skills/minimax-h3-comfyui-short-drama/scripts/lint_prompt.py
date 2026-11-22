@@ -99,7 +99,7 @@ def main():
     if "```" in text or "<think>" in text: errs.append("markdown fence or <think> present")
     for bad in re.finditer(r"[“”‘’＜＞（）［］]", text):
         errs.append(f"curly quote or full-width bracket {bad.group(0)!r} at …{text[max(0, bad.start() - 25):bad.end() + 25].strip()}… "
-                    f"(often Chinese text pasted into an English field: write the field in English and refer to assets as {asset_id})")
+                    f"(often Chinese text pasted into an English field: write the field in English and refer to assets as {{asset_id}})")
         break
     for um in UNFILLED.finditer(text):
         errs.append(f"unresolved placeholder {um.group(0)} at …{text[max(0, um.start() - 30):um.end() + 30].strip()}…")

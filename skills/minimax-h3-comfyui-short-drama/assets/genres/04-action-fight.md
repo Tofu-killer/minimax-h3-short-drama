@@ -15,7 +15,7 @@
 | 模式 | **FL2VA 三段式**（首帧 = 对峙站位，尾帧 = 结果姿态，图像模型出）；走位复杂时 Ref2VA + pose/depth 参考视频 `<Video 1>` |
 | 段长 / 镜数 | 5–8 s；纯动作段每集最多 1 段，跨段插反应镜或一句台词（egguy886） |
 | 每击时长 | egguy886 实测 0.8–1.4 s/击；**生成内切点 ≥ 1.2 s**（open-h3-ir T12，lint ERROR），所以提示词里每击写 1.2–1.6 s，更碎的切点后期剪 |
-| 步数 | FL2V 768p Turbo 草稿 8 步、shift 6/3；定稿 20 步关 Turbo（运镜）；帧数 ≥ 124，三段式动作建议 192 |
+| 步数 | FL2V 768p Turbo 草稿 8 步（v1.2，shift 用默认的 12/3；v1.0 才是 6/3）；定稿 20 步关 Turbo（运镜）；帧数 ≥ 124，三段式动作建议 192 |
 | LoRA | JOKER141 Combat Base V2 / Weapon Combat、Jojocodex Wushu Action 仅列入候选（AIKSK v1.8.1 给了实验起始权重），本 skill 未实测，先盲测；与 Turbo 同载时额外 LoRA 和 ≤ 1.3 |
 
 ## 风格句

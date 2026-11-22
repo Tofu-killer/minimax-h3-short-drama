@@ -14,7 +14,7 @@
 |----|------|
 | 模式 | I2VA 三段式（首帧锁暗场构图）；有固定怪物/鬼角色时 Ref2VA + 怪物参考图 |
 | 段长 / 镜数 | 8–12 s，3 镜：缓慢接近 → 脸部反应 → 揭示（POV）；揭示后留 ≥ 1 s |
-| 步数 | FL2V 768p Turbo 8 步 shift 6/3 草稿；定稿 20 步；暗部噪点用二采 σ 0.45 精修，不用重生成式高 σ |
+| 步数 | FL2V 768p Turbo 8 步草稿（v1.2，shift 用默认的 12/3；v1.0 才是 6/3）；定稿 20 步；暗部噪点用二采 σ 0.45 精修，不用重生成式高 σ |
 | LoRA | `wassermanproductions/wasserman-80s-horror-lora`：触发词 `80s_horror_wk` 放提示词开头，再接 `shot on VHS.` 或 `shot on 16mm film.`；官方说明标准文本编码器可用、保留对白与音频；**LoRA 触发词不进有台词的段**（`camera-and-performance.md` §5c），I2VA 首行对齐指令仍在最前 |
 
 ## 风格句
