@@ -16,6 +16,7 @@
 | 冷启动 8–14 分钟 | JIT 编译 + 34 GB 载入 | 第 2 条起才算速度；保持 ComfyUI 常驻 |
 | OOM / 系统内存爆 | 不剪枝 int8 + 32B nvfp4 TE 同驻；`MAX_PINNED_MEMORY` 吃掉 40% RAM | 用 pruned_int8；`--disable-pinned-memory`；TE 用后卸载 |
 | 音频破损、对白含糊 | 4 步 Turbo 预览版 LoRA；台词超预算 | 8 步 v1.x；台词预算 (段长−2)×4.5 |
+| 挂了参考图 / 音色，脸或嗓音还是守不住 | 蒸馏 LoRA 本身会削弱参考的约束——ComfyUI 官方 H3 教程的原话：Turbo「faster, weaker reference/audio」，参考必须守住时建议 20–25 步 | 先确认参考真的接上了（`vae` / `audio_vae`、预览里的接线表）；再把这一段改成不挂 Turbo 的 20–25 步重出（新片段，要重新选片）；风格 LoRA 和参考抢控制权，要守参考时强度降到 0.5 左右（同一页） |
 
 ## B. 内容 / 逻辑
 
@@ -25,7 +26,7 @@
 | 角色换装、长出喷气背包 | 该段没带该角色的服装参考；否定句被渲染 | 每段都带角色 2 图；正向锁定（`his back is bare except…`） |
 | 角色瞬移 / 消失 / 多出一个人 | 多人镜头未写明每人位置与动作；`continuity` 为空 | 每人每镜都写位置/姿态；`end_state`→下一段开场；群像先写人数 |
 | 台词复读两遍 | 台词写了两处（动作句 + 对白句）；无 (S1) | 只写一次 `<Subject 1> (S1) says softly, <d>…</d>`（六段式；三段式是 `The woman … (S1) says: <d>…</d>`） |
-| 错人张嘴 | 一镜两人开口；听者没写闭嘴 | 一镜一人；`listens with mouth closed` |
+| 错人张嘴 | 一镜两人开口；听者没写闭嘴 | 一镜一人；`listens with mouth closed`。官方提示词指南承认多说话人加音色参考时会分错人：台词要挂在看得见的动作上而不是只靠时间码；还分错，就把每个人的那句话在外面单独做成音频，用 `fully_copy` / `partially_copy` 引用（`audio-and-post.md` 的先音后画链路） |
 | 字幕重复/乱码 | 让模型画字幕 | 后期烧录 |
 | 画幅不对 | 把 16:9 写进文字 | 用节点/参数设定宽高 |
 | 跨段空间不连续、背景人物移位 | 用「continue the previous video」做续写 | 默认硬切 + 文字交接（`observe_take.py` + `"@observed"`）；同机位连续动作才用尾帧作 `first_frame`（`ref2va`，同时带角色参考）、latent 续接节点（Motion-Context 类）或 FL2VA 2–4 s 转场段 |

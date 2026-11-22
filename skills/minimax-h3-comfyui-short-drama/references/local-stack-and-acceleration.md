@@ -41,6 +41,7 @@
 - 分辨率与 LoRA，两档各有用途：
   - **快速预览档** 864×480 或 960×544：只用来看构图和调度对不对，选中后要在 1344×768 重跑（那是一条新片段，要重新选片）。Ref2V 没有 8 步的 544p 版 LoRA（仓库里不带 `768p` 的 Ref2V 文件只有 4 步的 `minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16`，官方 r2v 模板默认挂的就是它）；下面那条 134 s 的实测用的是 8 步 LoRA 直接跑 864×480。FL2V 有 8 步的 544p 版：`minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16`。
   - **同构图草稿档** 1344×768 + `…_768p_…` 版 LoRA：出来的片段可以直接采纳、之后走 latent 二采——**默认用这一档**，除非只是想快速看个大概。544p 版 LoRA 不要用在 768p 上（又慢又糊）。
+- Turbo 的代价（ComfyUI 官方 H3 教程）：8 步「faster, slightly softer motion/audio」，Ref2VA 的 Turbo「weaker reference/audio」，参考必须守住时官方建议 20–25 步——所以草稿里脸或嗓音不稳，不一定是提示词的问题，见 `pitfalls.md`
 - 5–10 s；`ref_image_size = match`（参考 token 预算：2 张角色图 `match` ≈ 1,550 token、`max` ≈ 12,320；124 帧参考视频 14k–27k token——**重者胜**，否定句与「视频里的人就是 Subject 1」都压不过它）；每段 2–3 个 seed
 - 耗时：864×480 × 10 s × 8 步 ≈ 134 s（用户的 4090 实测）；1344×768 × 10 s × 8 步预计 5–8 min（按像素数外推，没有实测）；每次开机第一条另加 8–14 min 冷启动。20 步定稿、latent 二采、出图在 4090 上都没有实测数字——第一次跑的时候记下来（`comfy_submit.py --log` 会记耗时）
 - 同一提示词多 seed 抽卡时把条件编码落盘复用（pepikir `H3SaveConditioning/LoadConditioning` 或 CLIPCached），采样图里不放 CLIPLoader；多段接力先编码所有段的条件再连续采样（E/E/E/S/S/S），避免 TE / VAE / DiT 往返加载，−25~45%；32 GB 内存机器单图 `--cache-none`；TE 与 DiT 放 NVMe（编码 90→25 s）
@@ -59,6 +60,8 @@
 
 ### FL2VA（I2VA 首帧 / 尾帧衔接）
 `fl2va_pruned_int8_convrot` + `minimax_h3_fl2v_turbo_8step_v1.2_768p_comfyui_bf16`（2026-11 的新版；作者在模型卡里拿 v1.1 出问题的例子重测，v1.2 更贴提示词、更清晰；手里已有 v1.1 也能用），shift 6 / 3（`BasicGuider` 和 `BasicScheduler` 都接 shift 节点的输出）；其余同上。
+
+- **可选：FastH3（只支持 `t2va` / `i2va` / `fl2va`，没有 Ref2VA 版）**——FastVideo 团队的蒸馏整模，固定 8 步，改步数会掉质量。ComfyUI ≥ 0.36 自带模板 `video_fastvideo_fasth3_t2v` / `video_fastvideo_fasth3_i2v`；权重是 HF `FastVideo/FastVideo-FastH3-Comfy` 的 `diffusion_models/fastvideo_fasth3_8step_v2_pruned_int8_convrot.safetensors`，文本编码器和两个 VAE 与 H3 共用。模板里的设置：`MiniMaxH3SigmaShift` 10 / 3、`res_multistep` + `simple` 8 步、`BlockSparseAttention`（VSA，`keep_percent` 10，从调度的 20% 处开始）。官方的定位是牺牲一些动作和音频保真换速度，用于草稿和迭代；它本身就是蒸馏模型，不再挂 Turbo LoRA（铁律 8）。4090 上没有实测，想用就拿同一张首帧、同一段提示词和 Turbo 那一档各出一条，比时间、口型和音质再决定（ComfyUI 官方 FastH3 教程，2026-11-21 读）。
 
 ## 3. 明确不要叠加
 
@@ -127,4 +130,4 @@ Spark-H3 跳过 0.41（要 0.38.x–0.40.x 或 0.42.x–0.44.x）；Spectrum 需
 - alibaba-pai/MiniMax-H3-Fun-Controlnet-Union（姿态 / 深度 / 边缘控制）
 - Imagineer13/H3-Anti-Burn-LoRA（仅续接链上的皮肤斑点修复）
 - DMAD 4-step LoRA 在 `Kijai/MiniMax-H3-experimental/loras/minimax_h3_DMAD_4step_full_lora_avg_rank_39_bf16.safetensors`（同目录有 PDD Acc-8Step FL2VA/Ref2VA、flashgen 4-step、open_regenerate_2k_refiner r16）
-- 权重下载源核实：X2 Detail VAE 有官方 `_int8_convrot` 版；lightx2v Turbo-SLA 实为 `fl2v_turbo_4step_v0.1_768p_sla_comfyui_bf16`；FastVideo/FastH3 私有（401）
+- 权重下载源核实：X2 Detail VAE 有官方 `_int8_convrot` 版；lightx2v Turbo-SLA 实为 `fl2v_turbo_4step_v0.1_768p_sla_comfyui_bf16`；FastVideo FastH3 此前是私有仓库，2026-11-21 复查已公开（HF `FastVideo/FastVideo-FastH3-Comfy`，用法见上文 FL2VA 一节的可选项）

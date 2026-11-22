@@ -29,6 +29,10 @@
 
 ## 3. 现成风格 LoRA（HuggingFace）
 
+风格 LoRA 会和参考图抢控制权：要守住参考（脸、服装）时把风格 LoRA 降到 0.5 左右，并且不挂 Turbo、用原生步数（ComfyUI 官方 H3 教程 R2V 一节）。
+
+另有一类不改权重的「提示词 embedding」：HF `Comfy-Org/MiniMax-H3` 的 `embeddings/` 下有 10 个社区做的效果（非官方；按文件名理解：`minimaxh3_bullet_time` 子弹时间、`minimaxh3_kiss_camera` 吻戏运镜、`minimaxh3_spiral_ascent` 螺旋上升、`minimaxh3_four_seasons` 四季转场、`minimaxh3_fire_breath`、`minimaxh3_dark_magic`、`minimaxh3_storm_magic`、`minimaxh3_blooming_flowers`、`minimaxh3_art_is_explosion`、`minimaxh3_truman_show`）。文件放 `ComfyUI/models/embeddings/`，在提示词里写 `embedding:<文件名>` 触发（ComfyUI 官方提示词指南，对应 ComfyUI 的 PR #15697——0.37.2 里有没有这项支持没有核对；本流程没有实测过，`build_prompts.py` 也不会替你写，要用就加在该镜的 `action` 里并先单独试一段）。
+
 | LoRA | 用途 | 强度 |
 |------|------|------|
 | `Inner-Reflections/MiniMax-H3-Looping-Sketch-Anime` | 手绘 2D 动漫（漫剧） | 0.75–1.25，提示含 `hand-drawn 2D anime art style, rough textured outlines, flat colors, white outline` |
