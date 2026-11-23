@@ -144,7 +144,7 @@ N/A
 
 - 电影质感：`Live-action, cinematic, shot on 35mm anamorphic, shallow depth of field, warm tungsten key light with cool window fill, fine film grain.`
 - 漫剧（2D）：`2D anime, clean cel shading, bold ink outlines, flat colors with soft gradient shadows, limited animation timing, speed lines on fast motion.`
-- 禁词：`4K, masterpiece, ultra-realistic, beautiful, cinematic`（单独出现无信息）。形容词 > 3 个开始失效。写光源、焦段、材质。
+- 空话：`4K, masterpiece, ultra-realistic, beautiful`，以及**只写一个** `cinematic` 而后面没有任何具体说明——这些词单独出现不带信息。上面例子里的 `Live-action, cinematic, shot on 35mm anamorphic, …` 没问题：`cinematic` 后面跟着镜头、景深、光源，是这些具体词在起作用。形容词 > 3 个开始失效。写光源、焦段、材质。
 - 画面文字：`a red neon sign reading "营业中"`；精确文字不可靠，字幕一律后期烧。画幅用参数，不写进文字。
 
 ## 7. 道具

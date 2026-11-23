@@ -30,10 +30,11 @@ ComfyUI 0.37.2 已内置 Qwen-Image 2.1（`TextEncodeQwenImage21`、`QwenImage21
 | 场景母版、九宫格、道具、海报（**只出不含指定人物身份的图**；要 16 MP 或强提示词遵循时用） | MiniMax-H3-Image（2026-11-03 发布，33.1B；需 ComfyUI ≥ 0.45） | `Comfy-Org/MiniMax-H3-Image`：`diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors` + `vae/minimax_h3_image_vae_fp16.safetensors` + 现有 H3 文本编码器（`qwen3vl_32b_minimax_h3_*`，CLIPLoader type `minimax`；必须是完整的 32B，讨论区 #8、#10） | 20.98 + 1.17 GB（HF；已装 H3 的机器只多下约 22 GB） | `MiniMaxH3ImageConditioning` → 6 步 CFG 1 euler / simple（官方模板 `image_minimax_h3_image_edit`）；工作区间 4–20 MP（16:9 的 16 MP = 5472×3072）；肤质 / 质感发糙换 LCM（`SamplerLCM` s_noise 1.1 → 0.9、simple、6 步；讨论区 #5、Fizgig 文档）；提示词写长的英文整图描述或接提示词扩写；2688×1536 暖机后 11–12 s / 张、16.5 MP 约 41 s、内存占用约 41 GB（单机实测 RTX 4070 SUPER 12 GB + 96 GB 内存，LIOSAM007；4090 无实测） |
 
 - **不确定选哪个就这样**：自己看、不营利 → Qwen-Image 2.1（表里第一行）；要营利 → Z-Image-Turbo；Krea 2 只在前两者出的真人质感不够时再下来试，不用一开始三个都下。编辑模型只有一个选择：Edit 2511。
-- **现成的工作流**（ComfyUI 模板面板；你的版本里没有就从 GitHub `Comfy-Org/workflow_templates` 的 `templates/` 下载同名 JSON。下面的默认值是 2026-11-21 逐个读模板 JSON 的连线得到的，不是看节点上的残留数字）：
-  - `image_qwen_image_2_1_t2i`（Qwen-Image 2.1 文生图）：默认 25 步、CFG 1、euler / simple；模板自己的说明写着官方管线是 40–50 步，成品按上表的 50 步改。尺寸由 `ResolutionSelector` 给（默认 1:1、1 MP；要 2K 把 megapixels 调到 4）。里面有一条默认关闭的提示词扩写支路，要另一个 9.5 GB 的文件 `text_encoders/qwen3.5_9b_qwen_image_2.1_pe_t2i.int8_convrot.safetensors`（同仓库）；ComfyUI 提交时会校验图里每个加载节点的文件名，开关关着也一样（0.37.2 `execution.py` 的 `validate_inputs` 沿所有连线检查），缺文件会报 `Value not in list`——要么下载它，要么把扩写用的 `TextGenerate`、它的 `CLIPLoader` 和那个开关删掉，提示词直接连 `TextEncodeQwenImage21`。本流程的生图提示词由模板填好，不需要扩写。
-  - `image_qwen_image_edit_2511_int8`（Edit 2511 int8 版）：`ModelSamplingAuraFlow 3.1` → `CFGNorm 1` → KSampler euler / simple，默认 **40 步 CFG 4**；打开「Enable 4steps LoRA?」变成 4 步 CFG 1（Lightning LoRA；这个 LoRA 文件同样会被校验，关着开关也得放在 `models/loras`，或把那个节点删掉）。模板里的对照表：Qwen 官方 40 步、Comfy 20 步，CFG 都是 4——上表的 20 步 CFG 4 即后者。模板说明里文本编码器的下载链接指向另一个仓库的同名文件，和上表 `Comfy-Org/Qwen-Image` 里的是同一个文件，下一份就够。
-  - **这个编辑模板的出图尺寸跟着第 1 张图走**：`image` 先过 `FluxKontextImageScale`（缩到一组固定的约 1 MP 尺寸里比例最近的一个），再编码成采样用的潜空间。1024×1024 → 1024×1024、1024×1536 → 832×1248，做派生视图正合适；但 16:9 出不来——1344×768 的图会变成 1328×800，1920×1080 的图会变成 1392×752（0.37.2 `nodes_flux.py` 的尺寸表逐项算的）。做逐镜首帧时在子图里加一个 `EmptySD3LatentImage`（1344×768），接到 KSampler 的 `latent_image`，换掉原来 `VAEEncode` 那条线；三张参考图照旧从 `image` / `image2` / `image3` 进（降噪 1.0 时那条线只决定尺寸，这是 ComfyUI 的通用做法，本流程没在 4090 上实跑过）。
+- **直接能用的工作流**：`assets/workflows/qwen21_t2i.api.json`（文生图）和 `qwen_edit2511_{1,2,3}ref.api.json`（编辑出图，输出尺寸已固定成 1344×768、1–3 张输入图），交给 `comfy_submit.py` 排队——从下面两个官方模板导出再改的，在真实的 ComfyUI 0.37.2 上通过了校验，没有在显卡上出过图；每类图的命令见 §4 开头，文件清单和 `--set` 写法见 `assets/workflows/README.md`。
+- **官方模板**（ComfyUI 模板面板里就有：0.37.2 自带的模板包是 0.11.69。下面的默认值是逐个读模板连线、并在真实的 0.37.2 前端里导出 API 后核对的，不是看节点上的残留数字）：
+  - `image_qwen_image_2_1_t2i`（Qwen-Image 2.1 文生图）：默认 25 步、CFG 1、euler / simple；模板自己的说明写着官方管线是 40–50 步，成品按上表的 50 步改。尺寸由 `ResolutionSelector` 给（默认 1:1、1 MP；要 2K 把 megapixels 调到 4）。**0.37.2 自带的这一版没有提示词扩写支路**（9 个节点：三个加载器、`TextEncodeQwenImage21`、`EmptyLatentImage`、`KSampler`、解码、保存）。GitHub 上更新的版本多了一条默认关闭的扩写支路，要另一个 9.5 GB 的文件 `text_encoders/qwen3.5_9b_qwen_image_2.1_pe_t2i.int8_convrot.safetensors`——只有你另外下载了新版模板才会遇到：ComfyUI 提交时会校验连着输出的每个加载节点的文件名，开关关着的分支也一样，缺文件报 `Value not in list`，那时要么下载它，要么把扩写用的 `TextGenerate`、它的 `CLIPLoader` 和那个开关删掉。本流程的生图提示词由模板填好，不需要扩写。
+  - `image_qwen_image_edit_2511_int8`（Edit 2511 int8 版）：`ModelSamplingAuraFlow 3.1` → `CFGNorm 1` → KSampler euler / simple，默认 **40 步 CFG 4**；打开「Enable 4steps LoRA?」变成 4 步 CFG 1（Lightning LoRA `Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors`；这个文件同样会被校验，关着开关也得放在 `models/loras`——附带的工作流把这条分支去掉了，不用下）。底模文件是 `qwen_image_edit_2511_int8_convrot.safetensors`（20.5 GB），文本编码器 `qwen_2.5_vl_7b_fp8_scaled.safetensors`（9.4 GB），VAE `qwen_image_vae.safetensors`。模板里的对照表：Qwen 官方 40 步、Comfy 20 步，CFG 都是 4——上表的 20 步 CFG 4 即后者。模板说明里文本编码器的下载链接指向另一个仓库的同名文件，和上表 `Comfy-Org/Qwen-Image` 里的是同一个文件，下一份就够。
+  - **这个编辑模板的出图尺寸跟着第 1 张图走**：`image` 先过 `FluxKontextImageScale`（缩到一组固定的约 1 MP 尺寸里比例最近的一个），再编码成采样用的潜空间。1024×1024 → 1024×1024、1024×1536 → 832×1248，做派生视图正合适；但 16:9 出不来——1344×768 的图会变成 1328×800，1920×1080 的图会变成 1392×752（0.37.2 `nodes_flux.py` 的尺寸表逐项算的）。做逐镜首帧时要把采样用的潜空间换成固定尺寸：一个 `EmptySD3LatentImage`（1344×768）接到 KSampler 的 `latent_image`，换掉原来 `VAEEncode` 那条线；参考图照旧从 `image1` / `image2` / `image3` 进，第 2、3 张直接接 `LoadImage`（官方的多图编辑模板就是这么接的）。附带的 `qwen_edit2511_*ref.api.json` 已经这样改好；降噪 1.0 时原来那条线只决定尺寸，这是 ComfyUI 的通用做法，本流程没在 4090 上实跑过。
   - `image_z_image_turbo_int8`（Z-Image-Turbo）。
   - 批量出候选和选择卡可以用 `comfy_submit.py`（`comfyui-nodes.md` §3 末尾）。
 - 显存：表中都是 HF 文件大小，**4090 峰值显存无人实测**；Edit 2511 的 DiT 20.5 GB + 编码器 9.4 GB 靠 ComfyUI 自动卸载，mathruffian 在「16 GB 显存 + 32 GB 内存」模拟下跑通 → 24 GB + 32 GB 内存足够，int8_convrot 版在 4090 上未验证。
@@ -124,6 +125,19 @@ ComfyUI 0.37.2 已内置 Qwen-Image 2.1（`TextEncodeQwenImage21`、`QwenImage21
 ```
 
 ## 4. 一致性工作流
+
+每一步用哪个工作流、怎么排队（`W` = `<skill>/assets/workflows`，`S` = `python <skill>/scripts/comfy_submit.py`；先 `--dry-run`，确认后带 `--confirm`；提示词先按 `assets/image-prompts.md` 的模板写进 `bible/prompts/*.txt`）：
+
+| 出什么 | 命令 |
+|--------|------|
+| 定妆照（1024×1024，6 个 seed） | `S $W/qwen21_t2i.api.json --set 459:452.prompt=@bible/prompts/<id>_bust.txt --batch 6 --seed 1 --out bible/candidates/<id> --tag bust` |
+| 场景母版（2688×1536，无人） | 同上，加 `--set 459:456.width=2688 --set 459:456.height=1536`，`--tag master` |
+| 道具白底图（2048×2048） | 同上，加 `--set 459:456.width=2048 --set 459:456.height=2048`，`--tag prop` |
+| 正面全身 / face.png / 侧 / 背（从锚点派生，1 张输入） | `S $W/qwen_edit2511_1ref.api.json --set 41.image=@bible/chars/<id>_bust.png --set 170:151.prompt=@bible/prompts/<id>_full.txt --set 170:300.width=1024 --set 170:300.height=1536 --batch 3 --seed 1 --out bible/candidates/<id> --tag full`（face.png 用 1024×1024） |
+| 单人首帧（人 + 场景裁切，1344×768） | `S $W/qwen_edit2511_2ref.api.json --set 41.image=@bible/chars/<id>_face.png --set 42.image=@bible/scenes/<场景>_<段>_crop.png --set 170:151.prompt=@bible/prompts/first_<段>.txt --batch 3 --seed 1 --out first/candidates/<段> --tag first` |
+| 两人首帧 / 人 + 道具首帧（3 张输入） | `S $W/qwen_edit2511_3ref.api.json`，再加 `--set 43.image=@…`；`image1`、`image2` 是人或道具，最后一张是场景裁切 |
+
+选中的图从 `…/candidates/…` 复制成正式的文件名（`bible/chars/<id>_bust.png`、`first/<段>.png`）。出图的默认步数是模板的（文生图 25 步、编辑 40 步）；成品想按官方管线的步数出，加 `--set 459:458.steps=50`；编辑想快一倍，`--set 170:169.steps=20`。
 
 1. **定妆照**（Qwen 2.1 50 步，或 Z-Image-Turbo）：同一外观文字跑 4–8 个 seed，人挑一张，存 `bible/chars/<id>_bust.png`，之后不再换（mathruffian）；「冻结」要落成机器可读，记进 `bible/assets.json`（布局见本节「冻结与过期记录」）。外观文字（LOOK）存进系列圣经，**每一镜首帧原样照抄**，少写一次就掉眼镜换发型（mathruffian `frames()`）。
 2. **正面全身 + 派生视图**：Edit 2511 以 bust 为 Picture 1 套【派生视图】模板出一张**正面全身**（`<id>_full.png`），人确认后与 bust 一起冻结（待 A/B）；再逐张出 face.png（参考 bust）、纯 90° 侧与背（参考正面全身），每张单人单视图、只参考锚点、互不引用（编辑模型保脸，mathruffian「長相像」；shuohao character-refs）。16:9 角色板用脚本把这几张拼起来（`<id>_sheet.png`）只给人审。备选：Contact Sheet 从 bust 出五视图，逐视图存成单人图再拼板。infinite-creation 的做法是把一张现成三视图板当第 1 张参考让 2511 照「排版格式」出新人物（它的 2511 工作流示例提示）；这条路把版式当参考，身份另靠文字，出的是合成板，只作备选且只给人审。

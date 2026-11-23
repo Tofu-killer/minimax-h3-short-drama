@@ -61,6 +61,7 @@ import csv
 import difflib
 import hashlib
 import json
+import math
 import mimetypes
 import re
 import statistics
@@ -353,6 +354,8 @@ def apply_media(wf: dict, media_json: Path, server: str, media: dict, do_upload:
                 next_id += 1
                 wf[guide] = {"class_type": H3_GUIDE, "_meta": {"title": f"{a['what']} anchor"},
                              "inputs": {"positive": prev, "vae": inputs["vae"], "latent": [nid, 1], "image": [a["load"], 0], "frame_idx": a["frame"]}}
+                if isinstance(inputs.get("audio_vae"), list):       # optional for a picture; the official multiframe template wires it
+                    wf[guide]["inputs"]["audio_vae"] = inputs["audio_vae"]
                 prev = [guide, 0]
                 guide_ids.append(guide)
                 lines[a["line"]] = (f"<Picture {a['picture']}>  <- {a['path'].name}   ({a['what']}: also pinned at frame {a['frame']} - "
@@ -381,15 +384,96 @@ def apply_media(wf: dict, media_json: Path, server: str, media: dict, do_upload:
 
 def literal(wf: dict, value, depth: int = 0):
     """A value as the server will see it, where that can be told without running the graph: a literal stays as it
-    is; a link to a Primitive* node (the official templates feed width, steps, prompt ... through those) yields
-    that node's `value`. Anything computed inside the graph (switches, math, selectors) -> None."""
+    is; a link is followed through the nodes the official templates use to feed settings - Primitive* (its `value`),
+    the If/Else switch (the branch its condition selects) and ResolutionSelector (same arithmetic as the node).
+    Anything else computed inside the graph (math expressions, custom nodes) -> None."""
     if not isinstance(value, (list, dict)):
         return value
-    if isinstance(value, list) and len(value) == 2 and depth < 4:
-        node = wf.get(str(value[0]))
-        if node and str(node.get("class_type", "")).startswith("Primitive"):
-            return literal(wf, node.get("inputs", {}).get("value"), depth + 1)
+    if isinstance(value, list) and len(value) == 2 and depth < 8:
+        node = wf.get(str(value[0])) or {}
+        cls, inp = str(node.get("class_type", "")), node.get("inputs", {})
+        if cls.startswith("Primitive"):
+            return literal(wf, inp.get("value"), depth + 1)
+        if cls == SWITCH:
+            cond = literal(wf, inp.get("switch"), depth + 1)
+            if isinstance(cond, bool):
+                return literal(wf, inp.get("on_true" if cond else "on_false"), depth + 1)
+        if cls == "ResolutionSelector" and value[1] in (0, 1):
+            ratio, mp, mult = (literal(wf, inp.get(k), depth + 1) for k in ("aspect_ratio", "megapixels", "multiple"))
+            m = re.match(r"\s*(\d+)\s*:\s*(\d+)", str(ratio or ""))
+            if m and isinstance(mp, (int, float)) and not isinstance(mp, bool) and isinstance(mult, int) and mult > 0:
+                wr, hr = int(m.group(1)), int(m.group(2))
+                scale = math.sqrt(mp * 1024 * 1024 / (wr * hr))
+                return (round(wr * scale / mult) * mult, round(hr * scale / mult) * mult)[value[1]]
     return None
+
+
+SWITCH = "ComfySwitchNode"       # "If/Else Switch": the official templates choose steps and the LoRA branch with it
+
+
+def follow(wf: dict, link):
+    """A link, taken through every If/Else switch whose condition can be read -> the link (or literal) really used."""
+    for _ in range(16):
+        if not (isinstance(link, list) and len(link) == 2):
+            break
+        node = wf.get(str(link[0])) or {}
+        if node.get("class_type") != SWITCH:
+            break
+        cond = literal(wf, node.get("inputs", {}).get("switch"))
+        if not isinstance(cond, bool) or ("on_true" if cond else "on_false") not in node.get("inputs", {}):
+            break
+        link = node["inputs"]["on_true" if cond else "on_false"]
+    return link
+
+
+def effective(wf: dict) -> dict:
+    """The workflow as it will run, for the preview and the advice (the server still validates all of it): links
+    are taken through the switches that can be read, and whatever then feeds no sampler is left out - the LoRA of
+    a switched-off branch, a template's example pictures that --media replaced."""
+    eff = {k: {**v, "inputs": {n: follow(wf, x) for n, x in v.get("inputs", {}).items()}} for k, v in wf.items()}
+    users: dict[str, set[str]] = {}
+    for k, v in eff.items():
+        for x in v["inputs"].values():
+            if isinstance(x, list) and len(x) == 2 and str(x[0]) in eff:
+                users.setdefault(str(x[0]), set()).add(k)
+    start = [k for k, v in eff.items()
+             if {"sigmas", "guider"} <= set(v["inputs"])
+             or ("Sampler" in str(v.get("class_type", "")) and ({"latent_image", "latent"} & set(v["inputs"])))]
+    if not start:
+        return eff
+    down: set[str] = set()
+    while start:
+        k = start.pop()
+        if k not in down:
+            down.add(k)
+            start.extend(users.get(k, ()))
+    live: set[str] = set()
+    for k in down:
+        live |= upstream(eff, [k, 0])
+    return {k: v for k, v in eff.items() if k in live}
+
+
+def switch_notes(wf: dict) -> list[str]:
+    """One line per readable condition: which switches it drives and which way - so it is clear what to --set."""
+    by_cond: dict[str, list[str]] = {}
+    for k, v in wf.items():
+        if v.get("class_type") != SWITCH:
+            continue
+        src = v.get("inputs", {}).get("switch")
+        cond = literal(wf, src)
+        if isinstance(cond, bool):
+            who = str(src[0]) if isinstance(src, list) else k
+            by_cond.setdefault(f"{who}|{cond}", []).append(k)
+    out = []
+    for key, ids in by_cond.items():
+        who, cond = key.split("|")
+        node = wf.get(who, {})
+        name = node.get("_meta", {}).get("title") or node.get("class_type", "switch")
+        own = node.get("class_type") == SWITCH
+        out.append(f"{name} [{who}] = {cond.lower()}: " + ("it takes" if own else f"switch(es) {', '.join(ids)} take")
+                   + f" the {'on_true' if cond == 'True' else 'on_false'} input"
+                   + ("" if own else f" (to flip it: --set {who}.value={'false' if cond == 'True' else 'true'})"))
+    return out
 
 
 def upstream(wf: dict, link) -> set[str]:
@@ -447,6 +531,9 @@ def settings_summary(wf: dict) -> list[str]:
             out.append(f"{cls} [{k}]: {lit['unet_name']}")
         elif "shift_video" in lit:
             out.append(f"{cls} [{k}]: shift video {lit['shift_video']} / audio {lit.get('shift_audio')}")
+        elif "SageAttention" in cls or cls in ("MiniMaxLowVRAMAttention", "MiniMaxChunkFeedForward"):
+            detail = ", ".join(f"{n} {x}" for n, x in lit.items() if n in ("sage_attention", "head_chunks", "chunks", "seq_threshold"))
+            out.append(f"{cls} [{k}]" + (f": {detail}" if detail else ""))
         elif cls == H3_GUIDE:
             out.append(f"{cls} [{k}]: pins " + ("a picture" if isinstance(inp.get("image"), list) else "audio only")
                        + f" at frame {lit.get('frame_idx', '?')}")
@@ -588,6 +675,16 @@ def advice(wf: dict, ratio: str | None) -> list[str]:
             want = 4 if "4step" in low else 8 if "8step" in low else None
             if want and steps is not None and steps != want:
                 out.append(f"{name} is a {want}-step LoRA but the workflow runs {steps} steps")
+    for k, v in wf.items():
+        if v.get("class_type") != H3_HIRES:
+            continue
+        over = literal(wf, v.get("inputs", {}).get("steps_override", 0))
+        if distilled and over == 0:
+            out.append(f"{H3_HIRES} [{k}] has steps_override 0 with {distilled[0]} in the model chain: its native 4-step tail is "
+                       f"the base model's schedule - the node asks for steps_override with a Turbo model (its own example: 2)")
+        elif not distilled and isinstance(over, int) and over > 0:
+            out.append(f"{H3_HIRES} [{k}] has steps_override {over} but no Turbo LoRA is in the model chain: without one the "
+                       f"node is meant to run its native tail (steps_override 0)")
     if steps is not None and steps <= 10 and not distilled:
         out.append(f"{steps} steps and no distillation LoRA in the workflow: the base model wants about 20 steps - "
                    f"is the Turbo LoRA missing?")
@@ -750,11 +847,34 @@ def static_problems(wf: dict) -> list[str]:
     return out
 
 
+def live_nodes(wf: dict, info: dict) -> set[str] | None:
+    """Ids of the output nodes and of everything upstream of them - the part of a workflow ComfyUI validates and
+    runs. None when no output node is found (then nothing can be said about what is live)."""
+    stack = [k for k, v in wf.items() if (info.get(v.get("class_type")) or {}).get("output_node")]
+    if not stack:
+        return None
+    seen: set[str] = set()
+    while stack:
+        k = stack.pop()
+        if k in seen or k not in wf:
+            continue
+        seen.add(k)
+        for val in wf[k].get("inputs", {}).values():
+            if isinstance(val, list) and len(val) == 2 and str(val[0]) in wf:
+                stack.append(str(val[0]))
+    return seen
+
+
 def preflight(server: str, wf: dict, media: dict) -> list[str]:
     info = get_json(server, "/object_info")
     if not isinstance(info, dict) or not info:
         return [f"could not read {server}/object_info - is ComfyUI running?"]
     errors = []
+    # ComfyUI wants every node's class to exist, but looks at the inputs only of output nodes and what feeds them:
+    # what --media disconnected (a template's own example pictures, the formula that computed the length) is ignored
+    live = live_nodes(wf, info)
+    if live is None and all(n.get("class_type") in info for n in wf.values()):
+        errors.append("the workflow has no output node (SaveVideo, SaveImage, ...): ComfyUI answers \"Prompt has no outputs\"")
     for nid, node in wf.items():
         cls = node.get("class_type")
         title = node.get("_meta", {}).get("title") or cls
@@ -764,11 +884,15 @@ def preflight(server: str, wf: dict, media: dict) -> list[str]:
             errors.append(f"{where}: node class {cls!r} is not installed on this ComfyUI"
                           + (f" (closest: {near[0]})" if near else "") + " - install the custom node pack or upgrade ComfyUI")
             continue
+        if live is not None and nid not in live:
+            continue
         spec = info[cls].get("input", {})
         req, opt = spec.get("required", {}) or {}, spec.get("optional", {}) or {}
         inputs = node.get("inputs", {})
         for name in req:
-            if name not in inputs:
+            grouped = any(k.startswith(name + ".") for k in inputs)            # "values.a", "format.codec": a group written flat
+            growing = isinstance(req[name], (list, tuple)) and req[name] and req[name][0] == "COMFY_AUTOGROW_V3"
+            if name not in inputs and not grouped and not growing:
                 errors.append(f"{where}: required input {name!r} is missing")
         for name, val in inputs.items():
             if isinstance(val, (list, dict)):             # a link to another node, or a group of links
@@ -816,6 +940,34 @@ def queue(server, wf, client_id):
     if "error" in res:
         die(f"queue rejected: {json.dumps(res, ensure_ascii=False)[:2000]}")
     return res["prompt_id"]
+
+
+def describe_error(status: dict, wf: dict) -> str:
+    """One readable line from a failed job's history status (ComfyUI sends the whole Python traceback)."""
+    for m in status.get("messages", []):
+        if not (isinstance(m, list) and len(m) > 1 and isinstance(m[1], dict)):
+            continue
+        if m[0] == "execution_interrupted":
+            return "interrupted on the server (Cancel was pressed in ComfyUI, or another client cleared the queue)"
+        if m[0] != "execution_error":
+            continue
+        e = m[1]
+        nid = str(e.get("node_id", "?"))
+        node = wf.get(nid, {})
+        name = node.get("_meta", {}).get("title") or e.get("node_type") or node.get("class_type") or "?"
+        kind = str(e.get("exception_type", "")).rsplit(".", 1)[-1]
+        text = " ".join(str(e.get("exception_message", "")).split())
+        low = (kind + " " + text).lower()
+        hint = ""
+        if "out of memory" in low or "outofmemory" in low or "allocation on device" in low:
+            hint = (" - the GPU ran out of memory: nothing else should hold video memory, then in this order: a shorter segment, "
+                    "fewer or smaller references (ref_image_size match), the pruned int8 weights; see references/pitfalls.md")
+        elif "header too small" in low or "deserializing header" in low or "invalid load key" in low or "unexpected eof" in low:
+            hint = " - the model file is incomplete or damaged: compare its size with the download page and fetch it again"
+        elif "no such file" in low or "not found" in low and "file" in low:
+            hint = " - a file the workflow names is not where ComfyUI looks for it"
+        return f"node {nid} ({name}): {kind + ': ' if kind else ''}{text[:500]}{hint}"
+    return "the server reports an error without details - read the ComfyUI console"
 
 
 def lookup(server, pid) -> tuple[str, dict | None]:
@@ -878,6 +1030,12 @@ def download(server, entry, out: Path):
                 dest.write_bytes(data)
                 saved.append(dest)
     return saved
+
+
+def main_file(files: list[Path]) -> str:
+    """Name for the log: the video when a take wrote one (a workflow may also save stills), else the first file."""
+    videos = [f for f in files if f.suffix.lower() in (".mp4", ".webm", ".mkv", ".mov")]
+    return (videos or files or [Path("")])[0].name
 
 
 def take_state(dest: Path, fp: str) -> str:
@@ -991,9 +1149,6 @@ def main():
         apply_sets(wf, a.set_title, a.server, media, do_upload=not offline, by_title=True)
     except urllib.error.URLError as e:
         die(f"cannot reach ComfyUI at {a.server}: {e.reason}")
-    if a.write_workflow:
-        Path(a.write_workflow).parent.mkdir(parents=True, exist_ok=True)
-        Path(a.write_workflow).write_text(json.dumps(wf, ensure_ascii=False, indent=1), encoding="utf-8")
     inputs_sha = segment_inputs(wf, media)
     snodes = seed_nodes(wf)
     if (a.batch > 1 or a.seed is not None) and not snodes:
@@ -1001,6 +1156,12 @@ def main():
             "SamplerCustom ..., or a Primitive node wired to it); in this workflow the seed is computed by another node - "
             "replace that with a plain number and export again")
     base_seed = a.seed if a.seed is not None else (wf[snodes[0][0]]["inputs"][snodes[0][1]] if snodes else 0)
+    if a.write_workflow:                 # exactly what the first take submits: wiring, overrides and its seed
+        first = json.loads(json.dumps(wf))
+        for n, key in snodes:
+            first[n]["inputs"][key] = base_seed
+        Path(a.write_workflow).parent.mkdir(parents=True, exist_ok=True)
+        Path(a.write_workflow).write_text(json.dumps(first, ensure_ascii=False, indent=1), encoding="utf-8")
 
     version = print_system(a.server)
     if version is None and not offline:
@@ -1034,7 +1195,8 @@ def main():
         state = "new" if a.force else take_state(dest, fp)
         plan.append({"seed": seed, "fp": fp, "dest": dest, "state": state})
     batch_id = hashlib.sha256("|".join(p["fp"] for p in plan).encode()).hexdigest()[:12]
-    frames, pixels = job_size(wf)
+    view = effective(wf)                 # what will really run: switches followed, unused branches left out
+    frames, pixels = job_size(view)
     past = []
     for rj in out.glob("*/run.json"):
         try:
@@ -1061,9 +1223,9 @@ def main():
         est = "no finished take to estimate the time from yet"
     for line in wiring:
         print("  " + line)
-    for line in settings_summary(wf):
+    for line in switch_notes(wf) + settings_summary(view):
         print("  " + line)
-    for line in advice(wf, ratio):
+    for line in advice(view, ratio):
         print("  advice: " + line)
     print(f"  output folder: {out}")
     print(f"batch {batch_id}: {len(plan)} take(s) -> {len(todo)} to run; {est}")
@@ -1078,8 +1240,8 @@ def main():
             note += same_seed_note(out, p["dest"], p["seed"], inputs_sha)
         print(f"  seed {p['seed']:<12} {p['dest']}  [{p['state']}] {note}")
     if not snodes:
-        print("  note: no `seed` / `noise_seed` the script can read (it is computed inside the workflow): the take is filed as seed 0 - "
-              "put a plain number on the seed input and export again to file takes by seed")
+        print("  note: this workflow has no `seed` / `noise_seed` the script can read (none at all, or one computed by another node): "
+              "the take is filed as seed 0 - with a plain number on the seed input, takes are filed by seed")
     if a.dry_run:
         print(f"nothing queued (--dry-run). To run exactly this batch: add --confirm {batch_id}")
         return
@@ -1125,14 +1287,16 @@ def main():
                     "status": "success" if ok and files else ("error" if not ok else "no_output"),
                     "files": [str(f) for f in files], "workflow": str(a.workflow), "comfyui_version": version,
                     "overrides": a.set + a.set_title, "media_sha256": media, "inputs_sha": inputs_sha, "frames": frames, "pixels": pixels}
+            if not ok:
+                meta["error"] = describe_error(status, wf)
             (dest / "run.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
             ran += 1
             if a.log:
                 log_take(Path(a.log), {"time": time.strftime("%Y-%m-%d %H:%M:%S"), "tag": a.tag, "seed": seed, "status": meta["status"],
                                        "seconds": meta["seconds"], "workflow": Path(a.workflow).name, "fingerprint": fp[:12],
-                                       "output": files[0].name if files else "", "overrides": " ".join(a.set + a.set_title),
+                                       "output": main_file(files), "overrides": " ".join(a.set + a.set_title),
                                        "score": "", "frames": frames, "pixels": pixels,
-                                       "settings": "; ".join(settings_summary(wf))})
+                                       "settings": "; ".join(settings_summary(view))})
             if a.free_every and ran % a.free_every == 0:
                 try:
                     http(a.server, "/free", json.dumps({"unload_models": True, "free_memory": True}).encode(),
@@ -1142,8 +1306,7 @@ def main():
                     print("  /free failed:", e)
             if not ok:
                 rc = 1
-                msgs = [m for m in status.get("messages", []) if m and m[0] == "execution_error"]
-                print("  ERROR:", json.dumps(msgs, ensure_ascii=False)[:1500])
+                print("  ERROR:", meta["error"])
             elif not files:
                 rc = 1
                 print("  finished but produced no output files - does the workflow end in a Save node?")

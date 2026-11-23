@@ -270,6 +270,31 @@ def main():
         except Exception as e:  # noqa: BLE001
             record("comfy_submit.py without a server", "FAIL", f"{type(e).__name__}: {e}")
 
+        # the workflows shipped with the skill: each takes a segment of the matching mode, at the settings the docs state
+        flows = HERE.parent / "assets" / "workflows"
+        if flows.is_dir():
+            try:
+                notes = []
+                for name, media_file, want in (("h3_ref2va.api.json", "prompts/s03.media.json", ("1344x768", "8 steps", "ref2v_turbo_8step_v1.1_768p")),
+                                               ("h3_ref2va_sage.api.json", "prompts/s02.media.json", ("1344x768", "8 steps", "sage_attention auto")),
+                                               ("h3_ref2va_refine.api.json", "prompts/s01.media.json", ("second pass to 1920x1088", "steps_override 2")),
+                                               ("h3_ref2va_sage_refine.api.json", "prompts/s01.media.json", ("second pass to 1920x1088", "sage_attention auto"))):
+                    r = run([sys.executable, str(HERE / "comfy_submit.py"), str(flows / name), "--server", "http://127.0.0.1:9",
+                             "--media", media_file, "--dry-run"], work)
+                    if r.returncode != 0 or not all(w in r.stdout for w in want) or "advice:" in r.stdout:
+                        notes.append(f"{name}: {(r.stderr.strip() or r.stdout.strip())[-200:]}")
+                r = run([sys.executable, str(HERE / "comfy_submit.py"), str(flows / "h3_ref2va.api.json"), "--server", "http://127.0.0.1:9",
+                         "--media", "prompts/s03.media.json", "--set", "146.value=false", "--dry-run"], work)
+                if r.returncode != 0 or "20 steps" not in r.stdout or "LoraLoaderModelOnly" in r.stdout:
+                    notes.append(f"h3_ref2va with the LoRA switched off: {(r.stderr.strip() or r.stdout.strip())[-200:]}")
+                broken = [f.name for f in sorted(flows.glob("*.api.json"))
+                          if not all(isinstance(v, dict) and "class_type" in v and "inputs" in v for v in json.loads(f.read_text(encoding="utf-8")).values())]
+                good = not notes and not broken and len(list(flows.glob("*.api.json"))) >= 11
+                record("shipped workflows take the segments (draft, Sage, refine; LoRA switch read correctly)", "PASS" if good else "FAIL",
+                       f"{len(list(flows.glob('*.api.json')))} workflow files" if good else "; ".join(notes + broken)[:300])
+            except Exception as e:  # noqa: BLE001
+                record("shipped workflows", "FAIL", f"{type(e).__name__}: {e}")
+
         # a misspelt field would otherwise be ignored in silence, and a negation is the instruction the model most often draws
         typo = json.loads(json.dumps(ep))
         typo["segments"][1]["shots"][0]["on_screen_charcters"] = typo["segments"][1]["shots"][0]["on_screen_characters"]

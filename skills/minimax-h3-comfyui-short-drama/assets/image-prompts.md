@@ -89,7 +89,7 @@ Anime prop illustration of {ITEM}, one object centered on a pure white backgroun
 
 ## 6. 逐镜首帧（字面首帧，Qwen-Image-Edit-2511）
 
-_1344×768（竖屏 768×1344）；参考合计 ≤ 3 张（节点只有 `image1`–`image3`），顺序 = 入画角色 bust/face.png → 最后一张场景裁切（模板里的 `Picture {K}`）；20 步 CFG 4，AuraFlow 3.1，CFGNorm 1.0（官方 int8 模板默认 40 步 CFG 4，两种都在模板自带的对照表里）；官方模板的出图尺寸跟着第 1 张图走，做 16:9 首帧要换成 1344×768 的空潜空间（`../references/image-stage.md` §1「现成的工作流」）；模板里的胶片 / 镜头描述换成和分镜 `style` 一致的说法；`Picture N` 写法待 A/B_
+_1344×768（竖屏 768×1344）；参考合计 ≤ 3 张（节点只有 `image1`–`image3`），顺序 = 入画角色 bust/face.png → 最后一张场景裁切（模板里的 `Picture {K}`）；用附带的 `workflows/qwen_edit2511_{1,2,3}ref.api.json`（输出已固定 1344×768；默认 40 步 CFG 4、AuraFlow 3.1、CFGNorm 1.0，即官方 int8 模板的默认值；模板自带的对照表里 Comfy 的 20 步也行：`--set 170:169.steps=20`）；提示词用 `--set 170:151.prompt=@文件`，负向用 `--set 170:149.prompt=…`；直接用官方模板的话，它的出图尺寸跟着第 1 张图走，做 16:9 首帧要换成 1344×768 的空潜空间（`../references/image-stage.md` §1）；模板里的胶片 / 镜头描述换成和分镜 `style` 一致的说法；`Picture N` 写法待 A/B_
 
 **电影质感**
 
@@ -102,6 +102,20 @@ Keep exactly the same person as Picture 1: same face, hairstyle and clothes ({LO
 ```text
 Keep exactly the same character as Picture 1: same face, hairstyle, outfit, line weight and colors ({LOOK}). The place is the one in Picture {K}. New frame: a frame from a 2D anime episode, {STYLE LOCK}. {FRAMING}, {WHO WHERE DOING WHAT, EXPRESSION}. Exactly {N} characters in the frame.
 ```
+
+**首帧里有道具**（道具图占一个输入位：人 + 道具 + 场景裁切正好 3 张；`{P}` 是道具图的编号）——在上面的模板里、`New photo:` 之前加一句：
+
+```text
+The object in {his/her} {left/right} hand is the exact item shown in Picture {P}: same shape, color and markings, no other item is substituted.
+```
+
+**两个人 + 道具同框**（3 个输入位不够，分两步）：先用上面的模板出「两人 + 场景」；再用 `qwen_edit2511_2ref`，`image1` = 刚出的那张、`image2` = 道具图：
+
+```text
+Keep everything in Picture 1 exactly as it is: the same two people, their faces, clothes and positions, the same room and light. Change one thing only: {WHO, by clothing} now holds the exact item shown in Picture 2 in {his/her} {left/right} hand at {chest / desk} height, same shape, color and markings as in Picture 2.
+```
+
+**过肩镜头里背对镜头的人**：不要给这个人的 `face.png`——参考图里有什么就容易出现什么，一张正脸会被画到本该是后脑勺的位置。给背面视图（`<id>_back.png`）；没有背面视图就不给图，只在文字里照抄 LOOK 里的发型和上衣。正对镜头的那个人照常给 `face.png`。（这条是按上面那条规律定的，没有做过对比。）
 
 **负向框（只在 CFG 4 时填，正向里不写排除词）**
 

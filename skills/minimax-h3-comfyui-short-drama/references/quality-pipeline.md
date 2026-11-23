@@ -43,11 +43,13 @@
 
 ## 4. Stage 3 · 放大精修到 1920×1088
 
-**首选 ResCascade 的 `H3 Hires Fix`**——放大和二采在一个节点里做完。下面的接法是 2026-11-21 读它 main 分支源码（`hires.py`）和 README 得到的：
+**首选 ResCascade 的 `H3 Hires Fix`**——放大和二采在一个节点里做完。**工作流用附带的** `assets/workflows/h3_ref2va_refine.api.json`（草稿用的是带 Sage 的版本就用 `h3_ref2va_sage_refine.api.json`）：它就是草稿工作流加上这个节点，`comfy_submit.py <它> --media <同一个 .media.json> --seed <中选那条的 seed> --tag <段>_refine`。下面的接法是 2026-11-21 读它 main 分支源码（`hires.py`）和 README 得到的；2026-11-23 把当天的版本装进一台真实的 ComfyUI 0.37.2，节点能加载、附带的两个精修工作流通过了服务器校验——但没有显卡，**二采本身没有跑过**。
+
+- **节点的名字和输入**（真实 `/object_info`）：类名 `H3HiresFix`，界面里搜「H3 Hires Fix (1 MP -> bigger, audio pinned)」。必填 `model`、`positive`、`latent`、`width`（1920）、`height`（1088）、`sigma_start`（0.45）、`seed`、`lbh_model`（下拉里是 `models/latent_upscale_models/` 下的文件，没放权重时只有 `(none)`）；可选 `images`、`vae`、`schedule_steps`（20）、`steps_override`（0）、`face_atlas`、`face_margin`（2.0）。输出 `latent`、`sigmas`。
 
 - **接线**：一采采样器输出的 latent 直接接它的 `latent`（音画合并的那个，不用先拆）；一采的 `positive` 接 `positive`；`model` 接一采用的模型；`width 1920 / height 1088`、**`sigma_start 0.45`**、`lbh_model` 选 LBH 的 fp16 权重。采样在节点内部完成（euler），输出就是 1920×1088 的成品 latent，后面直接接 `VAEDecode` + `VAEDecodeAudio`，不用再接采样器；音频是钉死的一采原声。
-- **参考条件不用重建**：Ref2VA 的参考原样沿用（它们有自己的网格）；`i2va` / `fl2va` 的首帧、尾帧关键帧是按一采尺寸编码的，节点会自动丢掉（放大的画面里已经有了）。所以精修工作流里仍然只有一个 H3 条件节点，`comfy_submit.py --media` 照常接线。
-- **`model` 和步数有三种配法**：① 一采的模型原样接进来（同样的 LoRA 和 shift），`steps_override` 填 2——节点自己的说明是「turbo LoRA 配 `steps_override` 可用」；② 作者实测过的配方：挂 DMAD LoRA 0.8 的模型 + `steps_override 2`（DMAD 要挂在没有 Turbo 的底模上，两个蒸馏 LoRA 不叠，铁律 8）；③ 不挂任何蒸馏 LoRA 的底模 + `steps_override 0`（原生调度的最后 4 步，最慢）。本流程的一采是 lightx2v Turbo 8 步，先试 ①。三种在 4090 上都没有实跑过，定下来之前各出一条对比。
+- **参考条件不用重建**：Ref2VA 的参考原样沿用（它们有自己的网格）；按一采尺寸编码的关键帧节点会自动丢掉（放大的画面里已经有了）——`i2va` / `fl2va` 的首帧、尾帧是这样，`ref2va` 段用 `--anchor` 钉上去的首帧和各镜关键帧也是这样（控制台会打印 `dropped N pass-1 keyframe(s)`）。所以精修工作流里仍然只有一个 H3 条件节点，`comfy_submit.py --media` 照常接线。
+- **`model` 和步数有三种配法**：① 一采的模型原样接进来（同样的 LoRA 和 shift），`steps_override` 填 2——节点自己的说明是「turbo LoRA 配 `steps_override` 可用」；② 作者实测过的配方：挂 DMAD LoRA 0.8 的模型 + `steps_override 2`（DMAD 要挂在没有 Turbo 的底模上，两个蒸馏 LoRA 不叠，铁律 8）；③ 不挂任何蒸馏 LoRA 的底模 + `steps_override 0`（原生调度的最后 4 步，最慢）。本流程的一采是 lightx2v Turbo 8 步，先试 ①——附带的精修工作流就是 ①（`steps_override 2`）。关了 Turbo（`--set 146.value=false`）出的 20 步片段要精修时，同时 `--set 300.steps_override=0`，就是 ③；两样配错了预览的 advice 会提醒。三种在 4090 上都没有实跑过，定下来之前各出一条对比。
 - **作者的主张和本流程的差别**：作者建议一采用原生 20 步（他的测试里 Turbo 一采细节少，而且 Turbo 和原生出的是两条不同的片段）。本流程默认一采就是 Turbo 8 步的草稿，精修保住的是这条草稿；想要原生一采的细节，就得 20 步重出——那是一条新片段，要重新选片和观测（铁律 16）。
 - 有 FaceRefine 结果接 `face_atlas`（σ 0.45 会把只占一两个 token 的小脸重画坏）。作者的耗时是 5090 上 5 s 片段多花约 1 分钟；24 GB 上 10 s 以上的段没有数字。
 - 来源：ResCascade = GitHub `tazmannner/ComfyUI-H3-ResCascade`；它要求先装 LBH 放大器（GitHub `LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler`，`git clone` 进 `custom_nodes` 即可，不用另装依赖），权重在 HF `LBH-123-AI/Minimax_h3_latent_Upscaler`：`H3 Hires Fix` 用的是 **3D 版**，下 `minimax_h3_latent_upscaler_3d_conv_v1/minimax_h3_latent_upscaler_3d_conv_v1_fp16.safetensors`（约 0.7 GB），放 `ComfyUI/models/latent_upscale_models/`；同仓库 2026-11-10 新出的 2D 版权重（`…_2d_conv_v1_…`）只能配 LBH 自己的 2D 节点，和 `H3 Hires Fix` 不通用（HF 文件清单与两个仓库的 README，2026-11-21 核对）；DMAD LoRA 在 HF `Kijai/MiniMax-H3-experimental` 的 `loras/`。

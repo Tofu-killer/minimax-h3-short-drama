@@ -160,9 +160,10 @@ comfyui: 0.37.2
 models:
   unet: minimax_h3_ref2va_pruned_int8_convrot.safetensors
   text_encoder: qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors
-draft:   {workflow: workflows/draft.api.json,  steps: 8,  lora: "<Turbo 8 步 768p 版文件名>", shift: "12 / 3"}
-refine:  {workflow: workflows/refine.api.json, note: "中选片段的 latent 二采：LBH 放大 + σ 0.45，音频钉死"}
-camera:  {workflow: workflows/final20.api.json, steps: 20, lora: none, note: "有运镜的镜头重出（铁律 16）；算新片段，要重新选片和观测"}
+# 工作流写 skill 附带的文件名（assets/workflows/）；自己改过的另存到项目的 workflows/ 下再写那个路径
+draft:   {workflow: h3_ref2va_sage.api.json, steps: 8, lora: minimax_h3_ref2v_turbo_8step_v1.1_768p_comfyui_bf16.safetensors, shift: "12 / 3"}
+refine:  {workflow: h3_ref2va_sage_refine.api.json, note: "中选片段的 latent 二采：同 seed 重跑一采 + LBH 放大 + σ 0.45，音频钉死"}
+camera:  {workflow: h3_ref2va_sage.api.json, set: "146.value=false 123.sampler_name=res_multistep", steps: 20, lora: none, note: "有运镜的镜头重出（铁律 16）；算新片段，要重新选片和观测"}
 ```
 
 任何一段都能从 `prompts/ + bible/ + project.yaml` 重新生成；成片能从 `selects/ + edit/` 重新装配。

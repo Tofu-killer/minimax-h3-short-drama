@@ -4,18 +4,22 @@
 
 ## 0. 先盘点（agent 第一步）
 
-按 `assets/local-inventory-checklist.md` 产出：GPU / 驱动 / CUDA / PyTorch 版本、ComfyUI 版本与启动参数（是否带 `--use-sage-attention`）、`models/` 下的 H3 文件名与大小、custom_nodes 列表（重点：KJNodes、sageattention 包版本、comfy-kitchen、任何 cache / TE-Speed / Spark / Sol / Veda / Spectrum 节点）、现有工作流的注意力 / LoRA / 步数 / shift / 分辨率、ffmpeg 是否在 PATH、Windows 的 CUDA「系统内存回退」是否关闭、系统内存大小。
+按 `assets/local-inventory-checklist.md` 产出：GPU / 驱动 / CUDA / PyTorch 版本、ComfyUI 版本与启动参数（带了哪个注意力开关：`--use-ck-attention` / `--use-sage-attention` / `--use-flash-attention`，三者互斥）、`models/` 下的 H3 文件名与大小、custom_nodes 列表（重点：KJNodes、sageattention 包版本、comfy-kitchen、任何 cache / TE-Speed / Spark / Sol / Veda / Spectrum 节点）、现有工作流的注意力 / LoRA / 步数 / shift / 分辨率、ffmpeg 是否在 PATH、Windows 的 CUDA「系统内存回退」是否关闭、系统内存大小。
 
 ## 0b. 装机补充（Windows 便携版；仓库与文件名 2026-11-21 逐个核对过）
 
+- **要下的模型、放哪个目录、多大**：`assets/workflows/README.md` 的表（只做 Ref2VA 视频约 42 GB；加两套出图模型约 89 GB；加精修约 90 GB；再加 FL2VA 约 113 GB）。LoRA 放 `ComfyUI/models/loras/`，底模放 `diffusion_models/`，文本编码器放 `text_encoders/`，VAE 放 `vae/`，LBH 放大权重放 `latent_upscale_models/`。
+- **工作流**：不用自己搭，用 `assets/workflows/` 里附带的；装完东西后先照 `assets/first-run-checklist.md` 的第 2–4 项做连通测试和预检。
+
 - **跑本 skill 脚本用哪个 Python**：另装一个 Python 3.10+（或建一个 venv），不要往 ComfyUI 便携版的 `python_embeded` 里装东西——脚本只通过 HTTP 找 ComfyUI，不需要和它共用环境。可选依赖按用到的装进这个 Python：`pip install numpy faster-whisper pypinyin opencv-python onnxruntime pyJianYingDraft opentimelineio`。`faster-whisper` 第一次运行会从 HuggingFace 下载模型（`Systran/faster-whisper-small`，约 500 MB）。
 - **ffmpeg / ffprobe**：`winget install Gyan.FFmpeg`，或从 GitHub `BtbN/FFmpeg-Builds` 的 Releases 下载 win64 包、把 `bin` 目录加进 PATH。装完跑 `scripts/selfcheck.py`。
-- **KJNodes**（两个 Sage 节点都在里面）：GitHub `kijai/ComfyUI-KJNodes`。用 ComfyUI-Manager 装，或 `git clone` 到 `ComfyUI/custom_nodes/` 后用便携版自带的解释器装依赖：`python_embeded\python.exe -m pip install -r ComfyUI\custom_nodes\ComfyUI-KJNodes\requirements.txt`。
+- **KJNodes**（两个 Sage 节点都在里面）：GitHub `kijai/ComfyUI-KJNodes`。三种装法任选：ComfyUI-Manager；`git clone` 到 `ComfyUI/custom_nodes/`；或者没有 git 也没有 Manager 时，在仓库页点 Code → Download ZIP，解压成 `ComfyUI/custom_nodes/ComfyUI-KJNodes/`（这个文件夹里直接就是 `__init__.py`，别多套一层）。后两种装完用便携版自带的解释器装依赖：`python_embeded\python.exe -m pip install -r ComfyUI\custom_nodes\ComfyUI-KJNodes\requirements.txt`，然后重启 ComfyUI。
+- **精修要的两个节点包**：GitHub `tazmannner/ComfyUI-H3-ResCascade`（节点 `H3 Hires Fix`）和 `LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler`，装法同上；两个都没有额外的 Python 依赖。2026-11-23 把这三个包当天的版本装进一台真实的 ComfyUI 0.37.2，都能正常加载。
 - **SageAttention 在 Windows 上有两条路**（二选一，别叠）：
-  - 走 KJ 节点：需要 ComfyUI 的 Python 环境里有 `sageattention` 包。Windows 预编译包在 GitHub `woct0rdho/SageAttention` 的 Releases：先 `pip install triton-windows`，再按 PyTorch 版本挑 wheel（torch ≥ 2.10 用文件名带 `torch2.10.0andhigher` 的；`cp310-abi3` 的包对 Python ≥ 3.10 通用；CUDA 12 与 13 的包不通用）。不需要装 Visual Studio 或 CUDA toolkit。装完后 `MiniMaxH3MemoryEfficientSageAttentionPatch` 如果报 `sageattention is not new enough version or could not determine CUDA architecture`，是包太旧或装的不是对应 CUDA 版本的那个；报 `This ComfyUI version does not support MiniMax H3`，是 ComfyUI 自带的 comfy-kitchen 太旧（两句都出自 KJNodes main 分支源码，2026-11-21）。
+  - 走 KJ 节点：需要 ComfyUI 的 Python 环境里有 `sageattention` 包。Windows 预编译包在 GitHub `woct0rdho/SageAttention` 的 Releases：两样都装进 **ComfyUI 自己的** Python（便携版就是 `python_embeded`，这是唯一要往里装东西的地方）：① `python_embeded\python.exe -m pip install triton-windows`；② 看 PyTorch 版本：`python_embeded\python.exe -c "import torch; print(torch.__version__)"`，输出形如 `2.10.0+cu128`——前半是 torch 版本、后半是 CUDA 版本；③ 在 Releases 页按这两样挑 wheel（torch ≥ 2.10 用文件名带 `torch2.10.0andhigher` 的；`cp310-abi3` 的包对 Python ≥ 3.10 通用；CUDA 12 与 13 的包不通用，选和 `cu12x` / `cu13x` 对应的）；④ `python_embeded\python.exe -m pip install <下载的 .whl 的路径>`。不需要装 Visual Studio 或 CUDA toolkit。装完后 `MiniMaxH3MemoryEfficientSageAttentionPatch` 如果报 `sageattention is not new enough version or could not determine CUDA architecture`，是包太旧或装的不是对应 CUDA 版本的那个；报 `This ComfyUI version does not support MiniMax H3`，是 ComfyUI 自带的 comfy-kitchen 太旧（两句都出自 KJNodes main 分支源码，2026-11-21）。
   - 走启动参数：该仓库 README 写明，用 ComfyUI 的话可以不装它的 wheel，改用 comfy-kitchen 自带的 SageAttention——启动时加 `--use-ck-attention`（不是 `--use-sage-attention`）。0.37.2 有这个参数（`comfy/cli_args.py`：`--use-ck-attention`、`--use-sage-attention`、`--use-flash-attention` 三个互斥的注意力开关都在；文中提到的 `--cache-none`、`--disable-pinned-memory` 也在，2026-11-23 核对源码）。
   - 两条路谁快没有定论：各跑一次同一段、seed+1，以日志和计时为准，然后固定用一种。
-- **官方模板的名字**（ComfyUI「模板」面板里搜；也可以从 GitHub `Comfy-Org/workflow_templates` 的 `templates/<名字>.json` 下载后拖进界面，新模板可能要求更新的 ComfyUI）：视频 `video_minimax_h3_r2v` / `video_minimax_h3_i2v` / `video_minimax_h3_t2v`；出图 `image_qwen_image_2_1_t2i`、`image_qwen_image_edit_2511_int8`、`image_z_image_turbo_int8`。怎么把视频模板改成脚本能用的草稿档工作流，见 `comfyui-nodes.md` §3。
+- **官方模板的名字**（ComfyUI「模板」面板里搜。0.37.2 自带的模板包是 0.11.69，下面这些都在里面，用到的节点 0.37.2 全有——2026-11-23 在真实的 0.37.2 上逐个导出验证过；GitHub `Comfy-Org/workflow_templates` 上的版本更新，个别模板和自带的不一样，没必要去下）：视频 `video_minimax_h3_r2v` / `video_minimax_h3_i2v` / `video_minimax_h3_t2v`；出图 `image_qwen_image_2_1_t2i`、`image_qwen_image_edit_2511_int8`、`image_z_image_turbo_int8`。怎么把视频模板改成脚本能用的草稿档工作流，见 `comfyui-nodes.md` §3。
 
 ## 1. 三个杠杆与叠加原则
 
@@ -33,7 +37,7 @@
 
 ## 2. 推荐组合（RTX 4090 24 GB，Ref2VA 短剧）
 
-### 草稿档（两档：快速预览 ≤ 2–3 min / 条；同构图草稿预计 5–8 min / 条）
+### 草稿档（两档：快速预览 ≤ 2–3 min / 条；同构图草稿预计 5–10 min / 条，没有实测）
 - 权重：`ref2va_pruned_int8_convrot`（或 fl2va）+ `qwen3vl_32b_minimax_h3_nvfp4_awq` + int8 视频 VAE + fp32 音频 VAE
 - LoRA：`minimax_h3_ref2v_turbo_8step_v1.1_768p_comfyui_bf16` 强度 1.0（抽卡可降 `ref2v_turbo_4step_v1.0_768p`；声音不稳降 0.75）
 - 采样：8 步，`euler` + `simple`（Turbo LoRA 作者 lightx2v 的示例工作流和说明用的就是它；Comfy 官方模板的 `res_multistep` + `simple` 也能跑，想换就拿同一段、seed+1 比一次），CFG 1.0（用 `BasicGuider`，本来就没有 CFG 分支）；shift：12 / 3 是模型默认值，Ref2V 和 FL2V 的 v1.2 都用它，接不接 `MiniMaxH3SigmaShift` 一样；只有 FL2V 的 v1.0 768p 版要用这个节点改成 6 / 3，那时**调度器的 `model` 也要接它的输出**（各版本的值见 `comfyui-nodes.md` §1）
@@ -43,7 +47,7 @@
   - **同构图草稿档** 1344×768 + `…_768p_…` 版 LoRA：出来的片段可以直接采纳、之后走 latent 二采——**默认用这一档**，除非只是想快速看个大概。544p 版 LoRA 不要用在 768p 上（又慢又糊）。
 - Turbo 的代价（ComfyUI 官方 H3 教程）：8 步「faster, slightly softer motion/audio」，Ref2VA 的 Turbo「weaker reference/audio」，参考必须守住时官方建议 20–25 步——所以草稿里脸或嗓音不稳，不一定是提示词的问题，见 `pitfalls.md`
 - 5–10 s；`ref_image_size = match`（参考 token 预算：2 张角色图 `match` ≈ 1,550 token、`max` ≈ 12,320；124 帧参考视频 14k–27k token——**重者胜**，否定句与「视频里的人就是 Subject 1」都压不过它）；每段 2–3 个 seed
-- 耗时：864×480 × 10 s × 8 步 ≈ 134 s（用户的 4090 实测）；1344×768 × 10 s × 8 步预计 5–8 min（按像素数外推，没有实测）；每次开机第一条另加 8–14 min 冷启动。20 步定稿、latent 二采、出图在 4090 上都没有实测数字——第一次跑的时候记下来（`comfy_submit.py --log` 会记耗时）
+- 耗时：864×480 × 10 s × 8 步 ≈ 134 s（用户的 4090 实测）；1344×768 × 10 s × 8 步没有实测，两种外推：按上面这条实测乘 2.5–3.5 倍像素是 5–8 min；按别人 4090 上 1280×704 × 107 帧 ≈ 4 min 的自报（§4 表）折算约 10 min——所以按 **5–10 min** 做计划，11–12 s 的段再加一成多；每次开机第一条另加 8–14 min 冷启动。20 步定稿、latent 二采、出图在 4090 上都没有实测数字——第一次跑的时候记下来（`comfy_submit.py --log` 会记耗时）
 - 同一提示词多 seed 抽卡时把条件编码落盘复用（pepikir `H3SaveConditioning/LoadConditioning` 或 CLIPCached），采样图里不放 CLIPLoader；多段接力先编码所有段的条件再连续采样（E/E/E/S/S/S），避免 TE / VAE / DiT 往返加载，−25~45%；32 GB 内存机器单图 `--cache-none`；TE 与 DiT 放 NVMe（编码 90→25 s）
 - 可选（ComfyUI ≥ 0.38 后）：Veda `VedaSparseAttention` 放在 LoRA 与 Sage 补丁之后、Guider 之前，预测器只保证 1344×768 / 768×1344 / 768×768 / 1024×768 × 5/10/14 s × 8 步 Turbo；首次 Ctrl+B 旁路同 seed 对比再默认开；5090 实测（mathruffian）Veda 开着会在第 51/119/187 帧闪帧
 - 激进替代（仅 Ref2VA、放弃 Sage）：Kablex `Ref2VAVSAGatePatch(sparsity 0.5–0.75)` + ref2v 4 步 v0.1 + shift 12/3，1344×768 × 5 s ≈ 72 s（作者自报），模型分支上不得有任何 Sage/Sol 节点
@@ -56,7 +60,7 @@
 - **二采精修（保 take）**：一采 latent → LBH 放大 → 1920×1088 从 **σ 0.45** 重采、音频钉死，见 `quality-pipeline.md` §4（权威）。Spark-H3 / FreeVideo 示例的「0.2–0.33 MP 4–8 步 → 放大 → 3 步 sigmas `0.9035, 0.6316, 0.3158, 0`」是**重生成式**二采（高 σ 会改脸），只在接受重绘时用
 - **写实 A/B**：alibaba-pai PDD Ref2VA 8 步替换 Turbo（`MiniMaxH3PDDAccApply nfe=8`，SIGMAS 接 `SamplerCustomAdvanced`，Euler、CFG 1、shift 恰好 12/3，不接任何缓存，不用 er_sde / res_multistep）；漫剧 / 插画风格保持 Turbo（PDD 4 NFE 会压平纹理）
 - **DMAD 4 步可做日常定稿**（5090 实测，mathruffian；指没有运镜的镜头，有运镜的仍按 SKILL.md 铁律 16 用 20 步）：8 类镜头看不出差、快 49–58%；单镜 ≤ 12 s
-- 预计：1344×768 × 10 s × 8 步 ≈ 5–8 min（4090，含 VAE）
+- 预计：1344×768 × 10 s × 8 步 ≈ 5–10 min（4090，含 VAE；外推，见上）
 
 ### FL2VA（I2VA 首帧 / 尾帧衔接）
 `fl2va_pruned_int8_convrot` + `minimax_h3_fl2v_turbo_8step_v1.2_768p_comfyui_bf16`（2026-11 的新版；作者在模型卡里拿 v1.1 出问题的例子重测，v1.2 更贴提示词、更清晰），8 步 euler，shift 用默认的 12 / 3——作者自己的 8 步配置文件就是这么跑 v1.2 的，不用加 shift 节点。v1.0 的 768p 版是另一组值：6 / 3，要加 `MiniMaxH3SigmaShift`，并且 `BasicGuider` 和 `BasicScheduler` 都接它的输出。v1.1 的值作者没有公布；其余同上。
