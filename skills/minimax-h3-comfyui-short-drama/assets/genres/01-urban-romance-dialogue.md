@@ -16,7 +16,7 @@
 | 段长 / 镜数 | 8–12 s；有台词的镜头 10 s 内 ≤ 2 个、12–13 s ≤ 3 个，每个 ≥ 3 s（dramake 更保守：≥ 4 s） |
 | 台词 | ≤ (段长−2)×4.5 字，目标 3.3–4 字/s；单段说话人 ≤ 2 |
 | 步数 | 草稿 Turbo 8 步 v1.1 768p，shift 12/3，每段 2–3 seed（说话节奏绑 seed）；有推镜的定稿 20 步关 Turbo |
-| LoRA | 默认不挂；写实人物可 A/B `fal/research-mini-max-h3-realism-people-lora`（`lora-and-style.md` §3） |
+| LoRA | 默认不挂；写实人物可 A/B `fal/MiniMax-H3-Realism-People-LoRA`（触发词 `r34l1sm`；`lora-and-style.md` §3） |
 
 ## 风格句
 

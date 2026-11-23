@@ -34,7 +34,7 @@
 
 - **切点四要素**（LTX 多镜头规范）：每个 `[Shot N]` 切点写清转场方式、重建景别与机位、用同一组外观标识复述人物、交代声音是否跨切点延续。
 - **拼表式参考的版式**（LTX Ingredients）：黑底或白底、一个元素一个面板、不放文字、重要元素面板更大。
-- **终处理链用核心节点**：插帧 `FrameInterpolationModelLoader` + `FrameInterpolate`（`film_net_fp16` 或 `rife_v4.26`，放 `models/frame_interpolation/`，HF `Comfy-Org/frame_interpolation`）；像素超分 RelayVSR ×2（`relayvsr_x2_lightx2v_int8_convrot` + `relayvsr_flash_vae_x2_fp32`，1 步、CFG 1，需 ComfyUI ≥ 0.45，×2 与 ×4 权重不混用）；无对白的漫剧 / 远景镜头可用 Wan 2.2 低噪 4 步 denoise 0.25 精修。
+- **终处理链用核心节点**：插帧 `FrameInterpolationModelLoader` + `FrameInterpolate`（`film_net_fp16` 或 `rife_v4.26`，放 `models/frame_interpolation/`，HF `Comfy-Org/Frame-Interpolation`（旧名 `frame_interpolation` 会跳转过来））；像素超分 RelayVSR ×2（`relayvsr_x2_lightx2v_int8_convrot` + `relayvsr_flash_vae_x2_fp32`，1 步、CFG 1，需 ComfyUI ≥ 0.45，×2 与 ×4 权重不混用）；无对白的漫剧 / 远景镜头可用 Wan 2.2 低噪 4 步 denoise 0.25 精修。
 - **识别短语的生成模板**（Animate-2 官方）：让 LLM 只写「人物外观描述 + 背景描述」，不写动作。
 - **排错**：文本编码后卸载编码器再采样；最后一步 OOM 先换分块解码；`POST /free` 返回空 body 属正常；`torch.compile` 首跑显存暴涨时清 `C:\Users\<用户>\.triton` 与 `AppData\Local\Temp\torchinductor_<用户>`。
 

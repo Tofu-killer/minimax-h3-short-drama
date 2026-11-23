@@ -37,7 +37,7 @@
 |------|------|------|
 | `Inner-Reflections/MiniMax-H3-Looping-Sketch-Anime` | 手绘 2D 动漫（漫剧） | 0.75–1.25，提示含 `hand-drawn 2D anime art style, rough textured outlines, flat colors, white outline` |
 | adf99 Anime Slider | 2D ↔ 写实连续调节（正 2D、负写实） | 小幅 |
-| `fal/research-mini-max-h3-realism-people-lora` | 写实人物（电影质感） | 默认 |
+| `fal/MiniMax-H3-Realism-People-LoRA`（HF；旧名 `fal/research-mini-max-h3-realism-people-lora` 已失效，2026-11-23 核对）：`h3-realism-people-t2v-i2v-r2v.safetensors`，0.13 GB，放 `models/loras/` | 写实人物（特写里的脸、皮肤质感、表情；电影质感）。只改注意力层的 104 个模块、rank 32，文件头逐层核对过能挂在 `pruned` 底模上，T2V / I2V / R2V 通用 | 作者给的是 1.0，想轻一点 0.6–0.8；提示词开头加触发词 `r34l1sm`（写在分镜 `style` 的最前面）。和参考图一起用时按表格上面那条规矩从 0.5 试起——风格 LoRA 会和参考抢 |
 | Jojocodex Camera Motion | 运镜缺失时 | 默认 |
 | `TenStrip/Krea2-H3-Style-Lora` | 仅纯 T2V 有效 | r512 |
 
