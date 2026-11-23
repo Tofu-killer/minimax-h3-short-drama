@@ -6,6 +6,20 @@
 
 有中文对白的剧情段是 H3 的主场：音画同生、`<d>` 对白、9 图 + 音色参考、单次多镜头，本地开源模型里没有整体替代品（唯一同类 LTX-2.5 的中文对白未验证、24 GB 余量紧）。只有下面这些情况才换：同一问题在 H3 上按 `pitfalls.md` 改过提示词 / 参考 / 步数后仍连续两批不过，且属于 §1 表里的镜头类型。
 
+## 0b. 换模型之前：H3 自己还有几种修法（社区节点；读文档和源码整理，**都没有在这套流程里执行过**）
+
+下面几样都留在 H3 里，用的是同一份权重、同一条 take 的 latent，所以不用去适配另一个模型的画风和声音。前四样来自 `WASasquatch/was-node-suite-comfyui`（装机量很大的节点包，2026-11-19 的版本里有三十多个 H3 节点；它自己没有必装依赖，README 写的要求是 ComfyUI ≥ 0.14），第五样是论文项目 `code-video-model/CodeVideoModel` 的做法。
+
+| 问题 | 留在 H3 里的做法 | 节点与关键参数 | 备注 |
+|------|------------------|----------------|------|
+| 一段里只坏一两秒（一个多出来的道具、一次穿帮、一句念错的词） | 只把那个时间窗重画，再接回原片 | `H3 Repair Window` → 采样器（denoise 1.0）→ `H3 Repair Splice`。`start_seconds` / `end_seconds` 会对齐到 17 帧一块；`picture_strength` 1.0 = 从噪声重画、0.6 = 在原画面上翻新、0 = 画面不动；`sound_strength` 0 = 声音不动（画面在原声下面重画，口型仍跟原声）、1.0 = 声音也重来；`context_frames` 34 = 两侧各带两块上下文给采样器看；`feather` 0.35 软化接缝 | 输入是一条 H3 音画 latent——草稿带 `--keep-latent` 存下的两个 `.latent` 文件（`LoadLatent` ×2 → `LTXVConcatAVLatent`）就是；`positive` 接这一段原来的条件。跨切点的时间窗会被拒绝。这就是此前标着「没有工具」的局部重拍 |
+| 口型要跟一条现成的音轨（重录的台词、外语配音、歌） | 把音轨钉在音频流上，让画面在它下面生成 | `H3 Soundtrack`：`audio` 接整条音轨，`strength 1.0` = 原样保持、0.5 = 只作引导；`offset_seconds` 定它从成片的哪一秒开始；`past_end` 定音轨放完之后怎么办 | 单个镜头也能用（`window` 接 `EmptyMiniMaxH3LatentAV`）。配音先做人声分离；和 §1 的 InfiniteTalk 比，它不换模型、画面仍是 H3 的 |
+| 快动作糊成一片 | 把快的部分放慢 → 重画 → 恢复原来的时序 | `H3 De-RoPE Stretch`（`strength 0.5`，采样步数 = 一采步数 × 这个值：8 步的片子用 4 步）→ 采样 → `H3 De-RoPE Refine` → `H3 De-RoPE Recover` | 只动运动最快的那部分帧，平静的片段原样通过 |
+| 长段或二采显存不够 | 注意力按头、按 token 分块算 | `H3 Low VRAM`：`head_chunks 4`（56 个头每次算 14 个）、`query_chunks 4`、`token_slice 8192`；作者写明结果相同、只是更省 | 和 KJNodes 的 `MiniMax H3 Low VRAM Attention` / `Chunk FeedForward` 是同一类做法，二选一 |
+| 运镜和走位要照预演来 | 一段布局视频（白模、Three.js、手机拍的走位）只在**前 1/4 的步数**里当参考，之后去掉 | 两个 `MiniMaxH3ReferenceToVideo`：A 接外观参考图 + `ref_videos.ref_video_0`（`LoadVideo` → `GetVideoComponents` 的帧，24 fps、2–15 s），B 只接外观参考图；`ConditioningSetTimestepRange` 把 A 限在 0–0.25、B 限在 0.25–1，`ConditioningCombine` 合起来接引导器 | 原项目是 20 步里前 5 步带布局视频（960×544、5 s、shift 12 / 3），提示词用自然语言；早期的步数定构图和运动，后面的步数定质感，所以白模的灰色外观不会带进成片。这种接法在真实的 0.37.2 上通过了服务器校验；`--media` 不认两个条件节点，要手工搭 |
+
+同一个节点包里还有：一个节点管多段的导演台（`MiniMax H3 Conditioning` + 时间线窗口，九种段间接法，其中有「硬切但声音延续」和「硬切、从上一段抽几帧当演员参考」）、把编码好的参考存成文件反复用（RefMod）、从第 N 段重跑（`H3 Save Clip` / `H3 Load Clip`）、分瓦片精修任意长度的片子（`H3 Tiles`、`H3 Upscale Video`）、只给声音挂 LoRA（`H3 Sound LoRA`）。本流程的脚本不依赖它们；用了其中哪一样，先在一段 5 s 的片子上验证再用到正片。
+
 ## 1. 本地替补表（ComfyUI 0.37.2 核心已内置这些节点；RelayVSR 需 ≥ 0.45）
 
 | 镜头类型 | 首选 | 备选 | 做法要点 | 代价 |

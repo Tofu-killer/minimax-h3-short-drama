@@ -14,7 +14,7 @@
 请按下面七个部分逐项探测并填写。每一项都要给出你是怎么得到的（命令或文件路径），拿不到的写「未知」并说明原因，不要猜。
 
 ## 1. 硬件与系统
-- 操作系统与版本、Python 版本、PyTorch 版本、CUDA / ROCm 版本
+- 操作系统与版本、Python 版本、PyTorch 版本、CUDA / ROCm 版本（PyTorch 版本号后缀要是 `+cu130` 或更新；抄下 ComfyUI 启动日志里 `Found comfy_kitchen backend cuda: {...}` 那一行——`'available': True` 才有 int8 权重的快速核）
 - GPU 型号、显存总量、当前空闲显存（nvidia-smi 或 rocm-smi）
 - 显卡驱动版本；Windows 上再看 NVIDIA 控制面板「CUDA - 系统内存回退策略」是不是「首选无系统内存回退」（开着回退时显存一满就掉到内存里跑，会慢几倍；看不到就写「未知，需要我自己去控制面板确认」）
 - CPU、内存、模型所在磁盘的剩余空间

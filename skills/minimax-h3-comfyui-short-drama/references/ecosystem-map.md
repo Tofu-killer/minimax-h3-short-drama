@@ -14,10 +14,12 @@
 | 角色卡 / 剧照 | matlod turnaround LoRA + MAINodes/T8 Contact Sheet；shootthesound Fizgig-H3-Still；lumosai8 OrbitSheets | tori29umai SingleFrame（姿势→角色）、astropuzzo Image-Studio | thaakeno H3-Studio（telemetry 目录） |
 | ControlNet / 换人 | 核心 FunControl + alibaba-pai Fun-Controlnet-Union；maosika reshot | D3voz openjutsu、Saganaki22 Viggle、slmonker selflift | — |
 | 提示词工具 | 官方 h3-prompt-writing skill 为基准；见 `docs/13-github-survey/04-prompting-tools.md` | pytraveler Prompt-Rewriter（本地 GGUF 8B）、ruashots open-h3-ir、ethanfel Guide、1038lab Promptor | — |
-| Agent skill / 流水线 | 官方 3d-animation-short-generator 骨架；TFboy1/oh-my-minimaxh3-director（驱动 ComfyUI 的脚本层）；chiphoton Codex-Drama（references / QC） | SwotAtmk/infinite-creation、qiukaihui/comfyui-auto-drama、lixiaoxiao9888 漫剧老李 skill（段缝规程、六锁）、senmanx novel-to-manju（漫剧风格表）、suihe1、Rimagination h3lite、SlavaSexton Agent-Kit | TapCanvas / reveric / cwp / zxcHolmes / iv-studio（云 API 或重工程）、Colab skill、游戏精灵类 |
+| Agent skill / 流水线 | 官方 3d-animation-short-generator 骨架；TFboy1/oh-my-minimaxh3-director（驱动 ComfyUI 的脚本层）；chiphoton Codex-Drama（references / QC） | SwotAtmk/infinite-creation、qiukaihui/comfyui-auto-drama、lixiaoxiao9888 漫剧老李 skill（段缝规程、六锁）、jtydhr88/ComfyTV 的 h3-cinematic-director（镜头设计 / 连戏审计 / 单变量返修的分工清楚；它在提示词末尾加一串 `no …` 排除语，和本 skill 铁律 2 相反，不照搬）、senmanx novel-to-manju（漫剧风格表）、suihe1、Rimagination h3lite、SlavaSexton Agent-Kit | TapCanvas / reveric / cwp / zxcHolmes / iv-studio（云 API 或重工程）、Colab skill、游戏精灵类 |
 | LoRA 训练 | shootthesound/Fizgig（Windows 一键，24 GB 可训） | AcademiaSD LoRAlab、Inline-Studio、GK-Nodes Dataset Builder | IAmIronMan42（8×A800）、raylight / LightX2V 多卡、X-MinimaxH3（许可证） |
 | 可控性杂项 | ComfyUI-Dials（替代负面提示）；LanPaint（局部重绘） | VPack（≥0.38 带参考视频） | — |
-| 部署指南 | neng320/minimax-h3-local-deployment（4060Ti 实测）、nimblecloud13 guides | ssssssanjiu turbo 指南、alesha-pro tools（3090 基准） | 各类 OneClick（锁版本） |
+| 局部重拍 / 给定音轨 / 快动作 | — | **WASasquatch/was-node-suite-comfyui 的 H3 套件**（2026-11，三十多个节点）：`H3 Repair Window` + `Repair Splice`（按时间窗重画）、`H3 Soundtrack`（给定音轨下出画面）、`H3 De-RoPE`（快动作拖影）、`H3 Low VRAM`、`H3 Tiles` / `H3 Upscale Video`、多段导演台与九种段间接法——参数见 `beyond-h3.md` §0b；只读过文档和源码 | — |
+| 预演驱动的运镜 | — | code-video-model/CodeVideoModel（布局视频只在前 1/4 步当参考，接法见 `beyond-h3.md` §0b） | — |
+| 部署指南 | neng320/minimax-h3-local-deployment（4060Ti 实测）、nimblecloud13 guides；kuhung/minimax-h3-colab-workflow（L4 24 GB 的实测耗时与显存，按 CUDA 版本选量化格式） | ssssssanjiu turbo 指南、alesha-pro tools（3090 基准） | 各类 OneClick（锁版本） |
 
 ## 许可证注意
 

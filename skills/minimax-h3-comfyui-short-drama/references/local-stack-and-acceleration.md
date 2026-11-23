@@ -112,9 +112,11 @@
 | 5090（Saganaki22） | VDN-H3 | 1280×736 × 145 帧 | 17 → 13.9 s/it |
 | 3090 Ti | FastVideo VSA topk 0.1 + 4 步 | 0.8 MP × 5 s × 4 | 采样 49 s（比 20 步快 10×）；Sage/CK 在 topk 0.1 下无增益，峰值 ~22 GB |
 | GB10 int8（chiphoton） | Larry v4 6 步 vs 20 步 res_multistep | — | 端到端 2.2×，I2V 首帧 SSIM 0.8215 vs 0.8245（几乎无差） |
+| L4 24 GB（kuhung 的 Colab 记录，2026-11-12） | int8_convrot（cu130）+ Turbo 8 步，`BasicGuider` | 960×544 × 5 s × 8 | 稳态 165 s（第一条含加载 244 s）；同一张卡上 I2V 首条 258 s、首尾帧 273 s |
+| L4 24 GB（同上，旧版流程：CFG 3、20 步） | — | 960×544 × 5 s → 1344×768 × 5 s | 316 s → 875 s（**像素 ×1.98，时间 ×2.77**）；960×544 时去噪阶段显存 21.8 GB、峰值 21.9 GB（可用 22.0 GB） |
 | 8×B300（NVIDIA Sol-H3） | 4 步蒸馏 + Ulysses | 1344×768 × 10 s | 3.7 s（数据中心，不可比） |
 
-估算：同配置下耗时随 token 数近似线性偏超线性。视频 token 数 = (宽/32) × (高/32) × (5k + 2)，其中帧数 = 17k + 5（实测的 latent 形状，见 `comfyui-nodes.md` §1）：864×480 × 10 s 是 29,160，1344×768 × 10 s 是 72,576（2.49 倍）→ 2.5–3.5 倍时间；二采的 1920×1088 × 10 s 是 146,880，又是一采的 2 倍——这就是 10 s 以上的段整段二采在 24 GB 上吃紧的原因。稀疏注意力的收益随时长增长，5 s 以内几乎无差。
+估算：同配置下耗时随 token 数近似线性偏超线性。视频 token 数 = (宽/32) × (高/32) × (5k + 2)，其中帧数 = 17k + 5（实测的 latent 形状，见 `comfyui-nodes.md` §1）：864×480 × 10 s 是 29,160，1344×768 × 10 s 是 72,576（2.49 倍）→ 2.5–3.5 倍时间（上表 L4 那一行是另一台 24 GB 卡上实测的同类放大：像素 ×1.98 对应时间 ×2.77，按同样的指数 2.49 倍像素约是 3.9 倍时间，即 134 s → 8–9 min，落在「5–10 min」这个外推区间的上半段）；二采的 1920×1088 × 10 s 是 146,880，又是一采的 2 倍——这就是 10 s 以上的段整段二采在 24 GB 上吃紧的原因。稀疏注意力的收益随时长增长，5 s 以内几乎无差。
 
 ## 5. 「为什么比别人慢」排查顺序
 
@@ -126,7 +128,7 @@
 6. Sage 已生效？（控制台 patch 日志）是否与 LowVRAM 同开？是否启动参数和节点重复 patch？
 7. 冷启动：第一条含 JIT 编译（Triton / Sage）与 34 GB 载入，8–14 min 属正常；任何稀疏 / Sol 节点换分辨率或时长都会重新 JIT
 8. 系统内存 ≥ 64 GB？32 GB 时加 `--disable-pinned-memory`，TE 可放 CPU（约 +27 s/次）
-9. PyTorch / CUDA 过旧 → 升到 cu128+ 后 int8 / nvfp4 核才快；显卡功耗墙拉满
+9. PyTorch 是不是 **CUDA 13（cu130）** 的构建？int8 / nvfp4 的快速核在 comfy-kitchen 的 `cuda` 后端里，这个后端加载的是 CUDA 13 的 cuBLASLt（comfy-kitchen 0.2.35 源码）；官方模型仓库的说明也是「能用 cu130 的 PyTorch 就优先 `int8_convrot`，不能用才退到 `fp8_scaled`」。看 ComfyUI 启动日志里的这一行：`Found comfy_kitchen backend cuda: {'available': True, …}`——是 `False` 的话后面写着原因，int8 权重就走慢路径。官方便携版的默认包（`ComfyUI_windows_portable_nvidia.7z`）自带的就是 cu130；带 `_cu126` 的那个包是给 10 系及更老的显卡的，4090 不要用它。另外：显卡功耗墙拉满
 10. 单段超过 328 帧？**4090 单段帧数上限 328 帧**（19×17+5）：345 帧有 6/7 概率个别 step 停滞 2.5–4.8×、整段慢 3–17×；1280 宽改 **1216** 让 VAE 解码 tile 28→24、总时长 −15%；VAE tile 保持 256（512+ 不更快且 PSNR 40→21 dB 出格子）
 11. 采样期间在轮询 ComfyUI HTTP？每次停 18–43 s，`comfy_submit.py --poll` 设 ≥ 20 s（脚本记的耗时取自 ComfyUI 历史记录里的起止时间戳，不含排队和轮询的等待；`run.json` 里 `seconds` 是执行时间、`wall_seconds` 是从提交到取回）；驱动 ComfyUI 时每 N 个任务 `POST /free {"unload_models":true,"free_memory":true}`（`comfy_submit.py --free-every N`）；`/history` 与 `/queue` 连续 3 次都查不到才判丢失（脚本已内置：受理后先把 `prompt_id` 写进 `<take>/handle.json`，中断后原样重跑会先查这两个接口再决定是否重提）；H3 不与其它 GPU 任务并行；计时读 `/history` 执行时间
 12. 同配置耗时涨到 1.8× 立即重启 ComfyUI（CUDA 崩溃前兆）；杀毒软件只对 ComfyUI 与模型目录加排除项，不要整体关闭
@@ -147,5 +149,5 @@ Spark-H3 跳过 0.41（要 0.38.x–0.40.x 或 0.42.x–0.44.x）；Spectrum 需
 - lihaoyun6/MiniMax-H3-Ref-Patch（FL2VA 仿 Ref2VA）
 - alibaba-pai/MiniMax-H3-Fun-Controlnet-Union（姿态 / 深度 / 边缘控制）
 - Imagineer13/H3-Anti-Burn-LoRA（仅续接链上的皮肤斑点修复）
-- DMAD 4-step LoRA 在 `Kijai/MiniMax-H3-experimental/loras/minimax_h3_DMAD_4step_full_lora_avg_rank_39_bf16.safetensors`（同目录有 PDD Acc-8Step FL2VA/Ref2VA、flashgen 4-step、open_regenerate_2k_refiner r16）
+- DMAD 4-step LoRA 在 `Kijai/MiniMax-H3-experimental/loras/minimax_h3_DMAD_4step_full_lora_avg_rank_39_bf16.safetensors`（同目录有 PDD Acc-8Step FL2VA/Ref2VA、flashgen 4-step、open_regenerate_2k_refiner r16；2026-11-23 再看时还有 PDMD 2 步 / 4 步、NVIDIA LongLive-Plug 的 4 步版 `minimax_h3_ELM_longlive_plug_4step_lora_bf16`（原版 `Efficient-Large-Model/LongLive-Plug-MiniMax-H3-few-step`，作者写明不要和它的 CFG 蒸馏版叠用）、TaoMate FL2VA 3 步——都是又一种蒸馏 LoRA，和 Turbo 二选一、不叠（铁律 8），本流程没有试过；同一个仓库里的 `…_w4a8_mixed` / `wip/…_w6a8_g32` 是更低比特的底模，`minimax_h3_lynnreal_light_vae_*` / `minimax_h3_lightvae_lite_*` 是轻量视频 VAE，都要比 0.37.2 新的 ComfyUI，见 §2「更快的视频解码」和 `comfyui-nodes.md` §1 的版本表）
 - 权重下载源核实：X2 Detail VAE 有官方 `_int8_convrot` 版；lightx2v Turbo-SLA 实为 `fl2v_turbo_4step_v0.1_768p_sla_comfyui_bf16`；FastVideo FastH3 此前是私有仓库，2026-11-21 复查已公开（HF `FastVideo/FastVideo-FastH3-Comfy`，用法见上文 FL2VA 一节的可选项）

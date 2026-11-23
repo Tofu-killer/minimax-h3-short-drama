@@ -612,7 +612,8 @@ def settings_summary(wf: dict) -> list[str]:
         elif cls in (H3_REF, H3_I2V, H3_EMPTY) and "width" in lit:
             secs = f" = {lit['length'] / 24:.2f}s" if isinstance(lit.get("length"), int) else ""
             refs = sum(1 for n in inp if n.startswith("ref_images.")), sum(1 for n in inp if n.startswith("ref_audios."))
-            extra = f", {refs[0]} reference image(s), {refs[1]} audio" if cls == H3_REF else ""
+            vids = sum(1 for n in inp if n.startswith("ref_videos."))
+            extra = (f", {refs[0]} reference image(s), {refs[1]} audio" + (f", {vids} reference video(s)" if vids else "")) if cls == H3_REF else ""
             out.append(f"{cls} [{k}]: {lit.get('width')}x{lit.get('height')}, {lit.get('length')} frames{secs}"
                        + (f", ref_image_size {lit['ref_image_size']}" if "ref_image_size" in lit else "") + extra)
         elif "steps" in lit and ("cfg" in lit or "sampler_name" in lit):
