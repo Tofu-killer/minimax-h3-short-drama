@@ -160,6 +160,9 @@ def provenance(seg: dict, clip: Path, episode: Path) -> tuple[str, str]:
     was = Path(str(acc.get("path") or "?")).parent.name
     if rec and rec.get("inputs_sha") and acc.get("inputs_sha"):
         if rec["inputs_sha"] == acc["inputs_sha"] and (acc.get("seed") is None or rec.get("seed") == acc.get("seed")):
+            if rec.get("warnings"):                          # submitted although the preview warned (another canvas, length ...)
+                return "WARN", (f"{made_in} is a second pass of the accepted take ({was}), but it was submitted in spite of a warning: "
+                                f"{str(rec['warnings'][0])[:300]}")
             return "", ""                                    # a second pass of the accepted take
         why = ("another seed" if rec["inputs_sha"] == acc["inputs_sha"] else "another prompt or other references")
         return "WARN", (f"this is not the accepted take ({was}) nor a refine of it: {made_in} was made with {why} "
@@ -284,8 +287,8 @@ def main():
     _fps, _plan, total = edl_lib.timeline(edl)
     print(f"wrote {out_path}: {len(segments)} segment(s), {total} frames = {total / a.fps:.3f}s")
     if doubts:
-        print(f"CHECK: {', '.join(doubts)} - the clip in the edit is not the take that was accepted, nor a second pass of it "
-              f"(WARN lines above). To use another clip: --pick <segment>=<clip> (rebuilds that segment's entry only)")
+        print(f"CHECK: {', '.join(doubts)} - the clip in the edit is not a clean second pass of the take that was accepted "
+              f"(WARN lines above say what it is). To use another clip: --pick <segment>=<clip> (rebuilds that segment's entry only)")
     if not any_accepted:
         print("note: the storyboard records no accepted takes (observe_take.py was not used), so the clips are taken as given")
     if missing:

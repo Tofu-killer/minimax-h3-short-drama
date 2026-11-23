@@ -1026,6 +1026,37 @@ def same_seed_note(out: Path, dest: Path, seed, inputs_sha: str, first_pass: str
     return ""
 
 
+def adopt_kept_canvas(wf: dict, folder: Path, h3_node: str | None) -> str:
+    """--from-latent: the first pass IS the kept take, so the H3 node is given that take's canvas and length (read
+    from its run.json) unless the command sets them itself. References and pinned frames are prepared for the size on
+    that node; left at the workflow's default they would reach the second pass at another size than the first pass
+    saw - a job that runs to the end and gives a different picture. Returns the line for the preview, '' if nothing
+    was changed."""
+    try:
+        r = json.loads((folder / "run.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    hits = [k for k, v in wf.items() if v.get("class_type") in (H3_REF, H3_I2V)]
+    nid = h3_node or (hits[0] if len(hits) == 1 else None)
+    if not nid or nid not in wf:
+        return ""
+    inputs, explicit, changed = wf[nid]["inputs"], {inp for n, inp, _e in SET_TARGETS if n == nid}, []
+    kept = canvas_of(str(r.get("first_pass") or ""))
+    if kept and not ({"width", "height"} & explicit) and all(isinstance(inputs.get(k), int) for k in ("width", "height")):
+        w, h = (int(x) for x in kept.split("x"))
+        if (inputs["width"], inputs["height"]) != (w, h):
+            changed.append(f"canvas {inputs['width']}x{inputs['height']} -> {w}x{h}")
+            inputs["width"], inputs["height"] = w, h
+    frames = r.get("frames")
+    if frames and "length" not in explicit and isinstance(inputs.get("length"), int) and inputs["length"] != int(frames):
+        changed.append(f"length {inputs['length']} -> {int(frames)} frames")
+        inputs["length"] = int(frames)
+    if not changed:
+        return ""
+    return (f"node {nid} set from the kept take's record ({folder.name}): {', '.join(changed)} - the first pass is that take, so the "
+            f"node gets the size it was made with (an explicit --set {nid}.width / .height / .length is left alone)")
+
+
 def made_from_hint(folder: Path) -> str:
     """Where the prompt and reference list of a finished take are kept (takes made before they were kept: '')."""
     if (folder / "media.json").is_file() and (folder / "prompt.txt").is_file():
@@ -1555,6 +1586,10 @@ def main():
             wiring = apply_media(wf, Path(a.media), a.server, media, do_upload=not offline, node_id=a.h3_node, anchor=a.anchor)
         apply_sets(wf, a.set, a.server, media, do_upload=not offline)
         apply_sets(wf, a.set_title, a.server, media, do_upload=not offline, by_title=True)
+        if a.from_latent:                            # before the frame pictures are compared with the canvas
+            line = adopt_kept_canvas(wf, Path(a.from_latent), a.h3_node)
+            if line:
+                wiring.append(line)
         for at, role, path, nid, what in sorted(PENDING_FITS, key=lambda x: x[0], reverse=True):     # against the canvas as it will run
             line = frame_fit(role, path, literals(wf, wf[nid]["inputs"]), what)
             if line:
@@ -1696,6 +1731,8 @@ def main():
                                    refine=any(str(v.get("class_type", "")).startswith(SECOND_PASS[:4]) for v in view.values()))
         print(f"  seed {p['seed']:<12} {p['dest']}  [{p['state']}] {note}")
         warned += "WARNING:" in note and p["state"] != "done"
+        if "WARNING:" in note:           # goes into the take's record: what is made in spite of it stays marked
+            p["warning"] = note.split("WARNING:", 1)[1].strip()
     if not snodes:
         print("  note: this workflow has no `seed` / `noise_seed` the script can read (none at all, or one computed by another node): "
               "the take is filed as seed 0 - with a plain number on the seed input, takes are filed by seed")
@@ -1757,6 +1794,8 @@ def main():
                 meta["prompt_file"] = "prompt.txt"          # the text this take was made from, kept beside it
             if a.from_latent:
                 meta["from_latent"] = str(a.from_latent)    # no first pass of its own: it continues that take
+            if p.get("warning"):
+                meta["warnings"] = [p["warning"]]           # the preview warned and the batch was confirmed anyway
             if a.media:                 # which segment and which prompt build this take belongs to (observe_take.py checks them)
                 meta["segment"] = meta_in.get("segment")
                 meta["media_json"] = str(meta_in.get("copied_from") or a.media)

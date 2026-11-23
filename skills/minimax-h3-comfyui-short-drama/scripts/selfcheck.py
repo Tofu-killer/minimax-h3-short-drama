@@ -376,22 +376,24 @@ def main():
                 if r.returncode != 0 or from_wf[src[0]]["class_type"] != "LTXVConcatAVLatent" or "kept first-pass latent" not in r.stdout \
                         or "BasicScheduler" in r.stdout or "s03_refine_" not in r.stdout:      # a refine files itself beside the draft
                     notes.append(f"--from-latent: {(r.stderr.strip() or r.stdout.strip())[-200:]}")
-                # the job around a kept latent is compared with the take it belongs to: another canvas or length is said, with the fix
+                # the job around a kept latent follows the take it belongs to: canvas and length come from its record; a canvas
+                # or length the command sets itself against that record is warned about, with the fix
                 (work / "kept_take/run.json").write_text(json.dumps({
                     "status": "success", "seed": 7, "frames": 124,
                     "first_pass": "MiniMaxH3ReferenceToVideo [136]: 960x544, 124 frames = 5.17s, ref_image_size match, 2 reference image(s), 0 audio"}),
                     encoding="utf-8")
                 from_cmd = [sys.executable, str(HERE / "comfy_submit.py"), str(flows / "h3_ref2va_refine.api.json"), "--server", "http://127.0.0.1:9",
                             "--media", "prompts/s03.media.json", "--from-latent", "kept_take", "--dry-run"]
-                r, r_same = run(from_cmd, work), run(from_cmd + ["--set", "136.width=960", "--set", "136.height=544"], work)
-                r_len = run(from_cmd + ["--set", "136.width=960", "--set", "136.height=544", "--set", "136.length=73"], work)
-                if not ("WARNING: continues the take in kept_take" in r.stdout and "960x544 canvas" in r.stdout
-                        and "--set 136.width=960 --set 136.height=544" in r.stdout
-                        and "!! 1 take(s) above carry a WARNING" in r.stdout and "!!" not in r_same.stdout
-                        and "enlarges the first pass 2.00x (960x544 -> 1920x1088)" in r.stdout      # from the kept take's canvas
-                        and "continues the take in kept_take (same canvas, same length)" in r_same.stdout and "WARNING: continues" not in r_same.stdout
+                r_auto = run(from_cmd, work)
+                r_other = run(from_cmd + ["--set", "136.width=1344", "--set", "136.height=768"], work)
+                r_len = run(from_cmd + ["--set", "136.length=73"], work)
+                if not ("node 136 set from the kept take's record" in r_auto.stdout and "1344x768 -> 960x544" in r_auto.stdout
+                        and "continues the take in kept_take (same canvas, same length)" in r_auto.stdout and "!!" not in r_auto.stdout
+                        and "enlarges the first pass 2.00x (960x544 -> 1920x1088)" in r_auto.stdout
+                        and "WARNING: continues the take in kept_take" in r_other.stdout and "960x544 canvas" in r_other.stdout
+                        and "--set 136.width=960 --set 136.height=544" in r_other.stdout and "!! 1 take(s) above carry a WARNING" in r_other.stdout
                         and "124 frames long and the H3 node is now set to 73" in r_len.stdout):
-                    notes.append(f"--from-latent on another canvas / length: {r.stdout.strip()[-200:]} | {r_same.stdout.strip()[-160:]}")
+                    notes.append(f"--from-latent, canvas / length from the take: {r_auto.stdout.strip()[-200:]} | {r_other.stdout.strip()[-160:]}")
                 # a take keeps what it was made from (prompt.txt + media.json): submitting from that copy files beside that take
                 made = work / "takes/keep/s03/s03_7"
                 made.mkdir(parents=True, exist_ok=True)
