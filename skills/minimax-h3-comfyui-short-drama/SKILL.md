@@ -39,7 +39,7 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 ## 必须遵守的铁律
 
 1. **描述英文、台词原语言**，台词只放在 `<d>[Chinese] …</d>` 里。
-2. **没有自由否定句**。开源权重无负向分支，`no X` 会被画出来；写正向锁定。仅允许：本流程固定使用、lint 放行的两句保留说明（`no other item is substituted`、`never transfer facial traits from <Picture N>`——由脚本写进 retention 一栏，不是官方指南的原文）、`Exactly N people` 式正向计数、摄影机静止那一句（`with no camera movement whatsoever`）、至多一句具体失败词（`NO black letterbox bars`）。真要排除某物用 NegPiP 节点（`(red glow:-3)`）而不是文字。校验器和 lint 对否定句只给警告（它们分不清官方保留句式和自由否定），**看到警告要自己改成正向写法**，不是放着不管。
+2. **没有自由否定句**。开源权重无负向分支，`no X` 会被画出来；写正向锁定。仅允许：本流程固定使用、lint 放行的两句保留说明（`no other item is substituted`、`never transfer facial traits from <Picture N>`——由脚本写进 retention 一栏，不是官方指南的原文）、`Exactly N people` 式正向计数、摄影机静止那一句（`with no camera movement whatsoever`）、至多一句具体失败词（`NO black letterbox bars`）。真要排除某物用带负权重的节点而不是文字：NegPiP（`(red glow:-3)`），或 KJNodes 的实验节点 `MiniMax H3 Prompt Weight`（`(word:-1)` 去掉一个概念；它替换 H3 的条件节点，`--media` 不会自动接它，要在界面里手接）。校验器和 lint 对否定句只给警告（它们分不清官方保留句式和自由否定），**看到警告要自己改成正向写法**，不是放着不管。
 3. **一镜一人开口、一镜一个运镜**；听者写 `listens with mouth closed`。
 4. **台词预算**：硬上限 ≤ (段长−2 s)×4.5 字（校验器口径），目标语速 3.3–4 字/s，快档 ≤ 5 字/s 且连续不超 3 s；超了拆段，不要让角色说快。
 5. **参考媒体一职责一张图**：脸 / 服装 / 环境 / 道具 / 音色分开；编号用脚本替换，不手写 `<Picture N>`。
