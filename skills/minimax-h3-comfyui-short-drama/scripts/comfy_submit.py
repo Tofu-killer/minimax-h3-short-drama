@@ -825,19 +825,10 @@ def advice(wf: dict, ratio: str | None) -> list[str]:
             out.append(f"MMH3SplitUpscale [{k}] gets {n} second-pass step(s) ({text}) but no Turbo LoRA is in the model chain: "
                        f"two steps are for the Turbo model - without it use the tail H3 Hires Fix takes from the 20-step schedule: "
                        f"--set {link[0]}.sigmas=\"0.45, 0.3095, 0.1719, 0.0569, 0.0\"")
-    canvas = next((literals(wf, v.get("inputs", {})) for v in wf.values() if v.get("class_type") in (H3_REF, H3_I2V, H3_EMPTY)), {})
+    out += enlargement_advice(wf)
     for k, v in wf.items():
         if v.get("class_type") != H3_HIRES:
             continue
-        lit = literals(wf, v.get("inputs", {}))
-        if all(isinstance(x, int) and x > 0 for x in (lit.get("width"), lit.get("height"), canvas.get("width"), canvas.get("height"))):
-            grow = max(lit["width"] / canvas["width"], lit["height"] / canvas["height"])
-            if grow > 1.75:                                      # the pipeline's own step is 1344x768 -> 1920x1088 = 1.43
-                out.append(f"{H3_HIRES} [{k}] enlarges the first pass {grow:.2f}x ({canvas['width']}x{canvas['height']} -> "
-                           f"{lit['width']}x{lit['height']}); this pipeline's step is 1.43x (1344x768 -> 1920x1088) and a larger one "
-                           f"is untested here - a second pass at sigma {lit.get('sigma_start', '?')} keeps the first pass's structure, "
-                           f"so expect a softer picture from a preview-size first pass. Make the draft at the draft canvas and "
-                           f"refine that, or lower the second-pass size")
         over = literal(wf, v.get("inputs", {}).get("steps_override", 0))
         if distilled and over == 0:
             out.append(f"{H3_HIRES} [{k}] has steps_override 0 with {distilled[0]} in the model chain: its native 4-step tail is "
@@ -852,6 +843,27 @@ def advice(wf: dict, ratio: str | None) -> list[str]:
         out.append(f"{steps} steps with {distilled[0]} loaded: a refinement pass runs without the Turbo LoRA")
     if isinstance(cfg, (int, float)) and abs(cfg - 1.0) > 1e-6:
         out.append(f"cfg {cfg}: the open weights are CFG-distilled, keep cfg at 1.0")
+    return out
+
+
+def enlargement_advice(wf: dict, first_pass: tuple | None = None) -> list[str]:
+    """The second pass enlarges the first pass far more than this pipeline's own step. `first_pass` = (width, height)
+    of the take a kept latent belongs to; without it the canvas on the H3 node counts."""
+    canvas = next((literals(wf, v.get("inputs", {})) for v in wf.values() if v.get("class_type") in (H3_REF, H3_I2V, H3_EMPTY)), {})
+    cw, ch = first_pass or (canvas.get("width"), canvas.get("height"))
+    out = []
+    for k, v in wf.items():
+        if v.get("class_type") != H3_HIRES:
+            continue
+        lit = literals(wf, v.get("inputs", {}))
+        if all(isinstance(x, int) and x > 0 for x in (lit.get("width"), lit.get("height"), cw, ch)):
+            grow = max(lit["width"] / cw, lit["height"] / ch)
+            if grow > 1.75:                                      # the pipeline's own step is 1344x768 -> 1920x1088 = 1.43
+                out.append(f"{H3_HIRES} [{k}] enlarges the first pass {grow:.2f}x ({cw}x{ch} -> "
+                           f"{lit['width']}x{lit['height']}); this pipeline's step is 1.43x (1344x768 -> 1920x1088) and a larger one "
+                           f"is untested here - a second pass at sigma {lit.get('sigma_start', '?')} keeps the first pass's structure, "
+                           f"so expect a softer picture from a preview-size first pass. Make the draft at the draft canvas and "
+                           f"refine that, or lower the second-pass size")
     return out
 
 
@@ -1644,10 +1656,20 @@ def main():
         print("  " + line)
     for line in switch_notes(wf) + settings_summary(view):
         print("  " + line)
-    for line in advice(view, ratio) + stills_advice(view):
+    notes = advice(view, ratio) + stills_advice(view)
+    if a.from_latent:                    # the first pass is the kept take, whatever the H3 node is set to now
+        try:
+            kept = canvas_of(str(json.loads((Path(a.from_latent) / "run.json").read_text(encoding="utf-8")).get("first_pass") or ""))
+        except (OSError, json.JSONDecodeError):
+            kept = ""
+        if kept:
+            notes = [n for n in notes if "enlarges the first pass" not in n] \
+                + enlargement_advice(view, tuple(int(x) for x in kept.split("x")))
+    for line in notes:
         print("  advice: " + line)
     print(f"  output folder: {out}")
     print(f"batch {batch_id}: {len(plan)} take(s) -> {len(todo)} to run; {est}")
+    warned = 0
     for p in plan:
         note = {"done": "already finished with identical inputs - skipped", "resume": "was queued before - will be collected, not resubmitted",
                 "new": "will be queued"}[p["state"]]
@@ -1664,11 +1686,16 @@ def main():
         elif p["state"] != "done":
             note += same_seed_note(out, p["dest"], p["seed"], inputs_sha, first_pass_signature(view))
         print(f"  seed {p['seed']:<12} {p['dest']}  [{p['state']}] {note}")
+        warned += "WARNING:" in note and p["state"] != "done"
     if not snodes:
         print("  note: this workflow has no `seed` / `noise_seed` the script can read (none at all, or one computed by another node): "
               "the take is filed as seed 0 - with a plain number on the seed input, takes are filed by seed")
+    if warned:
+        print(f"  !! {warned} take(s) above carry a WARNING: read that line and change the command as it says (the new preview "
+              f"gets a new batch id) - confirm this one only if what the warning describes is what you want")
     if a.dry_run:
-        print(f"nothing queued (--dry-run). To run exactly this batch: add --confirm {batch_id}")
+        print(f"nothing queued (--dry-run). To run exactly this batch: add --confirm {batch_id}"
+              + (" (see the WARNING above first)" if warned else ""))
         return
     if a.confirm and a.confirm != batch_id:
         print(f"the batch is now {batch_id}, not the confirmed {a.confirm}: inputs changed since it was approved - "

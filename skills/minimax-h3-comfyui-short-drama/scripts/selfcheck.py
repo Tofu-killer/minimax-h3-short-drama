@@ -387,6 +387,8 @@ def main():
                 r_len = run(from_cmd + ["--set", "136.width=960", "--set", "136.height=544", "--set", "136.length=73"], work)
                 if not ("WARNING: continues the take in kept_take" in r.stdout and "960x544 canvas" in r.stdout
                         and "--set 136.width=960 --set 136.height=544" in r.stdout
+                        and "!! 1 take(s) above carry a WARNING" in r.stdout and "!!" not in r_same.stdout
+                        and "enlarges the first pass 2.00x (960x544 -> 1920x1088)" in r.stdout      # from the kept take's canvas
                         and "continues the take in kept_take (same canvas, same length)" in r_same.stdout and "WARNING: continues" not in r_same.stdout
                         and "124 frames long and the H3 node is now set to 73" in r_len.stdout):
                     notes.append(f"--from-latent on another canvas / length: {r.stdout.strip()[-200:]} | {r_same.stdout.strip()[-160:]}")
