@@ -985,9 +985,12 @@ def segment_inputs(wf: dict, media: dict) -> str:
     return take_records.inputs_sha(prompts, media)
 
 
-def same_seed_note(out: Path, dest: Path, seed, inputs_sha: str, first_pass: str = "") -> str:
+def same_seed_note(out: Path, dest: Path, seed, inputs_sha: str, first_pass: str = "", refine: bool = True) -> str:
     """Another finished take of this seed in the segment's folder (the accepted draft, when this is its refine run):
-    say whether this job starts from the same prompt and references, and with the same first-pass settings."""
+    say whether this job starts from the same prompt and references, and with the same first-pass settings.
+    `refine` = the workflow has a second pass, so the run is meant to repeat that take: a difference is a WARNING.
+    A draft workflow run again with the same seed and other settings (20 steps for a camera move, another sampler)
+    is meant to give another take: there the difference is only stated."""
     for rj in sorted(out.glob(f"*_{seed}/run.json")):
         if rj.parent == dest:
             continue
@@ -1005,13 +1008,18 @@ def same_seed_note(out: Path, dest: Path, seed, inputs_sha: str, first_pass: str
                 mine, other = first_pass.split("; "), theirs.split("; ")
                 gone = [x for x in other if x not in mine]
                 added = [x for x in mine if x not in other]
+                diff = f"that take: {'; '.join(gone) or 'nothing more'} | this run: {'; '.join(added) or 'nothing more'}"
+                if not refine:
+                    return (f"; same prompt, references and seed as {rj.parent.name} with other settings ({diff}): this is another "
+                            f"take, not a repeat of that one - choose and observe it like a new draft")
                 return (f"; WARNING: same prompt and references as {rj.parent.name}, but the first pass is set up differently - "
-                        f"this run will NOT repeat that take (that take: {'; '.join(gone) or 'nothing more'} | this run: "
-                        f"{'; '.join(added) or 'nothing more'}). Use the workflow of the same family (h3_..._sage_refine for a "
+                        f"this run will NOT repeat that take ({diff}). Use the workflow of the same family (h3_..._sage_refine for a "
                         f"h3_..._sage draft, the same Turbo switch, the same --anchor), or continue from its kept latent with --from-latent")
             return (f"; same prompt and references as {rj.parent.name}"
                     + (" and the same first-pass settings: this repeats that take" if theirs and first_pass
                        else ": with the same first-pass settings this repeats that take"))
+        if not refine:                  # a draft made again after its prompt changed: nothing is meant to be repeated
+            return f"; {rj.parent.name} has this seed but another prompt or reference set: this is another take"
         return (f"; WARNING: {rj.parent.name} has this seed but was made from a different prompt or reference set - this run will "
                 f"NOT repeat that take. If {rj.parent.name} is the accepted draft, submit with the prompt files it was made from "
                 f"(build_prompts.py leaves accepted segments alone unless --only names them)" + made_from_hint(rj.parent))
@@ -1684,7 +1692,8 @@ def main():
         if p["state"] != "done" and a.from_latent:
             note += kept_latent_note(Path(a.from_latent), inputs_sha, frames, first_pass_signature(view), h3_id)
         elif p["state"] != "done":
-            note += same_seed_note(out, p["dest"], p["seed"], inputs_sha, first_pass_signature(view))
+            note += same_seed_note(out, p["dest"], p["seed"], inputs_sha, first_pass_signature(view),
+                                   refine=any(str(v.get("class_type", "")).startswith(SECOND_PASS[:4]) for v in view.values()))
         print(f"  seed {p['seed']:<12} {p['dest']}  [{p['state']}] {note}")
         warned += "WARNING:" in note and p["state"] != "done"
     if not snodes:
