@@ -168,8 +168,8 @@ def main():
     if once:
         who = "; ".join(f"{v['character']} speaks only in {v['first']}" for v in once)
         print(f"note - voice ({who}): no later segment needs a sample of that voice. If you cut one anyway (for the next episode), "
-              f"accept that take first and write voice_reference afterwards: attached before, it changes that segment's prompt and "
-              f"puts the drafts already made for it out of date.")
+              f"accept that take first and write voice_reference afterwards: attached before, it changes the prompt of a ref2va "
+              f"segment and puts the drafts already made for it out of date (i2va / fl2va / t2va segments take no voice sample).")
     if waiting:
         print("WAITING for a take to be accepted (expected at this stage, the other segments were written):")
         for w in waiting:

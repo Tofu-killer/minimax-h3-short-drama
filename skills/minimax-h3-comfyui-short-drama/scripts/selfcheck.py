@@ -790,6 +790,21 @@ def main():
                     and "has other content than when this entry was made" in again.stdout and bool(old_mix) and "other clips" in old_mix
                 record("a clip replaced under the same name is noticed (line times, mix report, edit-list entry)", "PASS" if seen else "FAIL",
                        "" if seen else f"{after.stdout.strip()[-200:]} | {again.stdout.strip()[-200:]} | {old_mix}")
+                # a second clip for one segment in the selects folder: said on a plain re-run, refused (not guessed at) on --overwrite,
+                # and --overwrite keeps the edit list's own settings (the music set above)
+                shutil.copyfile(work / "selects/s03.mp4", work / "selects/s03_refine.mp4")
+                edl_cmd = [sys.executable, str(HERE / "make_edl.py"), "ep.json", "--selects", "selects", "--out", "edit/ep.edl.json"]
+                plain, forced = run(edl_cmd, work), run(edl_cmd + ["--overwrite"], work)
+                kept_edl = json.loads((work / "edit/ep.edl.json").read_text(encoding="utf-8"))
+                picked = run(edl_cmd + ["--pick", "s03=selects/s03_refine.mp4"], work)
+                (work / "selects/s03_refine.mp4").unlink()
+                decided = "also holds s03_refine.mp4" in plain.stdout and plain.returncode == 0 \
+                    and "AMBIGUOUS s03" in forced.stdout and forced.returncode == 2 \
+                    and len(kept_edl["segments"]) == 3 and (kept_edl.get("music") or {}).get("file") == "music.wav" \
+                    and picked.returncode == 0 and "s03_refine.mp4" in picked.stdout
+                record("make_edl.py does not guess between two clips of one segment (and --overwrite keeps the edit list's settings)",
+                       "PASS" if decided else "FAIL",
+                       "" if decided else f"{plain.stdout.strip()[-160:]} | {forced.stdout.strip()[-200:]} | {picked.stdout.strip()[-120:]}")
         if a.keep:
             print(f"files kept in {work}")
 

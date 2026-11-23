@@ -22,7 +22,10 @@ counts its frames with ffprobe and writes one entry:
 Everything downstream reads this single file: retime_subtitles.py (fills line times),
 mix_episode.py (cuts, mixes, masters), export_capcut_draft.py / export_otio.py (editable projects).
 Hand edits belong here too: nudge a cut, add "music" / "ambience", set an L-cut.
-Re-running keeps your manual edits for segments that already exist in --out unless --overwrite is given.
+Re-running keeps your manual edits for segments that already exist in --out unless --overwrite is given
+(--overwrite rebuilds the segment entries; name, ambience, music and loudness of the edit list stay). A clip added to
+the selects folder later does not replace a kept entry by itself - the script says that it is there and gives the
+--pick that switches to it. Two clips for one segment in the selects folder are not guessed at: AMBIGUOUS, exit 2.
 
 Each clip is compared with the take the storyboard records as accepted (observe_take.py): the accepted file itself and
 a second pass of it (same prompt, references and seed) pass in silence; anything else - another seed, a draft made from
@@ -76,20 +79,41 @@ def probe(path: Path) -> dict:
             "height": int(st["height"]), "has_audio": bool(a.stdout.strip())}
 
 
-def find_clip(selects: Path, seg_id: str) -> Path | None:
-    direct = [selects / f"{seg_id}{e}" for e in VIDEO_EXT]
-    for p in direct:
-        if p.exists():
-            return p
-    pools = [sorted(selects.glob(f"{seg_id}_*")), sorted((selects / seg_id).glob("*")) if (selects / seg_id).is_dir() else []]
+def candidates(selects: Path, seg_id: str) -> list[Path]:
+    """Every clip in the selects folder that belongs to this segment by its name: <id>.mp4, <id>_*.mp4, <id>/*.mp4, or
+    the id as a word of the file name. One per segment is the rule; more than one is reported, not guessed at."""
+    pools = [[selects / f"{seg_id}{e}" for e in sorted(VIDEO_EXT)], sorted(selects.glob(f"{seg_id}_*")),
+             sorted((selects / seg_id).glob("*")) if (selects / seg_id).is_dir() else [],
+             [p for p in sorted(selects.rglob("*")) if seg_id in re.split(r"[^A-Za-z0-9]+", p.stem)]]
+    out: list[Path] = []
     for pool in pools:
         for p in pool:
-            if p.suffix.lower() in VIDEO_EXT:
-                return p
-    for p in sorted(selects.rglob("*")):
-        if p.suffix.lower() in VIDEO_EXT and seg_id in re.split(r"[^A-Za-z0-9]+", p.stem):
-            return p
-    return None
+            if p.suffix.lower() in VIDEO_EXT and p.is_file() and p not in out:
+                out.append(p)
+    return out
+
+
+def find_clip(selects: Path, seg_id: str) -> Path | None:
+    found = candidates(selects, seg_id)
+    return found[0] if found else None
+
+
+def keep_locked_lines(new: dict, before: dict | None) -> str:
+    """An entry is built again (--pick, --overwrite): line times fixed by hand ("locked") are carried over when the
+    clip is the same file content and starts on the same frame - then they are still true. Returns a sentence when
+    locked times had to be left behind."""
+    locked = [ln for ln in (before or {}).get("lines") or [] if ln.get("locked")]
+    if not locked:
+        return ""
+    same = before.get("clip_sha") and before.get("clip_sha") == new.get("clip_sha") and before.get("in_frame") == new.get("in_frame")
+    if not same:
+        return (f"{len(locked)} line time(s) locked by hand in the earlier entry were not carried over: the clip or its in point is "
+                f"another one, so those times no longer point at the words - run retime_subtitles.py and lock them again")
+    for ln in new.get("lines") or []:
+        old = next((o for o in locked if o.get("speaker") == ln.get("speaker") and o.get("text") == ln.get("text")), None)
+        if old:
+            ln.update({k: old[k] for k in ("start", "end", "locked", "gain_db") if k in old})
+    return ""
 
 
 def source_take(clip: Path, acc: dict, episode: Path) -> Path | None:
@@ -166,10 +190,11 @@ def main():
     names = {c["id"]: c.get("name", c["id"]) for c in ep.get("characters", [])}
     w, h = (int(x) for x in a.size.lower().split("x"))
     out_path = Path(a.out)
-    old = {}
-    if out_path.exists() and not a.overwrite:
-        old = {s["id"]: s for s in json.loads(out_path.read_text(encoding="utf-8")).get("segments", [])}
-    prev = json.loads(out_path.read_text(encoding="utf-8")) if out_path.exists() and not a.overwrite else {}
+    # the earlier edit list: its entries are kept unless --overwrite / --pick rebuilds them; its name, ambience, music,
+    # loudness and subtitle record are the project's settings and stay in either case
+    prev = json.loads(out_path.read_text(encoding="utf-8")) if out_path.exists() else {}
+    before = {s["id"]: s for s in prev.get("segments", [])}
+    old = {} if a.overwrite else before
 
     selects = Path(a.selects)
     picks = {}
@@ -178,7 +203,7 @@ def main():
         if not Path(v).exists():
             sys.exit(f"--pick {k}: clip not found: {v}")
         picks[k.strip()] = Path(v)
-    segments, missing, doubts, untraced, replaced = [], [], [], [], []
+    segments, missing, doubts, untraced, replaced, ambiguous = [], [], [], [], [], []
     any_accepted = any(seg.get("accepted_take") for seg in ep["segments"])
 
     def check(seg: dict, clip: Path, entry: dict, kept: bool = False) -> None:
@@ -205,8 +230,20 @@ def main():
                     replaced.append(sid)
                     print(f"  WARN {sid} (entry kept from {out_path.name}): {kept_clip} has other content than when this entry was made - "
                           f"its in / out frames and line times were measured on the old clip. Rebuild the entry: --pick {sid}={kept_clip}")
+            others = [c for c in candidates(selects, sid) if not (kept_clip.exists() and c.resolve() == kept_clip.resolve())]
+            if others:                                       # a clip added to selects/ later does not replace a kept entry by itself
+                print(f"  note {sid}: the edit list keeps {kept_clip}; {selects} also holds {', '.join(c.name for c in others)}. "
+                      f"To use one of them instead: --pick {sid}={others[0]}")
             continue
-        clip = picks.get(sid) or find_clip(selects, sid)
+        found = [picks[sid]] if sid in picks else candidates(selects, sid)
+        if len(found) > 1:                                   # which of them is the film? not for this script to guess
+            ambiguous.append(sid)
+            print(f"AMBIGUOUS {sid}: {len(found)} clips in {selects} belong to this segment ({', '.join(c.name for c in found)}) - "
+                  f"one per segment. Take out the ones that are not the final clip, or name it: --pick {sid}={found[-1]}")
+            if sid in before:
+                segments.append(before[sid])                 # the entry of the earlier edit list stays until it is decided
+            continue
+        clip = found[0] if found else None
         if clip is None:
             missing.append(sid)
             continue
@@ -230,6 +267,9 @@ def main():
                          "l_cut": a.l_cut if lines else 0.0, "j_cut": 0.0, "scene": seg.get("scene_id"), "lines": lines})
         print(f"{sid}: {clip.name} {info['frames']} frames -> use [{in_f}, {out_f}) = {(out_f - in_f) / info['fps']:.3f}s"
               f"{' (end freeze cut)' if cut else ''}, {len(lines)} line(s)")
+        lost = keep_locked_lines(segments[-1], before.get(sid))
+        if lost:
+            print(f"  note {sid}: {lost}")
         check(seg, clip, segments[-1])
 
     edl = {"name": prev.get("name") or ep_path.stem, "title": ep.get("title", ""), "fps": a.fps, "width": w, "height": h,
@@ -250,6 +290,10 @@ def main():
         print("note: the storyboard records no accepted takes (observe_take.py was not used), so the clips are taken as given")
     if missing:
         print(f"MISSING selected clips for: {', '.join(missing)} (looked under {selects})")
+    if ambiguous:
+        print(f"NOT DECIDED: {', '.join(ambiguous)} - more than one clip each (AMBIGUOUS lines above); the edit list "
+              + ("keeps their earlier entries" if all(x in before for x in ambiguous) else "has no entry for them yet") + " until you choose")
+    if missing or ambiguous:
         sys.exit(2)
 
 
