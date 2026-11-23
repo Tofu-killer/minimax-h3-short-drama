@@ -45,7 +45,7 @@
 |------|------|------|------|-----------|
 | MiniMax H3: Text / Image to Video（`video_minimax_h3_t2v` / `video_minimax_h3_i2v`） | `fl2va_pruned_int8_convrot` | `minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16`（544p 档） | 调度器控件值 4（步数由模板里的开关驱动） | 同下 |
 | MiniMax H3: Reference to Video（`video_minimax_h3_r2v`；`video_minimax_h3_multiframe_reference` 类似） | `ref2va_pruned_int8_convrot` | `minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16`（544p 档、4 步） | 调度器控件值 20（同样由开关驱动） | `RandomNoise` → `KSamplerSelect(res_multistep)` → `BasicScheduler(simple)` → `BasicGuider` → `SamplerCustomAdvanced` → `VAEDecode` + `VAEDecodeAudio` → `CreateVideo` → `SaveVideo` |
-| MiniMax H3 Fun ControlNet Union（`video_minimax_h3_fun_controlnet_union`） | fl2va + Fun-Controlnet-Union | — | — | — |
+| MiniMax H3 Fun ControlNet Union（`video_minimax_h3_fun_controlnet_union`；ComfyUI ≥ 0.35，Union 2.0 要 ≥ 0.38） | 模板用 `ref2va_pruned_int8_convrot`（官方教程：`fl2va` 也能配）+ `model_patches/minimax_h3_fun_controlnet_union_pruned_int8_convrot`（HF `Comfy-Org/MiniMax-H3`，放 `models/model_patches/`） | 同 r2v 模板 | 同 r2v 模板 | 模板里的姿态提取子图另要 HF `Comfy-Org/SDPose` 的 `sdpose_wholebody_fp16` 和 `rt_detr_v4-x-hgnet_fp16`；控制视频比目标长会被截断、短了停在最后一帧 |
 
 模板里的文本编码器是 `qwen3vl_32b_minimax_h3_nvfp4_awq`（CLIPLoader type `minimax`），VAE 是 `minimax_h3_video_vae_int8_convrot` + `minimax_h3_audio_vae_fp32`。提示词、帧数、分辨率、是否用 Turbo 都接在模板自带的原始值 / 开关节点上（`PrimitiveStringMultiline`、`PrimitiveInt`、`ResolutionSelector`、`ComfySwitchNode`），所以**步数和 LoRA 不要只看控件上的数**：模板默认的两个 LoRA 都是 544p 档，跑 1344×768 要换成 `_768p_` 版，步数改成 LoRA 的训练步数。
 

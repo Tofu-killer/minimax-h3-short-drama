@@ -270,4 +270,6 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.path.insert(0, str(Path(__file__).resolve().parent / "h3lib"))
+    from guard import run as _guarded   # a wrong path or a broken JSON file ends in one line, not in a traceback
+    _guarded(main)

@@ -78,7 +78,7 @@
 
 ## 6. 可控性
 
-- **FunControl**（核心已内置 `MiniMaxH3FunControlNetApply`）：多个 ControlNet 的强度是共享预算，depth 0.3 + pose 0.7，总和 ≤ 1.0；锁人用 pose 不用 depth；`end_percent 0.6`；strength > 1 无效；小人物先放大取景；稀疏注意力的 `morton` 必须 false 并接在 ControlNet 之前。
+- **FunControl**（核心已内置 `MiniMaxH3FunControlNetApply`）：多个 ControlNet 的强度是共享预算，depth 0.3 + pose 0.7，总和 ≤ 1.0；锁人用 pose 不用 depth；`end_percent 0.6`；strength 的说法有出入——社区有人测到 > 1 无效，ComfyUI 官方教程写的是「输出偏离控制时才调到 1 以上」，平时保持 1；`mask` 标 1 的区域在 `source_video` 的约束下重画、其余不动（官方教程，可做局部修补）；小人物先放大取景；稀疏注意力的 `morton` 必须 false 并接在 ControlNet 之前。
 - **复刻参考片走位**：`reshot ref.mp4 --target h3 --control pose`（武打 / 舞蹈）或 depth，提示词写明 `<Video 1>` 里发生了什么并声明 `its grey depth look is not transferred`。
 - **Ref-Patch**（让 FL2VA 权重获得参考能力，112 键差分）：已有 int8 Ref2VA 时跳过。
 - **RefMod**：Full Reference ≈ 330 token/图@512，`budget_policy=error` 看真实计数；特写肖像放第一张定画布；头替换用 `head_swap_v1.0_r32` 不是 character swap。

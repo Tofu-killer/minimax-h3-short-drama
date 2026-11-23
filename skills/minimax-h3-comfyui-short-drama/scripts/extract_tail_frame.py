@@ -42,9 +42,15 @@ _utf8_console()
 
 
 def duration(p):
+    if not Path(p).is_file():
+        raise FileNotFoundError(2, "No such file", str(p))
     out = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json", str(p)],
                          capture_output=True, text=True, encoding="utf-8", errors="replace").stdout
-    return float(json.loads(out)["format"]["duration"])
+    try:
+        return float(json.loads(out)["format"]["duration"])
+    except (KeyError, ValueError, json.JSONDecodeError):
+        print(f"{p} is not a video ffprobe can read", file=sys.stderr)
+        sys.exit(2)
 
 
 def main():
@@ -87,4 +93,6 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.path.insert(0, str(Path(__file__).resolve().parent / "h3lib"))
+    from guard import run as _guarded   # a wrong path or a broken JSON file ends in one line, not in a traceback
+    _guarded(main)

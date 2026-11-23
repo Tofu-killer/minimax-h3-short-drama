@@ -183,6 +183,15 @@ def main():
         ok, note = script("lint_prompt.py", ["prompts/s02.txt", "--seconds", "6", "--images", "3", "--audios", "0"], work)
         record("lint_prompt.py", "PASS" if ok else "FAIL", note)
 
+        # a mistyped path or a broken JSON file must end in one line, not in a Python traceback
+        (work / "broken.json").write_text('{"segments": ', encoding="utf-8")
+        slips = [run([sys.executable, str(HERE / "validate_episode.py"), "no_such_file.json"], work),
+                 run([sys.executable, str(HERE / "mix_episode.py"), "broken.json", "--out", "x.mp4"], work)]
+        plain = all(r.returncode == 2 and "Traceback" not in (r.stdout + r.stderr) for r in slips)
+        record("a wrong path or broken JSON ends in one line", "PASS" if plain else "FAIL",
+               "" if plain else " | ".join((r.stderr.strip() or r.stdout.strip())[-120:] for r in slips))
+        (work / "broken.json").unlink()
+
         # the linter must report a broken prompt, not crash on it: full-width brackets are the classic paste accident
         (work / "prompts" / "broken.txt").write_text(
             "integrated_multimodal_description: [Shot 1] Live-action, a medium shot of a man （the doctor） who stops at the door. "
