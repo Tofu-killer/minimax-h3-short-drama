@@ -4,7 +4,8 @@
 Works against a stock ComfyUI server (default http://127.0.0.1:8188). Standard library only, so it runs
 inside any agent sandbox or on Windows with the ComfyUI-embedded python.
 
-    # 1) export the workflow from ComfyUI with "Export (API)" -> yz_ref2va.api.json
+    # 1) take a workflow shipped in ../assets/workflows/ (see its README), or export your own from ComfyUI
+    #    with "Export (API)" -> yz_ref2va.api.json (an official template exported as it is works too)
     # 2) override inputs by node id or by node title, upload media, run:
     python3 comfy_submit.py yz_ref2va.api.json \
         --set 12.text=@prompts/ep01/s03.txt \
@@ -34,14 +35,19 @@ Overrides
     extensions), uploads the file to ComfyUI's input folder and substitutes the returned name.
     Other values are parsed as JSON when possible (numbers / booleans).
   --batch N queues N runs with seed+i on every node that has a literal `seed` or `noise_seed` input (KSampler-style
-  nodes, or RandomNoise / SamplerCustom as in the official H3 templates), each saved under
+  nodes, or RandomNoise / SamplerCustom as in the official H3 templates; a seed wired from a Primitive node is set
+  on that node), each saved under
     <out>/<tag>_<seed>/.
 
 Before anything is queued (skip with --no-preflight; --preflight-only stops after it)
-  every node class must exist on the server, every model / LoRA / sampler name must be one the server
-  offers (with the closest match when it is not), required inputs must be present, MiniMax H3 frame counts
+  every node class must exist on the server; then, for the output nodes and everything that feeds them (the
+  part ComfyUI itself validates): every model / LoRA / sampler name must be one the server offers (with the
+  closest match when it is not), required inputs must be present, MiniMax H3 frame counts
   must sit on the 17k+5 grid, widths / heights must be multiples of 32, and the H3 reference inputs must be
-  the flat keys ComfyUI reads ("ref_images.ref_image_0", ...). Free VRAM is printed.
+  the flat keys ComfyUI reads ("ref_images.ref_image_0", ...). Free VRAM is printed. With no server in reach,
+  --dry-run still runs the checks that need none and says which ones it could not make.
+  The preview reads settings through the official templates' If/Else switches and ResolutionSelector and lists
+  only the branch that will run.
 
 Re-running the same command is safe
   * every take gets a fingerprint (the final workflow + the content of every uploaded file). A take that
@@ -1091,7 +1097,7 @@ def archive_previous(dest: Path) -> None:
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0], formatter_class=argparse.RawDescriptionHelpFormatter,
-                                 epilog=__doc__[__doc__.index("    # 1) export"):])
+                                 epilog=__doc__[__doc__.index("    # 1) "):])
     ap.add_argument("workflow", help="API-format workflow JSON")
     ap.add_argument("--media", help="<segment>.media.json from build_prompts.py: sets the prompt and the frame count on the H3 node and "
                                     "wires every reference in the order that numbered <Picture N> / <Audio N>")

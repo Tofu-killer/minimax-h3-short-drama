@@ -133,7 +133,7 @@
 ```
 project/
 ├── project.yaml           # 给人和 agent 看的项目记录（没有脚本读它），见下
-├── workflows/             # 你导出的 API 版工作流（草稿档、精修档各一份）
+├── workflows/             # 只有自己改过 / 自己导出的工作流才放这里；默认直接用 skill 附带的 assets/workflows/
 ├── bible/                 # 角色 / 场景 / 道具图 + 音色样本（+ 多集共用的资产表）
 ├── episodes/ep01.json     # 分镜：资产表（characters / scenes / props）+ stagings + segments
 ├── prompts/ep01/          # 每段提示词 + .media.json + planned_cues.srt（计划的台词时间，只供预览，不是字幕）
