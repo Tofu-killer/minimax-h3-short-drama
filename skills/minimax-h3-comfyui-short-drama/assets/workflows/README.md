@@ -41,6 +41,8 @@
 
 所有命令在项目根目录下跑；`<skill>` 是本 skill 的目录，`W=<skill>/assets/workflows`。先 `--dry-run` 看预览，再带 `--confirm <批次号>` 提交。
 
+`$W` 只是为了少打字：bash 里先 `W=<skill>/assets/workflows`；PowerShell 里先 `$W = "<skill>\assets\workflows"`，后面同样写 `$W\h3_ref2va.api.json`；cmd 没有这种写法，直接写全路径。Windows 上解释器叫 `python`（不是 `python3`）。
+
 ```
 # 0. 连通测试（不用模型）
 python <skill>/scripts/comfy_submit.py $W/selftest_no_model.api.json --set 1.image=@任意一张图.png --out takes/selftest --poll 2

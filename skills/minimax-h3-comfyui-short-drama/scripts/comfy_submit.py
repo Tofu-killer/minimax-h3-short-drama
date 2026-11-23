@@ -965,7 +965,9 @@ def describe_error(status: dict, wf: dict) -> str:
         text = " ".join(str(e.get("exception_message", "")).split())
         low = (kind + " " + text).lower()
         hint = ""
-        if "out of memory" in low or "outofmemory" in low or "allocation on device" in low:
+        if "defaultcpuallocator" in low or "cannot allocate memory" in low:
+            hint = " - the machine ran out of system memory (RAM, not video memory): close other programs or make the job smaller"
+        elif "out of memory" in low or "outofmemory" in low or "allocation on device" in low:
             hint = (" - the GPU ran out of memory: nothing else should hold video memory, then in this order: a shorter segment, "
                     "fewer or smaller references (ref_image_size match), the pruned int8 weights; see references/pitfalls.md")
         elif "header too small" in low or "deserializing header" in low or "invalid load key" in low or "unexpected eof" in low:
@@ -1063,6 +1065,20 @@ def take_state(dest: Path, fp: str) -> str:
         except json.JSONDecodeError:
             pass
     return "new"
+
+
+def earlier_attempt(dest: Path, fp: str) -> str:
+    """What happened to an earlier run of exactly this take (same workflow, same inputs), '' when there was none."""
+    try:
+        run = json.loads((dest / "run.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    if run.get("fingerprint") != fp:
+        return ""
+    if run.get("status") == "success":
+        return "this take finished before but its files are no longer in the folder"
+    why = str(run.get("error") or run.get("status") or "it did not finish")
+    return f"the earlier attempt of this take failed ({why[:140]})"
 
 
 def holds_earlier_run(dest: Path) -> bool:
@@ -1239,9 +1255,13 @@ def main():
         note = {"done": "already finished with identical inputs - skipped", "resume": "was queued before - will be collected, not resubmitted",
                 "new": "will be queued"}[p["state"]]
         if p["state"] == "new" and holds_earlier_run(p["dest"]):
-            note += ("; this folder already holds an earlier run (another workflow or other inputs) - its files will be "
-                     "moved into _prev_... inside it. To keep both side by side, give this run its own --tag "
-                     f"(e.g. --tag {a.tag}_refine)")
+            before = earlier_attempt(p["dest"], p["fp"])
+            if before:                                    # the same take, tried before
+                note += f"; {before} - it runs again, the old record moves into _prev_... inside the folder"
+            else:
+                note += ("; this folder already holds an earlier run (another workflow or other inputs) - its files will be "
+                         "moved into _prev_... inside it. To keep both side by side, give this run its own --tag "
+                         f"(e.g. --tag {a.tag}_refine)")
         if p["state"] != "done":
             note += same_seed_note(out, p["dest"], p["seed"], inputs_sha)
         print(f"  seed {p['seed']:<12} {p['dest']}  [{p['state']}] {note}")
