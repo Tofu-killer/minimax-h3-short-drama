@@ -103,7 +103,7 @@ python <skill>/scripts/comfy_submit.py $W/qwen_edit2511_2ref.api.json --set 41.i
 
 ## 已知的边界
 
-- `H3 Hires Fix` 的二采、分块二采（`MMH3 Split Upscale`）、`MiniMaxH3AddGuide`（`--anchor`）、Sage 两个节点在这些工作流里的接法都只通过了校验，没有出过片；第一次用时照 `../first-run-checklist.md` 各验一次。
-- 用真实权重实际跑过的只有不需要 33B 底模的那几段（真实的 0.37.2，CPU，小尺寸）：H3 的音画 latent 解码成 24 fps 视频 + 32 kHz 立体声；一采 latent 的拆分、保存、取回、传回、读入、拼回（`--keep-latent` / `--from-latent`）；LBH 放大器；音色样本过音频 VAE；1344×768 的空潜空间过 Qwen-Image VAE 解码出来就是 1344×768。
-- Sage 版需要 `sageattention` 包装在 ComfyUI 自己的 Python 里（`references/local-stack-and-acceleration.md` §0b）；没装时节点能加载、运行时才报错——先用不带 `_sage` 的版本确认其余都通。
+- `H3 Hires Fix` 的二采、分块二采（`MMH3 Split Upscale`）、`--anchor`、Sage 两个节点在这些工作流里都没有出过片：接法通过了服务器校验，其中参考节点和 `--anchor` 的关键帧节点还用真实 VAE 实际执行过（见下一条），采样没有。第一次用时照 `../first-run-checklist.md` 各验一次。
+- 用真实权重实际跑过的只有不需要 33B 底模的那几段（真实的 0.37.2，CPU，小尺寸）：H3 的音画 latent 解码成 24 fps 视频 + 32 kHz 立体声；一采 latent 的拆分、保存、取回、传回、读入、拼回（`--keep-latent` / `--from-latent`）；LBH 放大器；音色样本过音频 VAE；1344×768 的空潜空间过 Qwen-Image VAE 解码出来就是 1344×768；脚本接好的参考图、音色、首帧和关键帧过 H3 的参考节点与关键帧节点（文本编码器用替身），顺序、尺寸、帧号都对。
+- Sage 版需要 `sageattention` 包装在 ComfyUI 自己的 Python 里（`references/local-stack-and-acceleration.md` §0b）；没装或版本太旧时节点能加载、运行时才报 `sageattention is not new enough version …`——先用不带 `_sage` 的版本确认其余都通。两个 Sage 节点里接管 H3 自注意力的是第二个（`MiniMax H3 Mem Eff Sage Attention Patch`：替换 50 个块的注意力，自述是实验性的、用途是降低显存峰值）；第一个按文档里的基线链保留。
 - 这些文件对应 ComfyUI 0.37.2 的节点定义。升级 ComfyUI 之后如果预检报输入缺失或多余，按上一节从新模板重新导出一份。
