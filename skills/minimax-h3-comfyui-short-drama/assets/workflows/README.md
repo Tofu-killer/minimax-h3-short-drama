@@ -79,7 +79,7 @@ python <skill>/scripts/comfy_submit.py $W/qwen_edit2511_2ref.api.json --set 41.i
 | | 采样器 | `--set 123.sampler_name=res_multistep` |
 | | 画布（快速预览） | `--set 136.width=864 --set 136.height=480` |
 | | LoRA 强度 | `--set 145.strength_model=0.75` |
-| | 参考图按原图大小进模型（20 步定稿时） | `--set 136.ref_image_size=max`（默认 `match`：每张约 1,000 token；`max` 多几倍、更慢） |
+| | 参考图按原图大小进模型（20 步定稿时） | `--set 136.ref_image_size=max`（默认 `match`：每张参考图合计约 2,000 token；`max` 多几倍、更慢） |
 | `h3_ref2va*_refine` | 二采强度 / 尺寸 | `--set 300.sigma_start=0.31`、`--set 300.width=… --set 300.height=…` |
 | | 关了 Turbo 之后 | 同时 `--set 300.steps_override=0`（不关时保持 2；预览的 advice 会提醒配错的情况） |
 | `h3_ref2va*_refine_split` | 每块多少帧 / 重叠 | `--set 312.chunk_frames=73 --set 312.temporal_overlap_frames=22`（显存还不够就把每块改小，如 56） |
