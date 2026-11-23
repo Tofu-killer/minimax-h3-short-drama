@@ -81,6 +81,10 @@ python <skill>/scripts/comfy_submit.py $W/qwen_edit2511_2ref.api.json --set 41.i
 
 种子不用 `--set`：`--seed N --batch K` 会把工作流里所有种子一起设成 N、N+1…（精修工作流里一采和 `H3 Hires Fix` 的种子是同一个数）。提示词、帧数、参考图、音色、首尾帧由 `--media` 接，不用手改。
 
+## 想在界面里看或改这些工作流
+
+把 `.api.json` 文件直接拖进 ComfyUI 窗口就能打开（在真实的 0.37.2 前端里试过，节点全部认得；位置是自动排的，不好看但能用）。在界面里改过之后，用菜单「工作流 → 导出（API）」另存一份到项目的 `workflows/` 下，再把那个文件交给脚本。
+
 ## 不想用附带的，自己从模板导出也行
 
 打开模板 → 菜单「工作流 → 导出（API）」，原样导出的文件脚本就能读：模板里用开关选步数和 LoRA、用选择器算分辨率，预览会把开关和选择器算出来的实际值显示出来，并告诉你翻开关该 `--set` 哪个节点（例如 `--set 146.value=true --set 144.value=8 --set 145.lora_name=minimax_h3_ref2v_turbo_8step_v1.1_768p_comfyui_bf16.safetensors --set 136.width=1344 --set 136.height=768`）。模板自带的示例图、算帧数的公式在 `--media` 接线之后不再连着输出，ComfyUI 不会管它们。
@@ -88,5 +92,6 @@ python <skill>/scripts/comfy_submit.py $W/qwen_edit2511_2ref.api.json --set 41.i
 ## 已知的边界
 
 - `H3 Hires Fix` 的二采、`MiniMaxH3AddGuide`（`--anchor`）、Sage 两个节点在这些工作流里的接法都只通过了校验，没有出过片；第一次用时照 `../first-run-checklist.md` 各验一次。
+- 用真实权重实际跑过的只有不需要 33B 底模的那几段（真实的 0.37.2，CPU，小尺寸）：H3 的音画 latent 解码成 24 fps 视频 + 32 kHz 立体声；一采 latent 的拆分、保存、取回、传回、读入、拼回（`--keep-latent` / `--from-latent`）；LBH 放大器；音色样本过音频 VAE；1344×768 的空潜空间过 Qwen-Image VAE 解码出来就是 1344×768。
 - Sage 版需要 `sageattention` 包装在 ComfyUI 自己的 Python 里（`references/local-stack-and-acceleration.md` §0b）；没装时节点能加载、运行时才报错——先用不带 `_sage` 的版本确认其余都通。
 - 这些文件对应 ComfyUI 0.37.2 的节点定义。升级 ComfyUI 之后如果预检报输入缺失或多余，按上一节从新模板重新导出一份。
