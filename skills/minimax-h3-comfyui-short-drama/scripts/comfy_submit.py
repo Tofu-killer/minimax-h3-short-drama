@@ -263,13 +263,23 @@ def image_size(path: Path) -> tuple[int, int] | None:
     return None
 
 
-def frame_fit(role: str, path: Path, canvas: dict) -> str | None:
+PENDING_FITS: list[tuple[int, str, Path, str, str]] = []   # (line to insert at, role, picture, H3 node id, what the prompt calls it)
+
+
+def frame_fit(role: str, path: Path, canvas: dict, what: str = "") -> str | None:
     """A first frame is stretched to the canvas (the node does not crop it); a last frame is cover-cropped.
-    Say so when the picture's shape differs from the canvas enough to be seen."""
+    Say so when the picture's shape differs from the canvas enough to be seen. Asked for while the segment is wired
+    in, answered after every --set has been applied: the canvas may still change in between."""
     size, w, h = image_size(path), canvas.get("width"), canvas.get("height")
     if not size or not isinstance(w, int) or not isinstance(h, int) or not size[1] or not h:
         return None
     img, can = size[0] / size[1], w / h
+    if role == "named":                     # a reference the prompt calls a frame of the video, not pinned
+        if abs(img / can - 1) <= 0.03:
+            return None
+        return (f"advice: {path.name} is {size[0]}x{size[1]} ({img:.3f}:1) but the prompt names it as {what} of a {w}x{h} "
+                f"({can:.3f}:1) video - a frame picture is made at the canvas size (references/image-stage.md), otherwise the "
+                f"model has to re-frame it and the opening drifts")
     if abs(img / can - 1) <= 0.01:
         return None
     shapes = f"advice: {path.name} is {size[0]}x{size[1]} ({img:.3f}:1) and the canvas is {w}x{h} ({can:.3f}:1): "
@@ -343,9 +353,8 @@ def apply_media(wf: dict, media_json: Path, server: str, media: dict, do_upload:
             new = load_node("image", path, item["role"])
             inputs[item["role"]] = [new, 0]
             lines.append(f"{item['role']:12s} <- {path.name}")
-            fit = frame_fit(item["role"], path, literals(wf, inputs)) if want == H3_I2V else None
-            if fit:
-                lines.append(fit)
+            if want == H3_I2V:
+                PENDING_FITS.append((len(lines), item["role"], path, nid, ""))
         elif item["type"] == "image":
             if mode != "ref2va":
                 die(f"--media: a reference image in a {mode} segment has nowhere to go ({path.name})")
@@ -390,9 +399,7 @@ def apply_media(wf: dict, media_json: Path, server: str, media: dict, do_upload:
                 guide_ids.append(guide)
                 lines[a["line"]] = (f"<Picture {a['picture']}>  <- {a['path'].name}   ({a['what']}: also pinned at frame {a['frame']} - "
                                     f"{H3_GUIDE} [{guide}] added)")
-                fit = frame_fit("anchor", a["path"], literals(wf, inputs))
-                if fit:
-                    lines.append(fit)
+                PENDING_FITS.append((len(lines), "anchor", a["path"], nid, ""))
             if guide_ids:
                 for k, other in wf.items():              # whatever read the reference node's conditioning now reads the last guide's
                     if k in guide_ids:
@@ -403,13 +410,8 @@ def apply_media(wf: dict, media_json: Path, server: str, media: dict, do_upload:
     elif anchors and not anchor:
         lines.append("--anchor would also pin " + ("these pictures" if len(anchors) > 1 else "this picture")
                      + " on the timeline (" + ", ".join(f"<Picture {a['picture']}> at frame {a['frame']}" for a in anchors) + ")")
-        canvas = literals(wf, inputs)
         for a in anchors:                    # the prompt calls it a frame of the video: it should have the video's shape
-            size, w, h = image_size(a["path"]), canvas.get("width"), canvas.get("height")
-            if size and isinstance(w, int) and isinstance(h, int) and h and size[1] and abs((size[0] / size[1]) / (w / h) - 1) > 0.03:
-                lines.append(f"advice: {a['path'].name} is {size[0]}x{size[1]} ({size[0] / size[1]:.3f}:1) but the prompt names it as "
-                             f"{a['what']} of a {w}x{h} ({w / h:.3f}:1) video - a frame picture is made at the canvas size "
-                             f"(references/image-stage.md), otherwise the model has to re-frame it and the opening drifts")
+            PENDING_FITS.append((len(lines), "named", a["path"], nid, a["what"]))
     if guides and want == H3_REF:
         ids = ", ".join(guides)
         lines.append(f"advice: the exported workflow already has {H3_GUIDE} node(s) [{ids}]; they are left as exported, so whatever "
@@ -1454,6 +1456,10 @@ def main():
             wiring = apply_media(wf, Path(a.media), a.server, media, do_upload=not offline, node_id=a.h3_node, anchor=a.anchor)
         apply_sets(wf, a.set, a.server, media, do_upload=not offline)
         apply_sets(wf, a.set_title, a.server, media, do_upload=not offline, by_title=True)
+        for at, role, path, nid, what in sorted(PENDING_FITS, key=lambda x: x[0], reverse=True):     # against the canvas as it will run
+            line = frame_fit(role, path, literals(wf, wf[nid]["inputs"]), what)
+            if line:
+                wiring.insert(at, line)
         inputs_sha = segment_inputs(wf, media)       # prompt and references - before a kept latent joins the uploads
         if a.from_latent:
             wiring.append(from_latent(wf, Path(a.from_latent), a.server, media, do_upload=not offline))

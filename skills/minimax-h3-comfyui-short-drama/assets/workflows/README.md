@@ -2,7 +2,8 @@
 
 > **怎么来的**：用 ComfyUI 0.37.2 自带的官方模板（模板包 0.11.69，就是你模板面板里的那几份），在真实的 0.37.2 前端里执行「导出（API）」，再按下表改成本流程的设置。
 > **验证到哪一步**（2026-11-23）：每个文件、每种用法都提交给了一台真实的 ComfyUI 0.37.2（装了当天的 KJNodes、ResCascade、LBH 放大节点，模型文件用空的占位文件），**服务器自己的校验器全部接受**——节点存在、输入名和类型对得上、参考图 / 音色 / 首尾帧 / 关键帧的接法合法。
-> **没有验证的**：那台机器没有显卡也没有真模型，**没有采样过一帧**。画面、耗时、显存要在你的机器上第一次跑时确认（`../first-run-checklist.md`）。
+> **执行到哪一步**：那台机器没有显卡，装不下真模型。后来造了一套结构相同、宽度很小的**随机权重** H3（文件格式和发布的一致，VAE 与 LBH 放大器用真实权重），把这些工作流不改一个字地从文本编码执行到了存片——草稿、关 Turbo 的 20 步、`--anchor`、精修、分块精修、`--keep-latent` / `--from-latent`、首帧 / 首尾帧 / 纯文字、首帧段的精修（细目见「已知的边界」和 `../../evals/results/iteration-13-miniature-model-and-retest-4.md`）。随机权重出的画面是噪声：这证明的是**接线在运行时成立**。
+> **没有验证的**：真模型下的画面、口型、耗时、显存，以及 Sage 的两个节点（那台机器没有 `sageattention` 包）。这些要在你的机器上第一次跑时确认（`../first-run-checklist.md`）。
 
 ## 文件
 
@@ -65,6 +66,7 @@ python <skill>/scripts/comfy_submit.py $W/h3_ref2va_sage.api.json --media prompt
 # 3. 精修中选的那条（草稿是 _sage 版就用 _sage_refine）：从草稿存下的 latent 开始，一采不重跑
 python <skill>/scripts/comfy_submit.py $W/h3_ref2va_sage_refine.api.json --media prompts/ep01/s01.media.json --from-latent takes/ep01/s01/s01_1002 --tag s01_refine --dry-run
 #    草稿当时没加 --keep-latent：去掉 --from-latent，改给 --seed 1002（一采按同 seed 重跑一遍）
+#    i2va / fl2va / t2va 段同理：草稿 h3_fl2va_sage.api.json，精修 h3_fl2va_sage_refine.api.json
 
 # 4. 定妆照：6 个 seed，1024×1024（改尺寸：--set 459:456.width=1024 --set 459:456.height=1536）
 python <skill>/scripts/comfy_submit.py $W/qwen21_t2i.api.json --set 459:452.prompt=@bible/prompts/lin_lan_bust.txt --batch 6 --seed 1 --out bible/candidates/lin_lan --tag bust --dry-run
@@ -82,9 +84,9 @@ python <skill>/scripts/comfy_submit.py $W/qwen_edit2511_2ref.api.json --set 41.i
 | | 画布（快速预览） | `--set 136.width=864 --set 136.height=480` |
 | | LoRA 强度 | `--set 145.strength_model=0.75` |
 | | 参考图按原图大小进模型（20 步定稿时） | `--set 136.ref_image_size=max`（默认 `match`：每张参考图合计约 2,000 token；`max` 多几倍、更慢） |
-| `h3_ref2va*_refine` | 二采强度 / 尺寸 | `--set 300.sigma_start=0.31`、`--set 300.width=… --set 300.height=…` |
+| `h3_ref2va*_refine`、`h3_fl2va*_refine` | 二采强度 / 尺寸 | `--set 300.sigma_start=0.31`、`--set 300.width=… --set 300.height=…` |
 | | 关了 Turbo 之后 | 同时 `--set 300.steps_override=0`（不关时保持 2；预览的 advice 会提醒配错的情况） |
-| `h3_ref2va*_refine_split` | 每块多少帧 / 重叠 | `--set 312.chunk_frames=73 --set 312.temporal_overlap_frames=22`（显存还不够就把每块改小，如 56） |
+| `h3_ref2va*_refine_split`、`h3_fl2va*_refine_split` | 每块多少帧 / 重叠 | `--set 312.chunk_frames=73 --set 312.temporal_overlap_frames=22`（显存还不够就把每块改小，如 56）；放大后的尺寸在 `--set 310.width=… --set 310.height=…` |
 | | 关了 Turbo 之后的二采 sigma | `--set 311.sigmas="0.45, 0.3095, 0.1719, 0.0569, 0.0"`（`H3 Hires Fix` 不挂 Turbo 时用的那 4 步，由 0.37.2 的调度器算出） |
 | `h3_fl2va*` | 关 Turbo / 采样器 / 画布 / shift | `--set 105:126.value=false`、`--set 105:17.sampler_name=…`、`--set 105:104.width=…`、`--set 105:200.shift_video=…` |
 | `qwen21_t2i` | 提示词 / 尺寸 / 步数 | `--set 459:452.prompt=@文件`、`--set 459:456.width=… .height=…`、`--set 459:458.steps=50` |
@@ -105,7 +107,8 @@ python <skill>/scripts/comfy_submit.py $W/qwen_edit2511_2ref.api.json --set 41.i
 
 ## 已知的边界
 
-- `H3 Hires Fix` 的二采、分块二采（`MMH3 Split Upscale`）、`--anchor`、Sage 两个节点在这些工作流里都没有出过片：接法通过了服务器校验，其中参考节点和 `--anchor` 的关键帧节点还用真实 VAE 实际执行过（见下一条），采样没有。第一次用时照 `../first-run-checklist.md` 各验一次。
+- **用微型随机权重模型执行过的**（真实的 0.37.2、CPU、448×256 或 320×192、真实的 VAE 和 LBH 权重；控制台的原话抄在括号里）：冒烟测试命令；`--media` 接 5 张参考图加音色；关 Turbo 的 20 步；`--anchor`（首帧钉第 0 帧、第二镜关键帧钉第 96 帧，243 帧）；`h3_ref2va_refine`（`[H3HiresFix] (16, 28) -> (22, 40), sigmas [0.45, 0.225, 0.0]`）；`h3_ref2va_refine_split`（124 帧分两块）；`--keep-latent` 再 `--from-latent`；`h3_fl2va` 的首尾帧、首帧、纯文字三种；`h3_fl2va_refine`（`[H3HiresFix] dropped 2 pass-1 keyframe(s) (start/end image) sized for pass 1`）。每条都出了尺寸、帧数、帧率正确、带 32 kHz 立体声的 mp4。
+- **仍然没有执行过的**：Sage 的两个节点（带 `_sage` 的六个文件只通过了服务器校验）；N 卡上默认的 DynamicVRAM 加载路径；真权重下的一切画面与耗时。第一次用时照 `../first-run-checklist.md` 各验一次。
 - 用真实权重实际跑过的只有不需要 33B 底模的那几段（真实的 0.37.2，CPU，小尺寸）：H3 的音画 latent 解码成 24 fps 视频 + 32 kHz 立体声；一采 latent 的拆分、保存、取回、传回、读入、拼回（`--keep-latent` / `--from-latent`）；LBH 放大器；音色样本过音频 VAE；1344×768 的空潜空间过 Qwen-Image VAE 解码出来就是 1344×768；脚本接好的参考图、音色、首帧和关键帧过 H3 的参考节点与关键帧节点（文本编码器用替身），顺序、尺寸、帧号都对。
-- Sage 版需要 `sageattention` 包装在 ComfyUI 自己的 Python 里（`references/local-stack-and-acceleration.md` §0b）；没装或版本太旧时节点能加载、运行时才报 `sageattention is not new enough version …`——先用不带 `_sage` 的版本确认其余都通。两个 Sage 节点里接管 H3 自注意力的是第二个（`MiniMax H3 Mem Eff Sage Attention Patch`：替换 50 个块的注意力，自述是实验性的、用途是降低显存峰值）；第一个按文档里的基线链保留。
+- Sage 版需要 `sageattention` 包装在 ComfyUI 自己的 Python 里（`references/local-stack-and-acceleration.md` §0b）；没装时节点能加载、预检也通过，运行到第一个 Sage 节点才报 `ModuleNotFoundError: No module named 'sageattention'`（实际跑出来的原话；脚本会在后面接一句怎么办），版本太旧时报 `sageattention is not new enough version …`——先用不带 `_sage` 的版本确认其余都通。两个 Sage 节点里接管 H3 自注意力的是第二个（`MiniMax H3 Mem Eff Sage Attention Patch`：替换 50 个块的注意力，自述是实验性的、用途是降低显存峰值）；第一个按文档里的基线链保留。
 - 这些文件对应 ComfyUI 0.37.2 的节点定义。升级 ComfyUI 之后如果预检报输入缺失或多余，按上一节从新模板重新导出一份。

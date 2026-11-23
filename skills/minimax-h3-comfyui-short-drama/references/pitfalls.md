@@ -6,7 +6,7 @@
 
 | 症状 | 最常见原因 | 修法 |
 |------|-----------|------|
-| 控制台刷几十行 `ERROR lora diffusion_model.blocks.N.adaln_proj.linear.weight shape … is invalid` | FL2V 8 步 **v1.2** 的 LoRA 挂在了 `pruned` 底模上：它多改的 51 个时间调制层在 `pruned` 底模里是另一种存法，被逐个跳过，只有 208 个模块生效 | 换成 `minimax_h3_fl2v_turbo_8step_v1.0_768p_comfyui_bf16` + shift 6 / 3（附带的 `h3_fl2va*.api.json`）；正常时控制台是一行 `… 208 patches attached`、没有 `ERROR lora` |
+| 控制台刷 51 行 `ERROR lora diffusion_model.blocks.N.adaln_proj.linear.weight shape '[96768, 8]' is invalid for input of size 260112384`（最后一行是 `final_layer`；任务照常跑完，不会中断） | FL2V 8 步 **v1.2** 的 LoRA 挂在了 `pruned` 底模上：它多改的 51 个时间调制层在 `pruned` 底模里是另一种存法，被逐个跳过，只有 208 个模块生效 | 换成 `minimax_h3_fl2v_turbo_8step_v1.0_768p_comfyui_bf16` + shift 6 / 3（附带的 `h3_fl2va*.api.json`）；正常时控制台是一行 `… 208 patches attached`、没有 `ERROR lora` |
 | 背景横向拖影、颗粒 | 4 步 Turbo + 大动态；544p LoRA 跑 768p；shift 和 LoRA 的版本不配（FL2V v1.0 的 768p 版要 6/3，v1.2 和 Ref2V 用默认的 12/3） | 改 8 步 `_768p_` 版 LoRA，shift 按 `comfyui-nodes.md` §1 的版本表；`comfy_submit.py` 的预览会指出不配的情况；大动态镜头拆短 |
 | 皮肤塑料/油腻、笑容夸张 | 步数 > 8 或 LoRA 强度 > 1；Ref2VA 多参考；表情词抽象 | 强度 0.8–0.95；表情写具体（`confident half-smile, lips closed`）；二采去油或 Ref-Patch |
 | 双眼发光、面部变形 | 多参考图职责冲突；参考图小脸；长段 15 s | 一职责一图；脸占画面 ≥ 1/3 的正面图；段压到 ≤ 10 s |
