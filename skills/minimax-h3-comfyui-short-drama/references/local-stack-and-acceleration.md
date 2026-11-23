@@ -13,7 +13,7 @@
 - **KJNodes**（两个 Sage 节点都在里面）：GitHub `kijai/ComfyUI-KJNodes`。用 ComfyUI-Manager 装，或 `git clone` 到 `ComfyUI/custom_nodes/` 后用便携版自带的解释器装依赖：`python_embeded\python.exe -m pip install -r ComfyUI\custom_nodes\ComfyUI-KJNodes\requirements.txt`。
 - **SageAttention 在 Windows 上有两条路**（二选一，别叠）：
   - 走 KJ 节点：需要 ComfyUI 的 Python 环境里有 `sageattention` 包。Windows 预编译包在 GitHub `woct0rdho/SageAttention` 的 Releases：先 `pip install triton-windows`，再按 PyTorch 版本挑 wheel（torch ≥ 2.10 用文件名带 `torch2.10.0andhigher` 的；`cp310-abi3` 的包对 Python ≥ 3.10 通用；CUDA 12 与 13 的包不通用）。不需要装 Visual Studio 或 CUDA toolkit。装完后 `MiniMaxH3MemoryEfficientSageAttentionPatch` 如果报 `sageattention is not new enough version or could not determine CUDA architecture`，是包太旧或装的不是对应 CUDA 版本的那个；报 `This ComfyUI version does not support MiniMax H3`，是 ComfyUI 自带的 comfy-kitchen 太旧（两句都出自 KJNodes main 分支源码，2026-11-21）。
-  - 走启动参数：该仓库 README 写明，用 ComfyUI 的话可以不装它的 wheel，改用 comfy-kitchen 自带的 SageAttention——启动时加 `--use-ck-attention`（不是 `--use-sage-attention`）。你的 ComfyUI 版本有没有这个参数，以 `python main.py --help` 为准。
+  - 走启动参数：该仓库 README 写明，用 ComfyUI 的话可以不装它的 wheel，改用 comfy-kitchen 自带的 SageAttention——启动时加 `--use-ck-attention`（不是 `--use-sage-attention`）。0.37.2 有这个参数（`comfy/cli_args.py`：`--use-ck-attention`、`--use-sage-attention`、`--use-flash-attention` 三个互斥的注意力开关都在；文中提到的 `--cache-none`、`--disable-pinned-memory` 也在，2026-11-23 核对源码）。
   - 两条路谁快没有定论：各跑一次同一段、seed+1，以日志和计时为准，然后固定用一种。
 - **官方模板的名字**（ComfyUI「模板」面板里搜；也可以从 GitHub `Comfy-Org/workflow_templates` 的 `templates/<名字>.json` 下载后拖进界面，新模板可能要求更新的 ComfyUI）：视频 `video_minimax_h3_r2v` / `video_minimax_h3_i2v` / `video_minimax_h3_t2v`；出图 `image_qwen_image_2_1_t2i`、`image_qwen_image_edit_2511_int8`、`image_z_image_turbo_int8`。怎么把视频模板改成脚本能用的草稿档工作流，见 `comfyui-nodes.md` §3。
 
