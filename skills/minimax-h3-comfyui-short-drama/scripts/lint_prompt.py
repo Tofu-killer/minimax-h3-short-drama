@@ -215,6 +215,9 @@ def main():
 
     for e in errs: print("ERROR", e)
     for w in warns: print("WARN ", w)
+    if any(w.startswith("negation:") for w in warns):
+        print("NOTE  the negations above pass the check but tend to be DRAWN by the model (it has no negative branch): rewrite each "
+              "one as what is there - 'lips closed', 'hands at her sides' - before this prompt is submitted")
     print(f"{'FAIL' if errs else 'PASS'}: {len(errs)} error(s), {len(warns)} warning(s); effective duration {eff:.3f}s, {nshots} shots")
     sys.exit(1 if errs else 0)
 

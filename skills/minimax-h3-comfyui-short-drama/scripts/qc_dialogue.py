@@ -43,6 +43,7 @@ from pathlib import Path
 
 sys.dont_write_bytecode = True      # keep the skill folder free of __pycache__
 sys.path.insert(0, str(Path(__file__).parent / "h3lib"))
+import signals  # noqa: E402
 import speech  # noqa: E402
 
 
@@ -102,10 +103,9 @@ def main():
     for pat in a.targets:
         hits = sorted(glob.glob(pat, recursive=True)) or ([pat] if Path(pat).exists() else [])
         paths.extend(Path(h) for h in hits if Path(h).suffix.lower() in VIDEO_EXT)
-    live = [p for p in paths if not any(part.startswith("_prev_") for part in p.parts)]      # superseded takes kept by comfy_submit.py
-    if len(live) != len(paths):
-        print(f"note: {len(paths) - len(live)} file(s) in _prev_* folders skipped")
-    paths = live
+    paths, skipped = signals.live_takes(paths)
+    if skipped:
+        print(f"note: {skipped} file(s) skipped: superseded takes in _prev_* folders, and *_trimmed.mp4 copies (extract_tail_frame.py) of takes that are in the list")
     if not paths:
         sys.exit("no targets matched")
 

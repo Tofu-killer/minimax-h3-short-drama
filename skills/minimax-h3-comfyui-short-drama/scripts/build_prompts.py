@@ -66,8 +66,12 @@ def main():
     only = set(a.only.split(",")) if a.only else None
     out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
     blocked, waiting = [], []
+    kept = []
     for seg in ep.segments:
         if only and seg.id not in only:
+            continue
+        if seg.status.startswith("accepted") and not only and (out / f"{seg.id}.txt").exists():
+            kept.append(seg.id)        # its take was rendered from these files: a same-seed refine run needs them unchanged
             continue
         try:
             _text, source = effective_continuity(ep, seg, a.allow_planned)
@@ -109,6 +113,9 @@ def main():
     stale = out / "cues.srt"                                                       # name used by earlier versions
     if stale.exists():
         stale.unlink()
+    if kept:
+        print(f"kept as they are: {', '.join(kept)} - accepted, and a refine run must start from the prompt the accepted take was "
+              f"made from. To rebuild one on purpose (its take then has to be made again): --only <segment>")
     if waiting:
         print("WAITING for a take to be accepted (expected at this stage, the other segments were written):")
         for w in waiting:

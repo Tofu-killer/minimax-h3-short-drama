@@ -248,6 +248,62 @@ def main():
         except Exception as e:  # noqa: BLE001
             record("comfy_submit.py --dry-run", "FAIL", f"{type(e).__name__}: {e}; {(r.stderr.strip() or r.stdout.strip())[-200:]}")
 
+        # with no server the checks that need none still run: a frame count off the grid stops the batch, and a seed
+        # the workflow takes from a Primitive node (templates often wire it so) can still be set
+        try:
+            off = json.loads(json.dumps(wf)); off["3"]["inputs"]["length"] = 240
+            (work / "wf_off.api.json").write_text(json.dumps(off), encoding="utf-8")
+            r = run([sys.executable, str(HERE / "comfy_submit.py"), "wf_off.api.json", "--server", "http://127.0.0.1:9",
+                     "--out", "qc/static", "--dry-run"], work)
+            said = r.stdout + r.stderr
+            stopped = r.returncode == 2 and "17k+5" in said and "226" in said and "243" in said and "Traceback" not in said
+            prim = json.loads(json.dumps(wf)); prim["40"] = {"class_type": "PrimitiveInt", "inputs": {"value": 77}}
+            prim["10"]["inputs"]["noise_seed"] = ["40", 0]
+            (work / "wf_prim.api.json").write_text(json.dumps(prim), encoding="utf-8")
+            r2 = run([sys.executable, str(HERE / "comfy_submit.py"), "wf_prim.api.json", "--server", "http://127.0.0.1:9",
+                      "--media", "prompts/s03.media.json", "--batch", "2", "--dry-run", "--write-workflow", "qc/wired_prim.api.json"], work)
+            seeded = r2.returncode == 0 and "seed 77 " in r2.stdout and "seed 78 " in r2.stdout \
+                and json.loads((work / "qc/wired_prim.api.json").read_text(encoding="utf-8"))["10"]["inputs"]["noise_seed"] == ["40", 0]
+            record("comfy_submit.py without a server (stops on a frame count off the grid; sets a seed held by a Primitive node)",
+                   "PASS" if stopped and seeded else "FAIL",
+                   "" if stopped and seeded else f"grid check {stopped}, primitive seed {seeded}: {(said.strip() or r2.stderr.strip() or r2.stdout.strip())[-240:]}")
+        except Exception as e:  # noqa: BLE001
+            record("comfy_submit.py without a server", "FAIL", f"{type(e).__name__}: {e}")
+
+        # a misspelt field would otherwise be ignored in silence, and a negation is the instruction the model most often draws
+        typo = json.loads(json.dumps(ep))
+        typo["segments"][1]["shots"][0]["on_screen_charcters"] = typo["segments"][1]["shots"][0]["on_screen_characters"]
+        typo["segments"][0]["shots"][0]["action"] = "Hero walks from the door to the window and does not look back."
+        (work / "ep_typo.json").write_text(json.dumps(typo, ensure_ascii=False, indent=1), encoding="utf-8")
+        r = run([sys.executable, str(HERE / "validate_episode.py"), "ep_typo.json"], work)
+        warned = r.returncode == 0 and "did you mean 'on_screen_characters'" in r.stdout and "negation" in r.stdout
+        record("validate_episode.py warns about a misspelt field and a negation", "PASS" if warned else "FAIL",
+               "" if warned else (r.stderr.strip() or r.stdout.strip())[-300:])
+
+        # an accepted segment keeps the prompt its take was made from: a same-seed refine run has to start from it
+        try:
+            script("build_prompts.py", ["ep.json", "--out", "prompts_kept"], work)
+            before = (work / "prompts_kept/s01.txt").read_bytes()
+            later = json.loads(json.dumps(ep))
+            later["segments"][0].update(status="accepted", observed_end_state="Hero stands at frame centre facing the window, hands at his sides.")
+            later["segments"][0]["shots"][0]["action"] = "Hero walks from the door to the window, stops there and folds his arms."
+            (work / "ep_later.json").write_text(json.dumps(later, ensure_ascii=False, indent=1), encoding="utf-8")
+            r = run([sys.executable, str(HERE / "build_prompts.py"), "ep_later.json", "--out", "prompts_kept"], work)
+            same = (work / "prompts_kept/s01.txt").read_bytes() == before and "kept as they are: s01" in r.stdout
+            r = run([sys.executable, str(HERE / "build_prompts.py"), "ep_later.json", "--out", "prompts_kept", "--only", "s01"], work)
+            rebuilt = (work / "prompts_kept/s01.txt").read_bytes() != before
+            record("build_prompts.py leaves an accepted segment's prompt alone (rebuilds it with --only)", "PASS" if same and rebuilt else "FAIL",
+                   "" if same and rebuilt else f"kept {same}, rebuilt on request {rebuilt}: {(r.stderr.strip() or r.stdout.strip())[-200:]}")
+        except Exception as e:  # noqa: BLE001
+            record("build_prompts.py leaves an accepted segment's prompt alone", "FAIL", f"{type(e).__name__}: {e}")
+
+        # QC over a folder looks at each take once: superseded takes and trimmed copies are left out, a file named alone is not
+        both, n_skipped = signals.live_takes([Path("t/s01_1/a.mp4"), Path("t/s01_1/a_trimmed.mp4"), Path("t/s01_1/_prev_ab/a.mp4")])
+        alone, _n = signals.live_takes([Path("t/s01_1/a_trimmed.mp4")])
+        once = [x.name for x in both] == ["a.mp4"] and n_skipped == 2 and [x.name for x in alone] == ["a_trimmed.mp4"]
+        record("QC counts each take once (superseded takes and trimmed copies left out)", "PASS" if once else "FAIL",
+               "" if once else f"{both}, {alone}")
+
         r = run([sys.executable, str(HERE / "qc_probe.py"), "selects/*.mp4", "--episode", "ep.json", "--freeze-tail", "1.0",
                  "--expect-size", "1344x768", "--out", "qc/probe"], work)
         try:

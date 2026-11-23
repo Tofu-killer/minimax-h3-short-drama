@@ -25,10 +25,22 @@ MIN_STEP, MIN_RATIO, MIN_PERSIST, NEIGHBOURHOOD, FLOOR = 0.05, 4.0, 0.5, 24, 0.0
 
 
 def live_takes(paths: list) -> tuple[list, int]:
-    """comfy_submit.py moves a superseded take into a `_prev_*` folder inside the take folder. A recursive glob
-    finds those too; QC only looks at the live ones. -> (live paths, number skipped)."""
+    """A wildcard also finds files that are not takes of their own: comfy_submit.py moves a superseded take into a
+    `_prev_*` folder inside the take folder, and extract_tail_frame.py --trim-freeze writes `<take>_trimmed.mp4`
+    next to a take. They are left out when the take they belong to is in the list too - so a pattern over a
+    folder looks at each take once, and a file named on its own is still looked at. -> (live paths, number skipped)."""
     from pathlib import Path as _P
-    live = [p for p in paths if not any(part.startswith("_prev_") for part in _P(p).parts)]
+    paths = [_P(p) for p in paths]
+    in_prev = [any(part.startswith("_prev_") for part in p.parts) for p in paths]
+    drop_prev = not all(in_prev)                      # every file is a superseded take: they were asked for by name
+    present = {(p.parent, p.stem) for p in paths}
+    live = []
+    for p, old in zip(paths, in_prev):
+        if old and drop_prev:
+            continue
+        if p.stem.endswith("_trimmed") and (p.parent, p.stem[:-len("_trimmed")]) in present:
+            continue
+        live.append(p)
     return live, len(paths) - len(live)
 
 

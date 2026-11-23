@@ -98,7 +98,7 @@ def main():
         paths += [Path(h) for h in hits if Path(h).suffix.lower() in VIDEO_EXT]
     paths, skipped = signals.live_takes(paths)
     if skipped:
-        print(f"note: {skipped} file(s) in _prev_* folders skipped (superseded takes kept by comfy_submit.py)")
+        print(f"note: {skipped} file(s) skipped: superseded takes in _prev_* folders, and *_trimmed.mp4 copies (extract_tail_frame.py) of takes that are in the list")
     if not paths:
         sys.exit("no clips matched")
     segs, ep, ep_ratio = {}, {}, None

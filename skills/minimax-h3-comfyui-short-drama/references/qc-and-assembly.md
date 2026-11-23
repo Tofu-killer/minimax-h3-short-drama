@@ -106,7 +106,7 @@
 | `segments[].audio` | `"native"` = 用片段自带的声音；路径 = 单独的对白 stem；`null` = 静音 | 有音轨即 `native` |
 | `segments[].l_cut / j_cut` | 声音比画面晚收 / 早进的秒数 | 有台词的段 L-cut 0.25 s |
 | `segments[].lines[]` | 锁定的台词原文（字幕文字只从这里来）。`start / end` = **从该段入点算起的秒数**，由 `retime_subtitles.py` 填；手改某句时间后加 `"locked": true`，之后重跑不再覆盖它；`"gain_db": 6` 单独抬高（或压低）这一句 | 取自分镜 `dialogue[]` |
-| `segments[].lines[].en` | 可选的英文字幕文字，来自分镜台词的 `en` 字段；只有 `--bilingual` 时才用，不进提示词 |
+| `segments[].lines[].en` | 可选的英文字幕文字，来自分镜台词的 `en` 字段；只有 `--bilingual` 时才用，不进提示词 | 空 |
 | `ambience{场景: {file, gain_db}}` | 每个场景一条循环环境声底，带限 150–6500 Hz | 空；`gain_db` 默认 −34 |
 | `music{file, gain_db, fade_in, fade_out, loop, duck{depth_db, …}}` | 全集配乐；按每句台词的起止时间自动压低（增益包络，不受片段里音效影响） | 空；默认压 9 dB。EDL 里没有台词时间时退回 sidechain（真实对白上只有约 3–6 dB） |
 | `loudness{dialogue_lufs, program_lufs, true_peak}` | 响度目标 | −16 / −14 LUFS / −1.5 dBTP |

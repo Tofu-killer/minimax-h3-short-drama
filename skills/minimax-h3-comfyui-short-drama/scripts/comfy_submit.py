@@ -185,6 +185,7 @@ def apply_sets(wf, sets, server, media, do_upload, by_title=False):
 H3_REF, H3_I2V, H3_EMPTY = "MiniMaxH3ReferenceToVideo", "MiniMaxH3ImageToVideo", "EmptyMiniMaxH3LatentAV"
 H3_SHIFT = "MiniMaxH3SigmaShift"
 H3_GUIDE = "MiniMaxH3AddGuide"
+H3_HIRES = "H3HiresFix"                     # tazmannner/ComfyUI-H3-ResCascade: latent upscale + second pass in one node
 REF_GROUPS = ("ref_images.", "ref_videos.", "ref_video_audios.", "ref_audios.")
 
 
@@ -449,6 +450,10 @@ def settings_summary(wf: dict) -> list[str]:
         elif cls == H3_GUIDE:
             out.append(f"{cls} [{k}]: pins " + ("a picture" if isinstance(inp.get("image"), list) else "audio only")
                        + f" at frame {lit.get('frame_idx', '?')}")
+        elif cls == H3_HIRES:
+            out.append(f"{cls} [{k}]: second pass to {lit.get('width', '?')}x{lit.get('height', '?')}, sigma_start {lit.get('sigma_start', '?')}"
+                       + (f", steps_override {lit['steps_override']}" if "steps_override" in lit else "")
+                       + " - the first pass above runs again with this seed, then this node refines it")
     return out
 
 
@@ -475,8 +480,14 @@ def turbo_shift(lora_name: str) -> float | None:
     return TURBO_SHIFT.get((m.group(1), int(m.group(2)), m.group(3), bool(m.group(4)))) if m else None
 
 
+MODEL_USERS = ("BasicGuider", "CFGGuider", "DualCFGGuider", "KSampler", "KSamplerAdvanced", "SamplerCustom")   # run the model
+
+
 def advice(wf: dict, ratio: str | None) -> list[str]:
-    """Things the server cannot object to but that usually mean a mistake. Printed with the preview; never blocks."""
+    """Things the server cannot object to but that usually mean a mistake. Printed with the preview; never blocks.
+    These are rules of the MiniMax H3 video model: a graph without an H3 node (a still-image workflow) gets none."""
+    if not any(v.get("class_type") in (H3_REF, H3_I2V, H3_EMPTY) for v in wf.values()):
+        return []
     out, steps, cfg, loras = [], None, None, []
     for v in wf.values():
         cls, raw = v.get("class_type", ""), v.get("inputs", {})
@@ -498,10 +509,11 @@ def advice(wf: dict, ratio: str | None) -> list[str]:
             if n_aud and not isinstance(inp.get("audio_vae"), list):
                 out.append("voice references are wired but the H3 reference node has no `audio_vae` input: the samples are then "
                            "not heard by the model at all (only their labels reach the text encoder) - connect the audio VAE")
-        if cls in (H3_REF, H3_I2V, H3_EMPTY) and ratio in RATIOS and isinstance(inp.get("width"), int) and isinstance(inp.get("height"), int):
+        if cls in (H3_REF, H3_I2V, H3_EMPTY) and ratio in RATIOS and isinstance(inp.get("width"), int) and isinstance(inp.get("height"), int) \
+                and not any(x.get("class_type") == H3_HIRES for x in wf.values()):
             w, h = inp["width"], inp["height"]
             got = w / h
-            if abs(got / RATIOS[ratio] - 1) > 0.005:
+            if abs(got / RATIOS[ratio] - 1) > 0.03:              # the grid sizes (1344x768, 960x544 ...) are within 2%: the mix crops them
                 if got < RATIOS[ratio]:                          # taller than the episode: rows come off
                     keep = int(round(w / RATIOS[ratio] / 2)) * 2
                     how = f"crop {(h - keep) // 2} px top and bottom to {w}x{keep}, then scale"
@@ -517,9 +529,21 @@ def advice(wf: dict, ratio: str | None) -> list[str]:
                  None if shift_nodes else 12.0)                                   # None: set by something the preview cannot read
     if shift is not None and abs(shift - 12.0) > 1e-6:
         for k, v in wf.items():
-            if v.get("class_type") == "BasicScheduler" and not set(shift_nodes) & upstream(wf, v.get("inputs", {}).get("model")):
+            cls = v.get("class_type")
+            if cls not in ("BasicScheduler",) + MODEL_USERS or not isinstance(v.get("inputs", {}).get("model"), list):
+                continue
+            if set(shift_nodes) & upstream(wf, v["inputs"]["model"]):
+                continue
+            if cls == "BasicScheduler":
                 out.append(f"BasicScheduler [{k}] takes its model from before {H3_SHIFT}: the step schedule is then built with the "
                            f"default video shift 12 while the model is told {shift:g} - feed the scheduler from the shift node's output too")
+            else:
+                out.append(f"{cls} [{k}] takes its model from before {H3_SHIFT}: the sampler then runs the model at the default "
+                           f"video shift 12 while the schedule follows {shift:g} - feed it from the shift node's output too")
+    unets = [literals(wf, v.get("inputs", {})).get("unet_name") for v in wf.values() if "unet_name" in v.get("inputs", {})]
+    unet = next((u for u in unets if isinstance(u, str)), "")
+    family = "ref2v" if "ref2va" in unet.lower() else "fl2v" if "fl2va" in unet.lower() else ""
+    told = set()
     for name in distilled:
         want = turbo_shift(name)
         if want is not None and shift is not None and abs(shift - want) > 1e-6:
@@ -527,6 +551,32 @@ def advice(wf: dict, ratio: str | None) -> list[str]:
                    else f"leave the shift at the model default (no {H3_SHIFT} node, or 12 / 3)")
             out.append(f"{name}: its authors run this file at video shift {want:g} / audio 3; this workflow runs video shift {shift:g}"
                        + ("" if shift_nodes else " (the model default - there is no shift node)") + f" - {fix}")
+            told.add(name)
+    if shift is not None and abs(shift - 12.0) > 1e-6 and not told \
+            and (family == "ref2v" or any("ref2v" in x.lower() for x in distilled)):
+        out.append(f"Ref2VA at video shift {shift:g}: the only value published for Ref2V files is 12 / 3 (the model default), and a "
+                   f"community test of Ref2VA at shift 6 came out black - remove {H3_SHIFT} or set it to 12 / 3")
+    for name in distilled:                                       # a LoRA made for the other set of weights
+        fam = "ref2v" if "ref2v" in name.lower() else "fl2v" if "fl2v" in name.lower() else ""
+        if fam and family and fam != family:
+            out.append(f"{name} is a {fam.upper()} LoRA but the diffusion model loaded is {unet} - use the LoRA made for those weights")
+    lora_nodes = {k: literals(wf, v.get("inputs", {})).get("lora_name") for k, v in wf.items() if "lora_name" in v.get("inputs", {})}
+    for k, name in lora_nodes.items():                           # two distillation LoRAs in one chain
+        if name not in distilled:
+            continue
+        above = [lora_nodes[u] for u in upstream(wf, wf[k]["inputs"].get("model")) if lora_nodes.get(u) in distilled]
+        if above:
+            out.append(f"{name} is loaded on top of {above[0]}: two distillation LoRAs in one chain over-distil - keep one per chain")
+    classes = {v.get("class_type") for v in wf.values()}
+    if "MiniMaxLowVRAMAttention" in classes and classes & {"PathchSageAttentionKJ", "MiniMaxH3MemoryEfficientSageAttentionPatch"}:
+        out.append("MiniMaxLowVRAMAttention and a Sage attention patch are both in the model chain: this pairing has been measured at "
+                   "over ten minutes for the first step - time one take with it and one without before keeping both")
+    if "bf16" in unet.lower() and "minimax_h3" in unet.lower():
+        out.append(f"{unet} is the bf16 file: unless the card has well over 24 GB, load the pruned int8_convrot weights instead")
+    for k, v in wf.items():
+        fps = literals(wf, v.get("inputs", {})).get("fps")
+        if v.get("class_type") == "CreateVideo" and isinstance(fps, (int, float)) and abs(fps - 24) > 1e-6:
+            out.append(f"CreateVideo [{k}] writes {fps:g} fps: H3 generates 24 fps - any other rate changes the speed and breaks lip sync")
     canvas = next((literals(wf, v.get("inputs", {})) for v in wf.values() if v.get("class_type") in (H3_REF, H3_I2V, H3_EMPTY)), {})
     px = canvas.get("width", 0) * canvas.get("height", 0) if isinstance(canvas.get("width"), int) and isinstance(canvas.get("height"), int) else 0
     for name in distilled:
@@ -582,9 +632,52 @@ SEED_KEYS = ("seed", "noise_seed")      # KSampler-style nodes / RandomNoise and
 
 
 def seed_nodes(wf) -> list[tuple[str, str]]:
-    """(node id, input name) of every literal seed in the workflow."""
-    return [(k, key) for k, v in wf.items() for key in SEED_KEYS
-            if key in v.get("inputs", {}) and not isinstance(v["inputs"][key], (list, dict))]
+    """(node id, input name) of every seed the script can set: a literal `seed` / `noise_seed`, or - when that input
+    is wired to a Primitive node, as templates often wire it - the primitive's `value`."""
+    found = []
+    for k, v in wf.items():
+        for key in SEED_KEYS:
+            val = v.get("inputs", {}).get(key)
+            if val is None or isinstance(val, dict):
+                continue
+            if not isinstance(val, list):
+                found.append((k, key))
+            elif len(val) == 2:
+                src = wf.get(str(val[0]), {})
+                if str(src.get("class_type", "")).startswith("Primitive") \
+                        and not isinstance(src.get("inputs", {}).get("value", []), (list, dict)):
+                    found.append((str(val[0]), "value"))
+    return list(dict.fromkeys(found))
+
+
+def segment_inputs(wf: dict, media: dict) -> str:
+    """Hash of what the model is asked to render - the prompt text on the H3 node(s) and the content of every file
+    sent along. Two runs with the same seed and the same value here start from the same first pass, whatever else
+    the workflow does afterwards (a refine workflow repeats the draft's first pass only if this matches)."""
+    prompts = [str(v.get("inputs", {}).get("prompt", "")) for v in wf.values() if v.get("class_type") in (H3_REF, H3_I2V)]
+    return hashlib.sha256(("\x1f".join(prompts) + "\x1e" + "\x1f".join(sorted(media.values()))).encode()).hexdigest()[:16]
+
+
+def same_seed_note(out: Path, dest: Path, seed, inputs_sha: str) -> str:
+    """Another finished take of this seed in the segment's folder (the accepted draft, when this is its refine run):
+    say whether this job starts from the same prompt and references."""
+    for rj in sorted(out.glob(f"*_{seed}/run.json")):
+        if rj.parent == dest:
+            continue
+        try:
+            r = json.loads(rj.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if r.get("status") != "success":
+            continue
+        if not r.get("inputs_sha"):
+            return f"; {rj.parent.name} has the same seed (made by an earlier version of this script: prompt and references cannot be compared)"
+        if r["inputs_sha"] == inputs_sha:
+            return f"; same prompt and references as {rj.parent.name}: with the same first-pass settings this repeats that take"
+        return (f"; WARNING: {rj.parent.name} has this seed but was made from a different prompt or reference set - this run will "
+                f"NOT repeat that take. If {rj.parent.name} is the accepted draft, submit with the prompt files it was made from "
+                f"(build_prompts.py leaves accepted segments alone unless --only names them)")
+    return ""
 
 
 def fingerprint(wf: dict, media: dict) -> str:
@@ -602,6 +695,59 @@ def combo_choices(spec):
     if spec[0] == "COMBO" and len(spec) > 1 and isinstance(spec[1], dict):
         return spec[1].get("options")
     return None
+
+
+def h3_node_problems(where: str, cls: str, inputs: dict) -> list[str]:
+    """What can be said about one MiniMax H3 node without asking a server: reference keys, labels, frame grid, sizes."""
+    errors: list[str] = []
+    if cls and "MiniMaxH3" in cls:
+        for group, prefix in (("ref_images", "ref_image_"), ("ref_videos", "ref_video_"),
+                              ("ref_video_audios", "ref_video_audio_"), ("ref_audios", "ref_audio_")):
+            if group in inputs:                       # ComfyUI reads "ref_images.ref_image_0", never a list or an object
+                errors.append(f"{where}: `{group}` is written as a {'list' if isinstance(inputs[group], list) else 'nested object'} - "
+                              f"ComfyUI only reads flat keys \"{group}.{prefix}0\", \"{group}.{prefix}1\", ... (each a link "
+                              f"[\"<node id>\", 0]); other shapes are silently dropped and the references never reach the model")
+            keys = sorted((k for k in inputs if k.startswith(group + ".")), key=lambda k: k)
+            idx = []
+            for k in keys:
+                tail = k[len(group) + 1:]
+                if not (tail.startswith(prefix) and tail[len(prefix):].isdigit()):
+                    errors.append(f"{where}: unexpected key {k!r} (expected {group}.{prefix}<number from 0>)")
+                else:
+                    idx.append(int(tail[len(prefix):]))
+            if idx and sorted(idx) != list(range(len(idx))):
+                errors.append(f"{where}: {group} keys must be numbered 0..{len(idx) - 1} without gaps (found {sorted(idx)}) - "
+                              f"the order is the <Picture N> / <Audio N> numbering")
+        text = inputs.get("prompt")
+        if cls == H3_REF and isinstance(text, str):      # does the prompt talk about references that are not wired?
+            import re as _re
+            for label, group in (("Picture", "ref_images."), ("Audio", "ref_audios."), ("Video", "ref_videos.")):
+                used = [int(x) for x in _re.findall(rf"<{label} (\d+)>", text)]
+                wired = sum(1 for k in inputs if k.startswith(group))
+                if used and max(used) > wired:
+                    errors.append(f"{where}: the prompt refers to <{label} {max(used)}> but {wired} reference "
+                                  f"{label.lower()}(s) are wired to this node - without them the model invents the look "
+                                  f"(use --media <segment>.media.json to wire them in prompt order)")
+                elif wired and not used:
+                    errors.append(f"{where}: {wired} reference {label.lower()}(s) are wired but the prompt never mentions <{label} N>")
+        n = inputs.get("length")
+        if isinstance(n, int) and (n - 5) % 17 != 0:
+            k = max(0, (n - 5) // 17)
+            errors.append(f"{where}: length {n} is not on the 17k+5 frame grid (the values either side are {17 * k + 5} and {17 * (k + 1) + 5})")
+        for dim in ("width", "height"):
+            v = inputs.get(dim)
+            if isinstance(v, int) and v % 32 != 0:
+                errors.append(f"{where}: {dim} {v} is not a multiple of 32")
+    return errors
+
+
+def static_problems(wf: dict) -> list[str]:
+    """The part of the preflight that needs no server."""
+    out = []
+    for nid, node in wf.items():
+        cls = node.get("class_type")
+        out += h3_node_problems(f"node {nid} ({node.get('_meta', {}).get('title') or cls})", cls, node.get("inputs", {}))
+    return out
 
 
 def preflight(server: str, wf: dict, media: dict) -> list[str]:
@@ -629,47 +775,14 @@ def preflight(server: str, wf: dict, media: dict) -> list[str]:
                 continue
             choices = combo_choices(req.get(name) or opt.get(name))
             if choices and isinstance(val, str) and val not in choices and val not in media:   # empty list = filled at run time
-                near = difflib.get_close_matches(val, [str(c) for c in choices], n=1, cutoff=0.4)
+                pool = [str(c) for c in choices]
+                for fam in ("ref2v", "fl2v"):               # never offer a FL2V file for a missing Ref2V one, or the reverse
+                    if fam in val.lower():
+                        pool = [c for c in pool if fam in c.lower()]
+                near = difflib.get_close_matches(val, pool, n=1, cutoff=0.4)
                 errors.append(f"{where}: {name} = {val!r} is not offered by the server"
                               + (f" (closest: {near[0]!r})" if near else f" ({len(choices)} choice(s) available)"))
-        if cls and "MiniMaxH3" in cls:
-            for group, prefix in (("ref_images", "ref_image_"), ("ref_videos", "ref_video_"),
-                                  ("ref_video_audios", "ref_video_audio_"), ("ref_audios", "ref_audio_")):
-                if group in inputs:                       # ComfyUI reads "ref_images.ref_image_0", never a list or an object
-                    errors.append(f"{where}: `{group}` is written as a {'list' if isinstance(inputs[group], list) else 'nested object'} - "
-                                  f"ComfyUI only reads flat keys \"{group}.{prefix}0\", \"{group}.{prefix}1\", ... (each a link "
-                                  f"[\"<node id>\", 0]); other shapes are silently dropped and the references never reach the model")
-                keys = sorted((k for k in inputs if k.startswith(group + ".")), key=lambda k: k)
-                idx = []
-                for k in keys:
-                    tail = k[len(group) + 1:]
-                    if not (tail.startswith(prefix) and tail[len(prefix):].isdigit()):
-                        errors.append(f"{where}: unexpected key {k!r} (expected {group}.{prefix}<number from 0>)")
-                    else:
-                        idx.append(int(tail[len(prefix):]))
-                if idx and sorted(idx) != list(range(len(idx))):
-                    errors.append(f"{where}: {group} keys must be numbered 0..{len(idx) - 1} without gaps (found {sorted(idx)}) - "
-                                  f"the order is the <Picture N> / <Audio N> numbering")
-            text = inputs.get("prompt")
-            if cls == H3_REF and isinstance(text, str):      # does the prompt talk about references that are not wired?
-                import re as _re
-                for label, group in (("Picture", "ref_images."), ("Audio", "ref_audios."), ("Video", "ref_videos.")):
-                    used = [int(x) for x in _re.findall(rf"<{label} (\d+)>", text)]
-                    wired = sum(1 for k in inputs if k.startswith(group))
-                    if used and max(used) > wired:
-                        errors.append(f"{where}: the prompt refers to <{label} {max(used)}> but {wired} reference "
-                                      f"{label.lower()}(s) are wired to this node - without them the model invents the look "
-                                      f"(use --media <segment>.media.json to wire them in prompt order)")
-                    elif wired and not used:
-                        errors.append(f"{where}: {wired} reference {label.lower()}(s) are wired but the prompt never mentions <{label} N>")
-            n = inputs.get("length")
-            if isinstance(n, int) and (n - 5) % 17 != 0:
-                k = round((n - 5) / 17)
-                errors.append(f"{where}: length {n} is not on the 17k+5 frame grid (nearest {17 * k + 5} or {17 * (k + 1) + 5})")
-            for dim in ("width", "height"):
-                v = inputs.get(dim)
-                if isinstance(v, int) and v % 32 != 0:
-                    errors.append(f"{where}: {dim} {v} is not a multiple of 32")
+        errors += h3_node_problems(where, cls, inputs)
     return errors
 
 
@@ -881,15 +994,24 @@ def main():
     if a.write_workflow:
         Path(a.write_workflow).parent.mkdir(parents=True, exist_ok=True)
         Path(a.write_workflow).write_text(json.dumps(wf, ensure_ascii=False, indent=1), encoding="utf-8")
+    inputs_sha = segment_inputs(wf, media)
     snodes = seed_nodes(wf)
     if (a.batch > 1 or a.seed is not None) and not snodes:
-        die("--batch / --seed need a node with a literal `seed` or `noise_seed` input (KSampler, RandomNoise, SamplerCustom ...); "
-            "this workflow has none - if the seed comes from a primitive or another node, set it on that node with --set")
+        die("--batch / --seed need a `seed` or `noise_seed` input the script can set (a number on KSampler, RandomNoise, "
+            "SamplerCustom ..., or a Primitive node wired to it); in this workflow the seed is computed by another node - "
+            "replace that with a plain number and export again")
     base_seed = a.seed if a.seed is not None else (wf[snodes[0][0]]["inputs"][snodes[0][1]] if snodes else 0)
 
     version = print_system(a.server)
     if version is None and not offline:
         die(f"cannot reach ComfyUI at {a.server}")
+    if not a.no_preflight and version is None:           # a dry run without a server: only what needs no server
+        problems = static_problems(wf)
+        if problems:
+            print("PREFLIGHT FAILED (the part that needs no server):\n  " + "\n  ".join(problems), file=sys.stderr)
+            sys.exit(2)
+        print(f"preflight: ComfyUI at {a.server} does not answer - only the checks that need no server were run (frame grid, "
+              "sizes, reference keys, labels); node classes and model / LoRA file names are checked when it is reachable")
     if not a.no_preflight and version is not None:
         problems = preflight(a.server, wf, media)
         if problems:
@@ -917,12 +1039,12 @@ def main():
     for rj in out.glob("*/run.json"):
         try:
             r = json.loads(rj.read_text(encoding="utf-8"))
-            if r.get("status") == "success" and r.get("seconds"):
+            if r.get("status") == "success" and r.get("seconds") and Path(str(r.get("workflow") or "")).name == Path(a.workflow).name:
                 past.append((float(r["seconds"]), int(r.get("frames") or 0), int(r.get("pixels") or 0)))
         except (OSError, json.JSONDecodeError, ValueError):
             pass
     todo = [p for p in plan if p["state"] != "done"]
-    where = "in this folder"
+    where = "of this workflow in this folder"
     if not past and todo and a.log and Path(a.log).exists():               # no history here: look in the takes log
         try:
             with open(a.log, newline="", encoding="utf-8-sig") as fh:
@@ -952,7 +1074,12 @@ def main():
             note += ("; this folder already holds an earlier run (another workflow or other inputs) - its files will be "
                      "moved into _prev_... inside it. To keep both side by side, give this run its own --tag "
                      f"(e.g. --tag {a.tag}_refine)")
+        if p["state"] != "done":
+            note += same_seed_note(out, p["dest"], p["seed"], inputs_sha)
         print(f"  seed {p['seed']:<12} {p['dest']}  [{p['state']}] {note}")
+    if not snodes:
+        print("  note: no `seed` / `noise_seed` the script can read (it is computed inside the workflow): the take is filed as seed 0 - "
+              "put a plain number on the seed input and export again to file takes by seed")
     if a.dry_run:
         print(f"nothing queued (--dry-run). To run exactly this batch: add --confirm {batch_id}")
         return
@@ -997,7 +1124,7 @@ def main():
             meta = {"prompt_id": pid, "seed": seed, "fingerprint": fp, "seconds": round(time.time() - t0, 1),
                     "status": "success" if ok and files else ("error" if not ok else "no_output"),
                     "files": [str(f) for f in files], "workflow": str(a.workflow), "comfyui_version": version,
-                    "overrides": a.set + a.set_title, "media_sha256": media, "frames": frames, "pixels": pixels}
+                    "overrides": a.set + a.set_title, "media_sha256": media, "inputs_sha": inputs_sha, "frames": frames, "pixels": pixels}
             (dest / "run.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
             ran += 1
             if a.log:

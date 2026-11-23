@@ -158,6 +158,39 @@ def _resolve(base: Path, src: Optional[str]) -> Optional[str]:
     return str((base / src).resolve())
 
 
+def unknown_fields(raw: dict) -> list[str]:
+    """Field names the loader does not know. They are dropped when the file is read, so a typo ("endhold",
+    "use_scene_referense") silently turns a setting off - say so. Names starting with _ or $ are comments."""
+    import difflib
+    out: list[str] = []
+
+    def check(where: str, d, known: set[str]) -> None:
+        if not isinstance(d, dict):
+            return
+        for k in d:
+            if k in known or str(k).startswith(("_", "$")):
+                continue
+            near = difflib.get_close_matches(str(k), sorted(known), n=2, cutoff=0.6)
+            out.append(f"{where}: WARN unknown field {k!r} is ignored"
+                       + (" - did you mean " + " or ".join(repr(x) for x in near) + "?" if near else ""))
+
+    names = lambda cls: {f.name for f in fields(cls)}          # noqa: E731
+    check("episode", raw, {"title", "ratio", "style", "synopsis", "characters", "scenes", "props", "segments", "stagings"})
+    for c in raw.get("characters", []) or []:
+        check(f"character {c.get('id', '?')}", c, names(Character))
+    for sc in raw.get("scenes", []) or []:
+        check(f"scene {sc.get('id', '?')}", sc, names(Scene))
+    for pr in raw.get("props", []) or []:
+        check(f"prop {pr.get('id', '?')}", pr, names(Prop))
+    for seg in raw.get("segments", []) or []:
+        check(f"segment {seg.get('id', '?')}", seg, names(Segment) | {"first_frame_prompt"})
+        for sh in seg.get("shots", []) or []:
+            check(f"segment {seg.get('id', '?')} shot {sh.get('index', '?')}", sh, names(Shot))
+            for d in sh.get("dialogue", []) or []:
+                check(f"segment {seg.get('id', '?')} shot {sh.get('index', '?')} dialogue", d, names(Dialogue))
+    return out
+
+
 def load_episode(path: str | Path) -> Episode:
     path = Path(path)
     base = path.parent
@@ -179,9 +212,11 @@ def load_episode(path: str | Path) -> Episode:
             dl = [_from_dict(Dialogue, d) for d in sh.get("dialogue", [])]
             shots.append(_from_dict(Shot, {**sh, "dialogue": dl, "keyframe": _resolve(base, sh.get("keyframe"))}))
         segments.append(_from_dict(Segment, {**s, "shots": shots}))
-    return Episode(title=raw["title"], ratio=raw["ratio"], style=raw.get("style", "Live-action, cinematic"),
-                   characters=characters, scenes=scenes, props=props, segments=segments,
-                   synopsis=raw.get("synopsis", ""), stagings=raw.get("stagings", []) or [])
+    ep = Episode(title=raw["title"], ratio=raw["ratio"], style=raw.get("style", "Live-action, cinematic"),
+                 characters=characters, scenes=scenes, props=props, segments=segments,
+                 synopsis=raw.get("synopsis", ""), stagings=raw.get("stagings", []) or [])
+    ep.unknown = unknown_fields(raw)            # reported by validate_episode(); not part of the stored episode
+    return ep
 
 
 def dump_episode(ep: Episode) -> str:
@@ -494,6 +529,28 @@ def speech_problems(ep: "Episode") -> list[str]:
     return out
 
 
+_NEG = re.compile(r"\b(no|not|never|without|don't|doesn't|do not|does not|avoid|nothing)\b", re.I)
+_NEG_OK = re.compile(r"with no camera movement whatsoever|no other (item|garment|person|people)|is not transferred|"
+                     r"never transfer facial traits|no black letterbox bars", re.I)
+
+
+def negation_problems(ep: "Episode") -> list[str]:
+    """The open weights have no negative branch: what a sentence says is absent tends to be drawn. Point at the field."""
+    out = []
+    for seg in ep.segments:
+        for sh in seg.shots:
+            for name in ("framing", "action", "performance", "lighting", "camera", "sound_cue"):
+                text = getattr(sh, name, "") or ""
+                for m in _NEG.finditer(text):
+                    ctx = text[max(0, m.start() - 30): m.end() + 30]
+                    if not _NEG_OK.search(ctx):
+                        out.append(f"segment {seg.id} shot {sh.index} {name}: WARN \"{ctx.strip()}\" - a negation tends to be drawn "
+                                   f"(the model has no negative branch). Say what is there instead: \"lips closed\" rather than "
+                                   f"\"does not speak\", \"hands at her sides\" rather than \"does not move her hands\"")
+                        break
+    return out
+
+
 def reference_count(ep: "Episode", seg: "Segment") -> tuple[int, int]:
     """(pictures, audio clips) the builder will attach to this segment in ref2va mode."""
     if seg.mode != "ref2va":
@@ -540,7 +597,7 @@ def reference_problems(ep: "Episode") -> list[str]:
                    f"reference pictures first (references/image-stage.md)")
     for seg in ep.segments:
         pics, audio = reference_count(ep, seg)
-        if seg.mode == "ref2va" and pics + audio > 6:
+        if seg.mode == "ref2va" and pics + audio > 6 and not seg.status.startswith("accepted"):
             out.append(f"segment {seg.id}: WARN {pics} picture(s) + {audio} voice reference(s) = {pics + audio} references; community "
                        f"tests found 6 or fewer the most stable. Options: fewer pictures for a secondary character in this "
                        f"segment (\"character_refs\": {{\"<id>\": 1}}), "
@@ -750,6 +807,8 @@ def validate_episode(ep: Episode) -> list[str]:
     problems += identity_problems(ep)
     problems += state_problems(ep)
     problems += speech_problems(ep)
+    problems += negation_problems(ep)
+    problems += list(getattr(ep, "unknown", []))
     problems += reference_problems(ep)
     problems += restated_look_problems(ep)
     problems += staging_problems(ep)
