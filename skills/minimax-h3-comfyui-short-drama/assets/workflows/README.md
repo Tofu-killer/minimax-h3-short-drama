@@ -17,6 +17,8 @@
 | `h3_ref2va_refine_split.api.json` / `h3_ref2va_sage_refine_split.api.json` | **精修的备用方案**——上面两份在二采时显存不够才用：先用 LBH 放大 latent，再用 LBH 节点包的 `MMH3 Split Upscale` 把二采按时间切成 73 帧一块（重叠 22 帧）分块做，音频同样钉死；二采的 sigma 是 `0.45, 0.225, 0`，和 `H3 Hires Fix` 的 `steps_override 2` 相同 | 同上 | ResCascade、LBH 放大节点（带 Sage 的再加 KJNodes） |
 | `h3_fl2va.api.json` | `i2va` / `fl2va` / `t2va` 段：FL2VA 权重，1344×768，Turbo 8 步（v1.0 的 768p 版 LoRA + shift 6 / 3；shift 节点只在 LoRA 那条分支上，关掉 Turbo 就回到模型默认的 12 / 3） | `video_minimax_h3_i2v` | 无 |
 | `h3_fl2va_sage.api.json` | 同上 + Sage | 同上 | KJNodes |
+| `h3_fl2va_refine.api.json` / `h3_fl2va_sage_refine.api.json` | `i2va` / `fl2va` / `t2va` 段的精修：同样的 `H3 Hires Fix` 二采到 1920×1088，用法和 Ref2VA 的精修一样（`--from-latent` 或 `--seed`）。首帧、尾帧是按一采的尺寸编码的，节点在二采时把它们从条件里去掉（放大的 latent 里已经有了），所以不用另建一个大尺寸的条件节点 | 同上 | ResCascade、LBH 放大节点（带 Sage 的再加 KJNodes） |
+| `h3_fl2va_refine_split.api.json` / `h3_fl2va_sage_refine_split.api.json` | 上一行在二采时显存不够才用的分块版，和 Ref2VA 的分块版同一种接法 | 同上 | 同上 |
 | `qwen21_t2i.api.json` | 文生图（定妆照、场景母版、道具）：Qwen-Image 2.1，25 步 CFG 1 | `image_qwen_image_2_1_t2i` | 无 |
 | `qwen_edit2511_1ref / 2ref / 3ref.api.json` | 编辑出图（派生视图、逐镜首帧）：Qwen-Image-Edit-2511 int8，40 步 CFG 4，**输出尺寸固定为 1344×768**（不跟着第一张图走），1 / 2 / 3 张输入图 | `image_qwen_image_edit_2511_int8` | 无 |
 

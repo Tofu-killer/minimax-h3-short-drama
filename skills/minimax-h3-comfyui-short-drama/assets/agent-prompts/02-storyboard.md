@@ -44,8 +44,8 @@
 - use_scene_reference：默认 true。运镜是主体的段设 false——不挂场景图（它会让运镜减半），地点由场景描述的文字带入。
 - soundscape：1–4 个完整句：一句安静的底噪（A quiet indoor room tone.）+ 本段动作发出的声音（物体 + 动作）。持续的环境声（雨、街声、人群、机器声）不写在这里——后期按场景铺一条连续的环境声，逐段各出各的会在切点断开。不写人声、不用情绪形容词。
 - music："N/A"（全集后期统一配乐）。
-- first_frame_prompt：仅需要首帧的段，按 assets/image-prompts.md §6「逐镜首帧」的模板写英文静帧描述。
-- shots[].keyframe（可选，只在 ref2va 段的第 2 个及以后的镜头上）：该镜起手那一帧的图片路径；只在这个镜头的构图必须按设计来时才配（正反打的反打、道具特写），每张占一个参考位。keyframe_note 用一句英文写这张图画的是什么。
+- first_frame_prompt：仅需要首帧的段。按 assets/image-prompts.md §6「逐镜首帧」的模板写**完整**的英文提示词（不是只写画面描述）：开头是每张输入图各一句——`Keep exactly the same person as Picture 1: same face, hairstyle and clothes (这个角色的 sheet_phrase 原文).`、道具入画时 `The object in her right hand is the exact item shown in Picture 2: same shape, color and markings, no other item is substituted.`、最后 `The room is the one in Picture 3: same walls, furniture and light direction.`，然后 `New photo: …` 写第一瞬间的画面和 `Exactly N people in the frame.`。图片编号从 1 连续编，最多 3 张（人 → 道具 → 场景裁切）；`plan_stills.py` 就是从这三种句子读出每个输入接哪张图的，括号里的外貌要和该角色的 sheet_phrase 一字不差。两个人加道具同框放不下 3 张：写成两条的列表，第一条出「两人 + 场景」，第二条以 `Keep everything in Picture 1 exactly as it is: …` 开头把 Picture 2 的道具放进去。过肩镜头里背对镜头的人不给正脸图（给了会被画到后脑勺上）：这个人不写 `same person as Picture N`，只在画面描述里照抄他的发型和上衣。
+- shots[].keyframe（可选，只在 ref2va 段的第 2 个及以后的镜头上）：该镜起手那一帧的图片路径；只在这个镜头的构图必须按设计来时才配（正反打的反打、道具特写），每张占一个参考位。keyframe_note 用一句英文写这张图画的是什么；keyframe_prompt 写出这张图的完整提示词，写法和 first_frame_prompt 一样。
 
 【开场站位 stagings】（顶层数组；两个人以上的场景，每进入一次就给它的第一段写一条；有了它，这一段的 continuity 可以留空——两样都写会把位置说两遍）
 {"scene_id", "segment", "places": [{"character", "at", "side": "left|centre|right", "posture", "facing"}], "enters_later": [角色 id], "others"}

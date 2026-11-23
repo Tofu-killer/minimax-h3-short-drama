@@ -16,13 +16,19 @@ A ref2va segment in which nothing has a reference picture or a voice sample is b
 A segment whose `continuity` starts with "@observed" opens from where the previous segment's ACCEPTED take
 really ended (observe_take.py writes that back into the episode). Until that exists the segment is not
 built - use --allow-planned for drafts, and --only s03,s04 to (re)build single segments.
+
+Every build says, per segment, whether the prompt is [unchanged] or [CHANGED] against the files that were there,
+and - each time, not only on the build that changed it - how many finished takes in takes/<name of --out>/<segment>
+were made from another prompt or other references than the segment has now. Those takes do not show what the
+prompt now asks for: re-make them, or look at the one you want and accept it knowingly (observe_take.py --stale-ok).
 """
 import argparse, json, sys
 from pathlib import Path
 sys.dont_write_bytecode = True      # keep the skill folder free of __pycache__
 sys.path.insert(0, str(Path(__file__).parent / "h3lib"))
-from storyboard import NotObservedYet, load_episode, validate_episode, effective_continuity, frames_for_seconds  # noqa: E402
+from storyboard import NotObservedYet, load_episode, validate_episode, effective_continuity, frames_for_seconds, voice_plan, handover_state  # noqa: E402
 import prompt_builder  # noqa: E402
+import takes as take_records  # noqa: E402
 from prompt_builder import build, dialogue_cues  # noqa: E402
 
 
@@ -67,11 +73,16 @@ def main():
     out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
     blocked, waiting = [], []
     kept = []
+    kept_stale = []
+    takes_root = Path("takes") / out.resolve().name          # where comfy_submit.py --media puts a segment's takes by default
     for seg in ep.segments:
         if only and seg.id not in only:
             continue
         if seg.status.startswith("accepted") and not only and (out / f"{seg.id}.txt").exists():
             kept.append(seg.id)        # its take was rendered from these files: a same-seed refine run needs them unchanged
+            made_from = (seg.accepted_take or {}).get("inputs_sha")
+            if made_from and made_from != take_records.media_inputs_sha(out / f"{seg.id}.media.json"):
+                kept_stale.append(seg.id)
             continue
         try:
             _text, source = effective_continuity(ep, seg, a.allow_planned)
@@ -93,11 +104,13 @@ def main():
         target = out / f"{seg.id}.txt"
         before = target.read_text(encoding="utf-8") if target.exists() else None
         target.write_text(text, encoding="utf-8")
-        (out / f"{seg.id}.media.json").write_text(json.dumps(
-            {"segment": seg.id, "mode": bp.mode or seg.mode, "ratio": ep.ratio, "duration": seg.duration, "frames": frames,
-             "effective_seconds": round(frames / 24, 3),
-             "prompt_file": f"{seg.id}.txt", "labels": bp.labels, "media": media},
-            ensure_ascii=False, indent=1), encoding="utf-8")
+        spec = {"segment": seg.id, "mode": bp.mode or seg.mode, "ratio": ep.ratio, "duration": seg.duration, "frames": frames,
+                "effective_seconds": round(frames / 24, 3),
+                "prompt_file": f"{seg.id}.txt", "labels": bp.labels, "media": media}
+        if source != "authored":            # which state of the previous segment this prompt opens from (observe_take.py compares it later)
+            kind, prev_id = source.split(":", 1)
+            spec["opens_from"] = {"segment": prev_id, "source": kind, "sha": take_records.text_sha(handover_state(ep, seg, a.allow_planned))}
+        (out / f"{seg.id}.media.json").write_text(json.dumps(spec, ensure_ascii=False, indent=1), encoding="utf-8")
         note = {"authored": ""}.get(source, f"  [opens from {source.replace(':', ' end of ')}]")
         if len(text) > 7000:
             note += f"  [{len(text)} characters: over the hosted API's 7000 limit - fine for the local node, but trim if it can be]"
@@ -106,6 +119,15 @@ def main():
             note += f"  [built as {built_as}: nothing bound to this segment has a reference picture or voice sample]"
         if before is not None:              # takes made from the earlier text stay valid only when nothing changed
             note += "  [unchanged]" if before == text else "  [CHANGED since the last build - takes made from the earlier prompt no longer match it]"
+            if before != text and seg.first_frame and source != "authored":
+                note += (f"  [its first frame {seg.first_frame} was made for the earlier opening: re-make it too if the pose or the "
+                         f"positions differ, and re-read this segment's first shot - its action was written for the planned state]")
+        # said on every build, not only on the one that changed the prompt: takes that belong to an earlier version of it
+        old_takes = take_records.stale_takes(takes_root / seg.id, take_records.media_inputs_sha(out / f"{seg.id}.media.json"))
+        if old_takes:
+            shown = ", ".join(old_takes[:4]) + (f" and {len(old_takes) - 4} more" if len(old_takes) > 4 else "")
+            note += (f"  [{len(old_takes)} finished take(s) in {takes_root / seg.id} were made from an EARLIER prompt or other references "
+                     f"({shown}): they do not show what this prompt asks for - re-make them from this build]")
         print(f"{seg.id}: {built_as} {seg.duration}s = {frames} frames, {len(text.split())} words, {len(media)} media{note}")
     # planned subtitle cues for the whole episode (they depend on the storyboard only, not on which prompts were built)
     srt, idx, offset = [], 1, 0.0
@@ -121,6 +143,17 @@ def main():
     if kept:
         print(f"kept as they are: {', '.join(kept)} - accepted, and a refine run must start from the prompt the accepted take was "
               f"made from. To rebuild one on purpose (its take then has to be made again): --only <segment>")
+    if kept_stale:
+        print(f"note: the accepted take of {', '.join(kept_stale)} was made from an earlier version of its prompt files (it was accepted "
+              f"with --stale-ok). Refine it from its kept latent (--from-latent); a --seed re-run would follow the files as they are now "
+              f"and give another take.")
+    pending = [v for v in voice_plan(ep) if v["later"]]
+    if pending and not only:
+        who = "; ".join(f"{v['character']} first speaks in {v['first']}" for v in pending)
+        later = sorted({s for v in pending for s in v["later"]})
+        print(f"ORDER - voice samples still to come ({who}): draft and accept the segment(s) a sample is cut from first, cut the sample "
+              f"(references/audio-and-post.md §2), set voice_reference and build again - only then batch {', '.join(later)}. "
+              f"Their prompts change when a sample is attached, and drafts made before that carry no voice anchor.")
     if waiting:
         print("WAITING for a take to be accepted (expected at this stage, the other segments were written):")
         for w in waiting:

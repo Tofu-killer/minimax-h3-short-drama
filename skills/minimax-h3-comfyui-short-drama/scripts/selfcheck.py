@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -319,13 +320,31 @@ def main():
                 r = run(edit + ["--set", "42.image=@bible/room.png"], work)
                 if r.returncode != 0 or "1344x768" not in r.stdout or "prompt (" not in r.stdout or "image2" not in r.stdout:
                     notes.append(f"stills, a complete edit job: {(r.stderr.strip() or r.stdout.strip())[-200:]}")
+                # slips the server would accept or answer with a bare HTTP 400: a prompt file named without @, a size typed as WxH,
+                # a size this pipeline has no use for (advice only)
+                for what, r, need, code in (
+                        ("a prompt file without @", run(t2i + ["--set", "459:452.prompt=bust.txt"], work), "that is a file name", 2),
+                        ("a size written as WxH", run(t2i + ["--set", "459:452.prompt=@bust.txt", "--set", "459:456.width=2688x1536"], work), "takes a number", 2),
+                        ("an unusual size", run(edit + ["--set", "42.image=@bible/room.png", "--set", "170:300.width=1920", "--set", "170:300.height=1080"], work),
+                         "not a size this pipeline uses", 0)):
+                    if r.returncode != code or need not in (r.stdout + r.stderr):
+                        notes.append(f"stills, {what}: {(r.stderr.strip() or r.stdout.strip())[-160:]}")
+                # a first-frame segment has its own refine workflow (same second pass, on the FL2VA weights with their shift)
+                i2v = json.loads(json.dumps(ep))
+                i2v["segments"][2]["mode"] = "i2va"
+                (work / "ep_i2v.json").write_text(json.dumps(i2v, ensure_ascii=False, indent=1), encoding="utf-8")
+                run([sys.executable, str(HERE / "build_prompts.py"), "ep_i2v.json", "--out", "prompts_i2v", "--only", "s03"], work)
+                r = run([sys.executable, str(HERE / "comfy_submit.py"), str(flows / "h3_fl2va_refine.api.json"), "--server", "http://127.0.0.1:9",
+                         "--media", "prompts_i2v/s03.media.json", "--dry-run"], work)
+                if r.returncode != 0 or not all(w in r.stdout for w in ("second pass to 1920x1088", "first_frame", "shift video 6.0")) or "advice:" in r.stdout:
+                    notes.append(f"h3_fl2va_refine with a first-frame segment: {(r.stderr.strip() or r.stdout.strip())[-200:]}")
                 r = run([sys.executable, str(HERE / "lint_prompt.py"), str(flows / "smoke_test_prompt.txt"), "--seconds", "5", "--images", "0", "--audios", "0"], work)
                 if r.returncode != 0:
                     notes.append(f"smoke_test_prompt.txt does not lint: {r.stdout.strip()[-160:]}")
                 broken = [f.name for f in sorted(flows.glob("*.api.json"))
                           if not all(isinstance(v, dict) and "class_type" in v and "inputs" in v for v in json.loads(f.read_text(encoding="utf-8")).values())]
-                good = not notes and not broken and len(list(flows.glob("*.api.json"))) >= 13
-                record("shipped workflows (draft, Sage, refine, LoRA switch, kept latent; stills refuse what is still missing)", "PASS" if good else "FAIL",
+                good = not notes and not broken and len(list(flows.glob("*.api.json"))) >= 17
+                record("shipped workflows (draft, Sage, refine for both families, LoRA switch, kept latent; stills refuse what is missing or mistyped)", "PASS" if good else "FAIL",
                        f"{len(list(flows.glob('*.api.json')))} workflow files" if good else "; ".join(notes + broken)[:300])
             except Exception as e:  # noqa: BLE001
                 record("shipped workflows", "FAIL", f"{type(e).__name__}: {e}")
@@ -392,6 +411,93 @@ def main():
                    "" if kept and changed else f"kept {kept}, change reported {changed}: {(r4.stdout.strip() + ' | ' + r6.stdout.strip())[-260:]}")
         except Exception as e:  # noqa: BLE001
             record("plan first, reconcile after", "FAIL", f"{type(e).__name__}: {e}")
+
+        # the stills planner: every picture the storyboard names gets a prompt file and a command with the right workflow and inputs
+        try:
+            look = "a Chinese man in his forties, about 180 cm and lean, with a long face, short black hair and a grey wool coat over a white shirt"
+            st = json.loads(json.dumps(ep))
+            st["characters"][0].update(sheet_phrase=look, reference_images=["bible/chars/hero_face.png", "bible/chars/hero_full.png"])
+            st["scenes"][0]["reference_images"] = ["bible/scenes/room_master.png"]          # none of these pictures exists yet
+            st["segments"][2]["first_frame"] = "first/s03.png"
+            st["segments"][2]["first_frame_prompt"] = (
+                f"Keep exactly the same person as Picture 1: same face, hairstyle and clothes ({look}). The room is the one in Picture 2: "
+                "same walls, furniture and light direction. New photo: A cinematic film still. A medium close-up, the man sits on the chair "
+                "at the window, lips closed. Exactly 1 person in the frame. Soft daylight from the window on the left.")
+            (work / "ep_stills.json").write_text(json.dumps(st, ensure_ascii=False, indent=1), encoding="utf-8")
+            plan_cmd = [sys.executable, str(HERE / "plan_stills.py"), "ep_stills.json", "--prompts", "stills/prompts", "--out", "stills/plan.md"]
+            r = run(plan_cmd, work)
+            plan_text = (work / "stills/plan.md").read_text(encoding="utf-8") if (work / "stills/plan.md").exists() else ""
+            files = sorted(x.name for x in (work / "stills/prompts").glob("*.txt")) if (work / "stills/prompts").is_dir() else []
+            r2 = run(plan_cmd, work)
+            good = r.returncode == 0 and "5 to make = 18 candidates" in r.stdout and "keyframe_prompt" in r.stdout \
+                and files == ["first_s03.txt", "hero_bust.txt", "hero_face.txt", "hero_full.txt", "room_master.txt"] \
+                and "qwen_edit2511_2ref.api.json" in plan_text and "41.image=@bible/chars/hero_face.png" in plan_text \
+                and "42.image=@bible/scenes/room_s03_crop.png" in plan_text and "41.image=@bible/chars/hero_bust.png" in plan_text \
+                and "-> `first/s03.png`" in plan_text and "--set 459:456.width=2688 --set 459:456.height=1536" in plan_text \
+                and look in (work / "stills/prompts/hero_full.txt").read_text(encoding="utf-8") \
+                and "5 kept as they were" in r2.stdout
+            record("plan_stills.py (prompt files and one command per picture, inputs read from the Picture N sentences)", "PASS" if good else "FAIL",
+                   "" if good else f"{files} | {(r.stderr.strip() or r.stdout.strip())[-260:]}")
+        except Exception as e:  # noqa: BLE001
+            record("plan_stills.py", "FAIL", f"{type(e).__name__}: {e}")
+
+        # a take is checked against what it was made from: another segment's take and a draft made from an earlier prompt
+        # are refused, the out-of-date drafts are listed on every build, and a changed earlier ending keeps being warned about
+        try:
+            import takes as take_records  # noqa: E402
+            from storyboard import frames_for_seconds as _frames  # noqa: E402
+            s1, s2 = flow["segments"][0], flow["segments"][1]
+            (work / "ep_guard.json").write_text(json.dumps(flow, ensure_ascii=False, indent=1), encoding="utf-8")
+            run([sys.executable, str(HERE / "build_prompts.py"), "ep_guard.json", "--out", "prompts/guard", "--allow-planned"], work)
+            spec = json.loads((work / "prompts/guard" / f"{s2['id']}.media.json").read_text(encoding="utf-8"))
+            cwd = os.getcwd()
+            os.chdir(work)                      # the references of a .media.json are relative to the project root
+            try:
+                sha0 = take_records.media_inputs_sha(Path("prompts/guard") / f"{s2['id']}.media.json")
+            finally:
+                os.chdir(cwd)
+            draft = work / "takes/guard" / s2["id"] / f"{s2['id']}_1001"
+            draft.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(work / "selects/s02.mp4", draft / "clip.mp4")
+            (draft / "run.json").write_text(json.dumps({"status": "success", "seed": 1001, "segment": s2["id"], "inputs_sha": sha0,
+                                                        "frames": _frames(s2["duration"]), "opens_from": spec.get("opens_from"),
+                                                        "media_json": f"prompts/guard/{s2['id']}.media.json"}), encoding="utf-8")
+            obs = [sys.executable, str(HERE / "observe_take.py")]
+            common = ["--episode", "ep_guard.json", "--out", "qc/observe_guard"]
+            g1 = run(obs + ["selects/s01.mp4", "--segment", s1["id"], "--as-planned"] + common, work)
+            b1 = run([sys.executable, str(HERE / "build_prompts.py"), "ep_guard.json", "--out", "prompts/guard"], work)
+            fresh = g1.returncode == 0 and "[unchanged]" in b1.stdout and "EARLIER" not in b1.stdout and sha0 is not None
+            g2 = run(obs + ["selects/s01.mp4", "--segment", s1["id"], "--write",
+                            "Hero stands by the door with his back to the window, one hand on the handle.", "--confidence", "medium",
+                            "--deviation", "he went to the door"] + common, work)
+            b2 = run([sys.executable, str(HERE / "build_prompts.py"), "ep_guard.json", "--out", "prompts/guard"], work)
+            b3 = run([sys.executable, str(HERE / "build_prompts.py"), "ep_guard.json", "--out", "prompts/guard"], work)
+            lasting = g2.returncode == 0 and "CHANGED since the last build" in b2.stdout and "[unchanged]" in b3.stdout \
+                and "1 finished take(s)" in b2.stdout and "1 finished take(s)" in b3.stdout
+            g3 = run(obs + [str(draft / "clip.mp4"), "--segment", s2["id"], "--as-planned"] + common, work)
+            state3 = json.loads((work / "ep_guard.json").read_text(encoding="utf-8"))["segments"][1].get("status", "planned")
+            g4 = run(obs + [str(draft / "clip.mp4"), "--segment", s1["id"], "--as-planned"] + common, work)
+            refused = g3.returncode != 0 and "EARLIER version" in (g3.stderr + g3.stdout) and not state3.startswith("accepted") \
+                and g4.returncode != 0 and f"made for segment {s2['id']}" in (g4.stderr + g4.stdout)
+            g5 = run(obs + [str(draft / "clip.mp4"), "--segment", s2["id"], "--as-planned", "--stale-ok"] + common, work)
+            took = json.loads((work / "ep_guard.json").read_text(encoding="utf-8"))["segments"][1].get("accepted_take") or {}
+            v1 = run([sys.executable, str(HERE / "validate_episode.py"), "ep_guard.json"], work)
+            knowingly = g5.returncode == 0 and took.get("inputs_sha") == sha0 and took.get("cut_checked") and "another state than" not in v1.stdout
+            g6 = run(obs + ["selects/s01.mp4", "--segment", s1["id"], "--write",
+                            "Hero sits on the floor under the window with both hands on his knees, facing the door.", "--confidence", "high",
+                            "--deviation", "he sat down"] + common, work)
+            v2 = run([sys.executable, str(HERE / "validate_episode.py"), "ep_guard.json"], work)
+            g7 = run(obs + [str(draft / "clip.mp4"), "--segment", s2["id"], "--as-planned", "--stale-ok"] + common, work)
+            v3 = run([sys.executable, str(HERE / "validate_episode.py"), "ep_guard.json"], work)
+            warned = g6.returncode == 0 and "CHECK THE CUT" in g6.stdout and "another state than" in v2.stdout \
+                and g7.returncode == 0 and "another state than" not in v3.stdout          # looked at and confirmed: the warning ends
+            good = fresh and lasting and refused and knowingly and warned
+            record("takes are checked against what they were made from (wrong segment, out-of-date draft, changed earlier ending)",
+                   "PASS" if good else "FAIL",
+                   "" if good else f"fresh {fresh}, lasting marker {lasting}, refused {refused}, --stale-ok {bool(knowingly)}, warned {warned}: "
+                                   f"{(g3.stderr.strip() or g3.stdout.strip())[-200:]} | {b3.stdout.strip()[-200:]} | {v2.stdout.strip()[-200:]}")
+        except Exception as e:  # noqa: BLE001
+            record("takes are checked against what they were made from", "FAIL", f"{type(e).__name__}: {e}")
 
         # QC over a folder looks at each take once: superseded takes and trimmed copies are left out, a file named alone is not
         both, n_skipped = signals.live_takes([Path("t/s01_1/a.mp4"), Path("t/s01_1/a_trimmed.mp4"), Path("t/s01_1/_prev_ab/a.mp4")])

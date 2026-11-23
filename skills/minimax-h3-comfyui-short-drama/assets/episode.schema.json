@@ -415,13 +415,15 @@
          "description": "Last shot of the segment: settle 0.5 s then hold 1 s (trimmed at assembly)"
         },
         "keyframe": {"type": ["string", "null"], "description": "Optional, ref2va, shots 2 and later: a picture of the frame this shot starts on. It becomes a <Picture N> the prompt names as the keyframe of this shot; comfy_submit.py --anchor also pins it at the shot's cut. Shot 1 uses the segment's first_frame instead"},
-        "keyframe_note": {"type": "string", "description": "Optional: what the keyframe shows, in English, with {asset_id} placeholders; written into its definition line"}
+        "keyframe_note": {"type": "string", "description": "Optional: what the keyframe shows, in English, with {asset_id} placeholders; written into its definition line"},
+        "keyframe_prompt": {"type": ["string", "array"], "items": {"type": "string"}, "description": "For a shot with a keyframe: the complete English prompt the keyframe picture is made from, same form as the segment's first_frame_prompt. Only the image stage (scripts/plan_stills.py) reads it"}
        }
       }
      },
      "first_frame_prompt": {
-      "type": "string",
-      "description": "For a segment that gets a generated first frame (any mode, including ref2va + first_frame): English still-image prompt for the literal first frame (see assets/image-prompts.md)"
+      "type": ["string", "array"],
+      "items": {"type": "string"},
+      "description": "For a segment that gets a generated first frame (any mode, including ref2va + first_frame): the complete English prompt for the edit model, written from the template in assets/image-prompts.md section 6 - it starts with the Keep exactly the same person as Picture N (look) / the exact item shown in Picture N / The room is the one in Picture N sentences, and scripts/plan_stills.py reads from those sentences which picture goes into image1..image3. A list of two prompts = two editing steps (two people + room first, then the prop into the result: Keep everything in Picture 1 exactly as it is ...). Only the image stage reads it"
      },
      "summary": {
       "type": "string",

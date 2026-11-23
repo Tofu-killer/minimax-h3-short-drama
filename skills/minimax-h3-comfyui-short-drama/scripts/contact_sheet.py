@@ -4,7 +4,8 @@
     python3 contact_sheet.py "takes/ep01/s03/**/*.mp4" --episode episodes/ep01.json
     python3 contact_sheet.py final/ep01.mp4 --max 24 --cols 6 --out-dir qc/sheets
 
-Instead of 12 evenly spaced frames, each sheet holds: the first frame, the last moving frame and the very last
+Instead of 12 evenly spaced frames, each sheet holds: the first frame, the last moving frame ("end": with --episode
+the declared 1 s end hold of a segment is left out automatically) and the very last
 frame, any frame qc_probe would flag as an abrupt change at a clip end, the frame just
 before and just after every hard cut (so a shot that never happened, or one that was invented, is visible
 at a glance), one or two frames from the middle of every shot, and the first frame of any black / frozen
@@ -87,15 +88,18 @@ def plan_samples(dur: float, usable: float, fps: float, cuts: list[float], black
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("files", nargs="+", help="clips or glob patterns (quote them on Windows)")
-    ap.add_argument("--freeze-tail", type=float, default=0.0,
-                    help="length of the declared end freeze to leave out. With --episode only on segments whose last shot "
-                         "has end_hold (the same rule make_edl.py and qc_probe.py use); without it on every clip")
+    ap.add_argument("--freeze-tail", type=float, default=None,
+                    help="length of the declared end freeze to leave out, so that \"end\" is the last MOVING frame. Default: 1.0 "
+                         "with --episode, on the segments whose last shot has end_hold (the rule make_edl.py, qc_probe.py and "
+                         "observe_take.py use); 0 without --episode. Given without --episode it applies to every clip")
     ap.add_argument("--episode", help="storyboard JSON (the segment id is read from each clip's path)")
     ap.add_argument("--max", type=int, default=12, help="frames per sheet")
     ap.add_argument("--cols", type=int, default=4)
     ap.add_argument("--width", type=int, default=480, help="width of one frame in the sheet")
     ap.add_argument("--out-dir")
     a = ap.parse_args()
+    if a.freeze_tail is None:
+        a.freeze_tail = 1.0 if a.episode else 0.0
 
     paths: list[Path] = []
     for pat in a.files:

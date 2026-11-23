@@ -79,6 +79,10 @@ import urllib.request
 import uuid
 from pathlib import Path
 
+sys.dont_write_bytecode = True      # keep the skill folder free of __pycache__
+sys.path.insert(0, str(Path(__file__).resolve().parent / "h3lib"))
+import takes as take_records  # noqa: E402  (the fingerprint of a take's inputs, shared with build_prompts.py and observe_take.py)
+
 
 def _utf8_console() -> None:
     """Agents read this output through a pipe; on Windows a pipe defaults to the system code page, where
@@ -127,21 +131,8 @@ def get_json(server, path, default=None):
         return default
 
 
-def sha256_file(p: Path) -> str:
-    h = hashlib.sha256()
-    with open(p, "rb") as fh:
-        for chunk in iter(lambda: fh.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
-def upload_name(path: Path) -> str:
-    """The name a file gets in ComfyUI's input folder: its stem in plain ASCII plus the first 8 hex digits of its
-    content hash. Two different files that share a base name (face.png of two characters) can then not overwrite
-    each other, the same file always lands on the same name, and a Chinese file name never has to travel in an
-    HTTP header."""
-    stem = re.sub(r"[^A-Za-z0-9._-]+", "_", path.stem).strip("._") or "file"
-    return f"{stem}_{sha256_file(path)[:8]}{path.suffix.lower()}"
+sha256_file = take_records.sha256_file
+upload_name = take_records.upload_name      # <ascii stem>_<8 hex of the content hash><suffix>
 
 
 def upload(server, path: Path) -> str:
@@ -191,7 +182,15 @@ def apply_sets(wf, sets, server, media, do_upload, by_title=False):
         if nid not in wf:
             die(f"node {nid} not in workflow")
         SET_TARGETS.append((nid, inp, inp in wf[nid]["inputs"]))
-        wf[nid]["inputs"][inp] = parse_value(raw, inp, server, media, do_upload)
+        old, new = wf[nid]["inputs"].get(inp), parse_value(raw, inp, server, media, do_upload)
+        if isinstance(old, bool) and not isinstance(new, bool):
+            die(f"--set {nid}.{inp}={raw}: this input is a switch (the workflow file has {str(old).lower()}) - write true or false")
+        if isinstance(old, (int, float)) and not isinstance(old, bool) and isinstance(new, str):
+            pair = re.fullmatch(r"\s*(\d+)\s*[xX\u00d7*]\s*(\d+)\s*", new)
+            hint = (f" - give the two numbers separately: --set {nid}.width={pair[1]} --set {nid}.height={pair[2]}"
+                    if pair and inp in ("width", "height") else "")
+            die(f"--set {nid}.{inp}={raw}: this input takes a number (the workflow file has {old}){hint}")
+        wf[nid]["inputs"][inp] = new
 
 
 def audio_seconds(path: Path) -> float | None:
@@ -404,6 +403,13 @@ def apply_media(wf: dict, media_json: Path, server: str, media: dict, do_upload:
     elif anchors and not anchor:
         lines.append("--anchor would also pin " + ("these pictures" if len(anchors) > 1 else "this picture")
                      + " on the timeline (" + ", ".join(f"<Picture {a['picture']}> at frame {a['frame']}" for a in anchors) + ")")
+        canvas = literals(wf, inputs)
+        for a in anchors:                    # the prompt calls it a frame of the video: it should have the video's shape
+            size, w, h = image_size(a["path"]), canvas.get("width"), canvas.get("height")
+            if size and isinstance(w, int) and isinstance(h, int) and h and size[1] and abs((size[0] / size[1]) / (w / h) - 1) > 0.03:
+                lines.append(f"advice: {a['path'].name} is {size[0]}x{size[1]} ({size[0] / size[1]:.3f}:1) but the prompt names it as "
+                             f"{a['what']} of a {w}x{h} ({w / h:.3f}:1) video - a frame picture is made at the canvas size "
+                             f"(references/image-stage.md), otherwise the model has to re-frame it and the opening drifts")
     if guides and want == H3_REF:
         ids = ", ".join(guides)
         lines.append(f"advice: the exported workflow already has {H3_GUIDE} node(s) [{ids}]; they are left as exported, so whatever "
@@ -656,6 +662,15 @@ def settings_summary(wf: dict) -> list[str]:
     return out
 
 
+SECOND_PASS = (H3_HIRES, "MMH3SplitUpscale", "H3LatentUpscaleLBH", "MinimaxH3LatentUpscaler", "ManualSigmas")
+
+
+def first_pass_signature(wf: dict) -> str:
+    """The settings of the first pass in one line (model, LoRA, steps, sampler, canvas, attention patches, pinned
+    frames) - what has to be the same for a --seed re-run to repeat a draft. Second-pass nodes are left out."""
+    return "; ".join(line for line in settings_summary(wf) if not line.startswith(SECOND_PASS))
+
+
 def job_size(wf: dict) -> tuple[int, int]:
     """(frames, pixels per frame) of the H3 job in this workflow, (0, 0) when it cannot be read."""
     for v in wf.values():
@@ -824,6 +839,33 @@ def advice(wf: dict, ratio: str | None) -> list[str]:
     return out
 
 
+STILL_SIZES = {(1024, 1024): "bust / face", (1024, 1536): "full body", (2688, 1536): "scene master / nine-grid", (2048, 2048): "prop",
+               (1344, 768): "first frame / keyframe on the default canvas", (1536, 864): "first frame on the true 16:9 canvas",
+               (864, 480): "first frame of a preview",
+               (768, 1344): "first frame / keyframe of a 9:16 project", (1536, 2688): "scene master of a 9:16 project"}
+
+
+def stills_advice(wf: dict) -> list[str]:
+    """A still-image workflow (no H3 node) asked for a size this pipeline has no use for: usually a typo, or a first
+    frame that is not the video canvas. Never blocks."""
+    if any(v.get("class_type") in (H3_REF, H3_I2V, H3_EMPTY) for v in wf.values()):
+        return []
+    out = []
+    for k, v in wf.items():
+        cls, lit = str(v.get("class_type", "")), literals(wf, v.get("inputs", {}))
+        if not (cls.startswith("Empty") and "Latent" in cls and isinstance(lit.get("width"), int) and isinstance(lit.get("height"), int)):
+            continue
+        w, h = lit["width"], lit["height"]
+        if (w, h) in STILL_SIZES:
+            continue
+        known = "; ".join(f"{a}x{b} {what}" for (a, b), what in STILL_SIZES.items())
+        swapped = f" {h}x{w} is one of them - are width and height swapped?" if (h, w) in STILL_SIZES else ""
+        out.append(f"{cls} [{k}] makes a {w}x{h} picture, which is not a size this pipeline uses ({known}).{swapped} "
+                   f"A first frame or keyframe has to be exactly the video canvas - the video nodes stretch or crop anything else. "
+                   f"Ignore this if the size is what you want")
+    return out
+
+
 LOG_HEADER = ["time", "tag", "seed", "status", "seconds", "workflow", "fingerprint", "output", "overrides", "score", "frames", "pixels", "settings"]
 
 
@@ -911,12 +953,12 @@ def segment_inputs(wf: dict, media: dict) -> str:
     sent along. Two runs with the same seed and the same value here start from the same first pass, whatever else
     the workflow does afterwards (a refine workflow repeats the draft's first pass only if this matches)."""
     prompts = [str(v.get("inputs", {}).get("prompt", "")) for v in wf.values() if v.get("class_type") in (H3_REF, H3_I2V)]
-    return hashlib.sha256(("\x1f".join(prompts) + "\x1e" + "\x1f".join(sorted(media.values()))).encode()).hexdigest()[:16]
+    return take_records.inputs_sha(prompts, media)
 
 
-def same_seed_note(out: Path, dest: Path, seed, inputs_sha: str) -> str:
+def same_seed_note(out: Path, dest: Path, seed, inputs_sha: str, first_pass: str = "") -> str:
     """Another finished take of this seed in the segment's folder (the accepted draft, when this is its refine run):
-    say whether this job starts from the same prompt and references."""
+    say whether this job starts from the same prompt and references, and with the same first-pass settings."""
     for rj in sorted(out.glob(f"*_{seed}/run.json")):
         if rj.parent == dest:
             continue
@@ -929,7 +971,18 @@ def same_seed_note(out: Path, dest: Path, seed, inputs_sha: str) -> str:
         if not r.get("inputs_sha"):
             return f"; {rj.parent.name} has the same seed (made by an earlier version of this script: prompt and references cannot be compared)"
         if r["inputs_sha"] == inputs_sha:
-            return f"; same prompt and references as {rj.parent.name}: with the same first-pass settings this repeats that take"
+            theirs = r.get("first_pass")
+            if theirs and first_pass and theirs != first_pass:
+                mine, other = first_pass.split("; "), theirs.split("; ")
+                gone = [x for x in other if x not in mine]
+                added = [x for x in mine if x not in other]
+                return (f"; WARNING: same prompt and references as {rj.parent.name}, but the first pass is set up differently - "
+                        f"this run will NOT repeat that take (that take: {'; '.join(gone) or 'nothing more'} | this run: "
+                        f"{'; '.join(added) or 'nothing more'}). Use the workflow of the same family (h3_..._sage_refine for a "
+                        f"h3_..._sage draft, the same Turbo switch, the same --anchor), or continue from its kept latent with --from-latent")
+            return (f"; same prompt and references as {rj.parent.name}"
+                    + (" and the same first-pass settings: this repeats that take" if theirs and first_pass
+                       else ": with the same first-pass settings this repeats that take"))
         return (f"; WARNING: {rj.parent.name} has this seed but was made from a different prompt or reference set - this run will "
                 f"NOT repeat that take. If {rj.parent.name} is the accepted draft, submit with the prompt files it was made from "
                 f"(build_prompts.py leaves accepted segments alone unless --only names them)")
@@ -1036,6 +1089,11 @@ def unfilled_problems(wf: dict) -> list[str]:
                     and (cls in (H3_REF, H3_I2V) or k in pos) and not (k in neg and k not in pos):
                 out.append(f"{where}: the prompt is empty - give it with "
                            + ("--media <segment>.media.json" if cls in (H3_REF, H3_I2V) else f"--set {k}.{name}=@<text file>"))
+            text = lit.get(name) if name in v["inputs"] and isinstance(lit.get(name), str) else ""
+            if text.strip() and not re.search(r"\s", text.strip()) and (cls in (H3_REF, H3_I2V) or k in pos) \
+                    and (re.search(r"\.(txt|md|json|prompt)$", text.strip(), re.I) or Path(text.strip()).is_file()):
+                out.append(f"{where}: the prompt is the text \"{text.strip()}\" - that is a file name, not a prompt. To send the "
+                           f"file's content put @ in front: --set {k}.{name}=@{text.strip()}")
         for name in ("image", "audio", "latent"):
             if cls.startswith("Load") and lit.get(name) == NOT_SET:
                 out.append(f"{where}: no file given yet - --set {k}.{name}=@<file>")
@@ -1190,6 +1248,10 @@ def describe_error(status: dict, wf: dict) -> str:
                     "fewer or smaller references (ref_image_size match), the pruned int8 weights; see references/pitfalls.md")
         elif "header too small" in low or "deserializing header" in low or "invalid load key" in low or "unexpected eof" in low:
             hint = " - the model file is incomplete or damaged: compare its size with the download page and fetch it again"
+        elif "no module named 'sageattention'" in low or "sageattention is not new enough" in low:
+            hint = (" - the Sage nodes need the sageattention package (a recent build) in ComfyUI's own Python: "
+                    "references/local-stack-and-acceleration.md §0b. Until it is there, use the same workflow without _sage in "
+                    "its file name - the same picture, only slower")
         elif "no such file" in low or "not found" in low and "file" in low:
             hint = " - a file the workflow names is not where ComfyUI looks for it"
         return f"node {nid} ({name}): {kind + ': ' if kind else ''}{text[:500]}{hint}"
@@ -1473,6 +1535,19 @@ def main():
             where = f"of this workflow in {a.log}"
         except (OSError, ValueError, KeyError):
             past = []
+    if not past and todo:                      # nothing here: the other segments of the episode, then the other folders under takes/
+        import itertools
+        for base, pattern in ((out.parent, "*/*/run.json"), (out.parent.parent, "*/*/run.json"), (out.parent.parent, "*/*/*/run.json")):
+            for rj in itertools.islice(base.glob(pattern), 600):
+                try:
+                    r = json.loads(rj.read_text(encoding="utf-8"))
+                    if r.get("status") == "success" and r.get("seconds") and Path(str(r.get("workflow") or "")).name == Path(a.workflow).name:
+                        past.append((float(r["seconds"]), int(r.get("frames") or 0), int(r.get("pixels") or 0), int(r.get("steps") or 0)))
+                except (OSError, json.JSONDecodeError, ValueError):
+                    pass
+            if past:
+                where = f"of this workflow under {base}"
+                break
     if not todo:
         est = "nothing to do"
     elif past:
@@ -1483,7 +1558,7 @@ def main():
         print("  " + line)
     for line in switch_notes(wf) + settings_summary(view):
         print("  " + line)
-    for line in advice(view, ratio):
+    for line in advice(view, ratio) + stills_advice(view):
         print("  advice: " + line)
     print(f"  output folder: {out}")
     print(f"batch {batch_id}: {len(plan)} take(s) -> {len(todo)} to run; {est}")
@@ -1501,7 +1576,7 @@ def main():
         if p["state"] != "done" and a.from_latent:
             note += kept_latent_note(Path(a.from_latent), inputs_sha)
         elif p["state"] != "done":
-            note += same_seed_note(out, p["dest"], p["seed"], inputs_sha)
+            note += same_seed_note(out, p["dest"], p["seed"], inputs_sha, first_pass_signature(view))
         print(f"  seed {p['seed']:<12} {p['dest']}  [{p['state']}] {note}")
     if not snodes:
         print("  note: this workflow has no `seed` / `noise_seed` the script can read (none at all, or one computed by another node): "
@@ -1553,7 +1628,13 @@ def main():
                     "wall_seconds": wall, "steps": steps,
                     "status": "success" if ok and files else ("error" if not ok else "no_output"),
                     "files": [str(f) for f in files], "workflow": str(a.workflow), "comfyui_version": version,
-                    "overrides": a.set + a.set_title, "media_sha256": media, "inputs_sha": inputs_sha, "frames": frames, "pixels": pixels}
+                    "overrides": a.set + a.set_title, "media_sha256": media, "inputs_sha": inputs_sha, "frames": frames, "pixels": pixels,
+                    "first_pass": first_pass_signature(view)}
+            if a.media:                 # which segment and which prompt build this take belongs to (observe_take.py checks them)
+                meta["segment"] = meta_in.get("segment")
+                meta["media_json"] = str(a.media)
+                if meta_in.get("opens_from"):
+                    meta["opens_from"] = meta_in["opens_from"]
             if not ok:
                 meta["error"] = describe_error(status, wf)
             (dest / "run.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")

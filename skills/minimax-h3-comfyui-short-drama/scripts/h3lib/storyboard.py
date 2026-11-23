@@ -13,6 +13,8 @@ from dataclasses import dataclass, field, asdict, fields
 from pathlib import Path
 from typing import Optional
 
+from takes import text_sha as _state_sha      # one definition of the fingerprint of a hand-over state
+
 CHARS_PER_SECOND = 4.5      # huobao rule: dialogue chars / 4.5 + 2 s acting margin
 ACTING_MARGIN = 2.0
 
@@ -110,7 +112,9 @@ class Segment:
     status: str = "planned"         # planned | generated | accepted | accepted_with_deviation | rejected
     observed_end_state: str = ""    # where the ACCEPTED take really ends, read from its frames - never copied from the plan
     observation_confidence: str = ""   # low | medium | high
-    accepted_take: Optional[dict] = None   # {"path", "sha256"}
+    accepted_take: Optional[dict] = None   # {"path", "sha256"} + what the take was made from: "inputs_sha" (prompt and
+                                    # references), "opens_from" {"segment", "source", "sha"} (the state of the previous segment
+                                    # it opens from), "cut_checked" (sha of that state when the join was confirmed by eye)
     accepted_deviations: list[str] = field(default_factory=list)   # what differs from the plan and was accepted anyway
 
 
@@ -185,7 +189,7 @@ def unknown_fields(raw: dict) -> list[str]:
     for seg in raw.get("segments", []) or []:
         check(f"segment {seg.get('id', '?')}", seg, names(Segment) | {"first_frame_prompt"})
         for sh in seg.get("shots", []) or []:
-            check(f"segment {seg.get('id', '?')} shot {sh.get('index', '?')}", sh, names(Shot))
+            check(f"segment {seg.get('id', '?')} shot {sh.get('index', '?')}", sh, names(Shot) | {"keyframe_prompt"})
             for d in sh.get("dialogue", []) or []:
                 check(f"segment {seg.get('id', '?')} shot {sh.get('index', '?')} dialogue", d, names(Dialogue))
     return out
@@ -263,6 +267,58 @@ def effective_continuity(ep: "Episode", seg: "Segment", allow_planned: bool = Fa
         extra = extra[0].upper() + extra[1:]
         extra = extra if extra[-1] in ".!?" else extra + "."
     return (text + " " + extra).strip(), src
+
+
+def handover_state(ep: "Episode", seg: "Segment", allow_planned: bool = True) -> str:
+    """The state of the previous segment that a segment with an "@observed" continuity opens from right now: the
+    observed end of its accepted take, else (drafts) its planned end_state. '' for an authored continuity."""
+    if not (seg.continuity or "").strip().startswith(OBSERVED):
+        return ""
+    i = next(k for k, x in enumerate(ep.segments) if x is seg)
+    if i == 0:
+        return ""
+    prev = ep.segments[i - 1]
+    if prev.observed_end_state.strip() and prev.status.startswith("accepted"):
+        return prev.observed_end_state.strip()
+    return prev.end_state.strip() if allow_planned else ""
+
+
+def stale_join_problems(ep: "Episode") -> list[str]:
+    """An accepted take that opens from a state the previous segment no longer has: the previous segment's accepted
+    take was changed (or first observed) after this one was made. Warned about until the take is re-made, or the
+    cut is looked at and confirmed (observe_take.py --stale-ok records that)."""
+    out = []
+    for i, seg in enumerate(ep.segments):
+        take = seg.accepted_take or {}
+        known = {(take.get("opens_from") or {}).get("sha"), take.get("cut_checked")} - {None, ""}
+        if i == 0 or not seg.status.startswith("accepted") or not known:
+            continue
+        now = handover_state(ep, seg)
+        if not now:
+            continue
+        sha = _state_sha(now)
+        if sha not in known:
+            prev = ep.segments[i - 1]
+            out.append(f"segment {seg.id}: WARN its accepted take was made to open from another state than {prev.id} ends in now "
+                       f"(now: \"{now[:110]}{'...' if len(now) > 110 else ''}\"). Look at the cut {prev.id} -> {seg.id}: if it "
+                       f"joins, confirm it (observe_take.py <the {seg.id} take> --segment {seg.id} --as-planned or --write ... "
+                       f"--stale-ok); if not, rebuild {seg.id} (build_prompts.py --only {seg.id}) and make its take again")
+    return out
+
+
+def voice_plan(ep: "Episode") -> list[dict]:
+    """Characters who speak but have no voice sample yet: the segment a sample can be cut from (their first spoken
+    one) and the later ref2va segments whose prompt changes once the sample is attached."""
+    out = []
+    for c in ep.characters:
+        if c.voice_reference:
+            continue
+        spoken = [seg for seg in ep.segments if any(d.speaker == c.id for sh in seg.shots for d in sh.dialogue)]
+        if not spoken:
+            continue
+        later = [seg.id for seg in spoken[1:] if seg.mode == "ref2va" and not seg.status.startswith("accepted")]
+        out.append({"character": c.id, "first": spoken[0].id, "later": later})
+    return out
 
 
 SIDES = {"left": "on the left side of the frame", "centre": "at the centre of the frame", "center": "at the centre of the frame",
@@ -874,6 +930,7 @@ def validate_episode(ep: Episode) -> list[str]:
     problems += speech_problems(ep)
     problems += negation_problems(ep)
     problems += voice_and_frame_advice(ep)
+    problems += stale_join_problems(ep)
     problems += list(getattr(ep, "unknown", []))
     problems += reference_problems(ep)
     problems += restated_look_problems(ep)

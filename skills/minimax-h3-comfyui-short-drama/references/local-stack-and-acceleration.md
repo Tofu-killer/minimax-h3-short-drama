@@ -32,7 +32,7 @@
 **基线链**（「先跑一次基线」指的就是它：int8 底模 + Turbo 8 步 + Sage，别的加速全关，用一段固定的 10 s 提示词记下耗时；之后每开一个加速项都和它比）：
 `UNETLoader(int8_convrot)` → `LoraLoaderModelOnly(lightx2v *_turbo_8step_v1.1*_comfyui_bf16, 1.0)` → KJ `PathchSageAttentionKJ(auto)`（KJNodes 里这个节点名本身就拼成 Pathch，搜节点时照这个拼） → KJ `MiniMaxH3MemoryEfficientSageAttentionPatch` → `MiniMaxH3SigmaShift` → Guider。先全关跑一次基线，再逐个开，一次只改一个变量。同 seed 同参数重跑会命中 ComfyUI 结果缓存秒出，计时与对比用 seed+1。
 
-- **int8_convrot 底模上挂 LoRA**：官方模板用 ComfyUI 自带的 `LoraLoaderModelOnly`，第一次照它来就行。「合并进权重，还是运行时另挂一条分支（bypass）」是社区节点才有的选项：Larryvrh `ComfyUI-MiniMax-H3-Turbo` 的 `low_vram` 开关（开 = 合并）、cicalooo `ComfyUI-H3-PowerLoraStack` 的 `quantized_layers=auto`（运行时低秩分支；多 LoRA 时视频风格 LoRA 的 audio 模态缩到 0–0.25）。两边的说法相反——一说合并往返会注入约 1.5% 的权重噪声、而 H3 LoRA 的改动量只有 0.01–0.08%，所以运行时分支更锐；另一位在 3090 上测到合并快 25%、近景皮肤更干净。装了这类节点就两种各跑一次、seed+1 对比，以自己机器的结果为准；没装就不用管。装 LoRA 后日志里要能看到 `208 patches attached`（社区的经验值，看不到说明 LoRA 没挂上）。
+- **int8_convrot 底模上挂 LoRA**：官方模板用 ComfyUI 自带的 `LoraLoaderModelOnly`，第一次照它来就行。「合并进权重，还是运行时另挂一条分支（bypass）」是社区节点才有的选项：Larryvrh `ComfyUI-MiniMax-H3-Turbo` 的 `low_vram` 开关（开 = 合并）、cicalooo `ComfyUI-H3-PowerLoraStack` 的 `quantized_layers=auto`（运行时低秩分支；多 LoRA 时视频风格 LoRA 的 audio 模态缩到 0–0.25）。两边的说法相反——一说合并往返会注入约 1.5% 的权重噪声、而 H3 LoRA 的改动量只有 0.01–0.08%，所以运行时分支更锐；另一位在 3090 上测到合并快 25%、近景皮肤更干净。装了这类节点就两种各跑一次、seed+1 对比，以自己机器的结果为准；没装就不用管。装 LoRA 后日志里要能看到 `… 208 patches attached.`（看不到、或者数字不是 208，说明 LoRA 没挂全；这一行只在默认的 DynamicVRAM 加载路径下打印，条件见 `comfyui-nodes.md` §1「LoRA 和底模对不对得上」）。
 - 8 步 Turbo 上叠风格 / 运镜 LoRA，**额外 LoRA 强度之和 ≤ 1.3**（0.6+0.3+0.4 实心；0.8+0.5+0.6 小物件透明重影）。
 
 ## 2. 推荐组合（RTX 4090 24 GB，Ref2VA 短剧）

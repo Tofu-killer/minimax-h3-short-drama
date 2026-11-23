@@ -1,0 +1,331 @@
+{
+ "92": {
+  "inputs": {
+   "filename_prefix": "video/h3_fl2va_refine",
+   "format": "auto",
+   "format.codec": "auto",
+   "codec": "auto",
+   "video": [
+    "105:91",
+    0
+   ]
+  },
+  "class_type": "SaveVideo",
+  "_meta": {
+   "title": "Save Video"
+  }
+ },
+ "105:11": {
+  "inputs": {
+   "vae_name": "minimax_h3_video_vae_int8_convrot.safetensors"
+  },
+  "class_type": "VAELoader",
+  "_meta": {
+   "title": "Load VAE"
+  }
+ },
+ "105:24": {
+  "inputs": {
+   "vae_name": "minimax_h3_audio_vae_fp32.safetensors"
+  },
+  "class_type": "VAELoader",
+  "_meta": {
+   "title": "Load VAE"
+  }
+ },
+ "105:23": {
+  "inputs": {
+   "samples": [
+    "300",
+    0
+   ],
+   "vae": [
+    "105:24",
+    0
+   ]
+  },
+  "class_type": "VAEDecodeAudio",
+  "_meta": {
+   "title": "VAE Decode Audio"
+  }
+ },
+ "105:10": {
+  "inputs": {
+   "samples": [
+    "300",
+    0
+   ],
+   "vae": [
+    "105:11",
+    0
+   ]
+  },
+  "class_type": "VAEDecode",
+  "_meta": {
+   "title": "VAE Decode"
+  }
+ },
+ "105:17": {
+  "inputs": {
+   "sampler_name": "euler"
+  },
+  "class_type": "KSamplerSelect",
+  "_meta": {
+   "title": "sampler"
+  }
+ },
+ "105:9": {
+  "inputs": {
+   "scheduler": "simple",
+   "steps": [
+    "105:123",
+    0
+   ],
+   "denoise": 1,
+   "model": [
+    "105:122",
+    0
+   ]
+  },
+  "class_type": "BasicScheduler",
+  "_meta": {
+   "title": "BasicScheduler"
+  }
+ },
+ "105:14": {
+  "inputs": {
+   "noise": [
+    "105:15",
+    0
+   ],
+   "guider": [
+    "105:16",
+    0
+   ],
+   "sampler": [
+    "105:17",
+    0
+   ],
+   "sigmas": [
+    "105:9",
+    0
+   ],
+   "latent_image": [
+    "105:104",
+    1
+   ]
+  },
+  "class_type": "SamplerCustomAdvanced",
+  "_meta": {
+   "title": "SamplerCustomAdvanced"
+  }
+ },
+ "105:16": {
+  "inputs": {
+   "model": [
+    "105:122",
+    0
+   ],
+   "conditioning": [
+    "105:104",
+    0
+   ]
+  },
+  "class_type": "BasicGuider",
+  "_meta": {
+   "title": "Basic Guider"
+  }
+ },
+ "105:6": {
+  "inputs": {
+   "unet_name": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+   "weight_dtype": "default"
+  },
+  "class_type": "UNETLoader",
+  "_meta": {
+   "title": "Load Diffusion Model"
+  }
+ },
+ "105:13": {
+  "inputs": {
+   "clip_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+   "type": "minimax",
+   "device": "default"
+  },
+  "class_type": "CLIPLoader",
+  "_meta": {
+   "title": "Load CLIP"
+  }
+ },
+ "105:15": {
+  "inputs": {
+   "noise_seed": 1001
+  },
+  "class_type": "RandomNoise",
+  "_meta": {
+   "title": "seed"
+  }
+ },
+ "105:91": {
+  "inputs": {
+   "fps": 24,
+   "bit_depth": 8,
+   "color_space": "sRGB",
+   "codec": "none",
+   "images": [
+    "105:10",
+    0
+   ],
+   "audio": [
+    "105:23",
+    0
+   ]
+  },
+  "class_type": "CreateVideo",
+  "_meta": {
+   "title": "Create Video"
+  }
+ },
+ "105:104": {
+  "inputs": {
+   "prompt": "",
+   "width": 1344,
+   "height": 768,
+   "length": 243,
+   "clip": [
+    "105:13",
+    0
+   ],
+   "vae": [
+    "105:11",
+    0
+   ]
+  },
+  "class_type": "MiniMaxH3ImageToVideo",
+  "_meta": {
+   "title": "H3 FL2VA (prompt, size, length, first / last frame: set by --media)"
+  }
+ },
+ "105:121": {
+  "inputs": {
+   "lora_name": "minimax_h3_fl2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors",
+   "strength_model": 1,
+   "model": [
+    "105:6",
+    0
+   ]
+  },
+  "class_type": "LoraLoaderModelOnly",
+  "_meta": {
+   "title": "Turbo LoRA"
+  }
+ },
+ "105:122": {
+  "inputs": {
+   "switch": [
+    "105:126",
+    0
+   ],
+   "on_false": [
+    "105:6",
+    0
+   ],
+   "on_true": [
+    "105:200",
+    0
+   ]
+  },
+  "class_type": "ComfySwitchNode",
+  "_meta": {
+   "title": "model: with or without the LoRA"
+  }
+ },
+ "105:123": {
+  "inputs": {
+   "switch": [
+    "105:126",
+    0
+   ],
+   "on_false": [
+    "105:124",
+    0
+   ],
+   "on_true": [
+    "105:125",
+    0
+   ]
+  },
+  "class_type": "ComfySwitchNode",
+  "_meta": {
+   "title": "steps: with or without the LoRA"
+  }
+ },
+ "105:124": {
+  "inputs": {
+   "value": 20
+  },
+  "class_type": "PrimitiveInt",
+  "_meta": {
+   "title": "steps without the LoRA"
+  }
+ },
+ "105:125": {
+  "inputs": {
+   "value": 8
+  },
+  "class_type": "PrimitiveInt",
+  "_meta": {
+   "title": "steps with the LoRA"
+  }
+ },
+ "105:126": {
+  "inputs": {
+   "value": true
+  },
+  "class_type": "PrimitiveBoolean",
+  "_meta": {
+   "title": "turbo (true = 8-step LoRA, false = 20 steps without it)"
+  }
+ },
+ "105:200": {
+  "class_type": "MiniMaxH3SigmaShift",
+  "_meta": {
+   "title": "shift for the Turbo LoRA (v1.0 768p: 6 / 3)"
+  },
+  "inputs": {
+   "model": [
+    "105:121",
+    0
+   ],
+   "shift_video": 6.0,
+   "shift_audio": 3.0
+  }
+ },
+ "300": {
+  "class_type": "H3HiresFix",
+  "_meta": {
+   "title": "refine (H3 Hires Fix)"
+  },
+  "inputs": {
+   "model": [
+    "105:122",
+    0
+   ],
+   "positive": [
+    "105:104",
+    0
+   ],
+   "latent": [
+    "105:14",
+    0
+   ],
+   "width": 1920,
+   "height": 1088,
+   "sigma_start": 0.45,
+   "seed": 1001,
+   "lbh_model": "minimax_h3_latent_upscaler_3d_conv_v1_fp16.safetensors",
+   "schedule_steps": 20,
+   "steps_override": 2
+  }
+ }
+}

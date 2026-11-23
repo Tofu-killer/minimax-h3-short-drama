@@ -126,20 +126,23 @@ ComfyUI 0.37.2 已内置 Qwen-Image 2.1（`TextEncodeQwenImage21`、`QwenImage21
 
 ## 4. 一致性工作流
 
-每一步用哪个工作流、怎么排队（`W` = `<skill>/assets/workflows`，`S` = `python <skill>/scripts/comfy_submit.py`；先 `--dry-run`，确认后带 `--confirm`；提示词先按 `assets/image-prompts.md` 的模板写进 `bible/prompts/*.txt`）：
+**不用照着下表手写**：`python <skill>/scripts/plan_stills.py episodes/ep01.json` 读分镜 JSON，按 `assets/image-prompts.md` 的模板把每张图的提示词写进 `bible/prompts/*.txt`，并在 `bible/stills_plan.md` 里逐张列出命令（工作流、`image1`–`image3` 各接哪张图、尺寸、候选数、输出目录和 tag、选中后复制成的文件名），打印总共要出多少张。它用到的字段：角色的 `sheet_phrase`（定妆照、全身、face），场景和道具的 `description`（母版、九宫格、道具），段的 `first_frame_prompt` 和镜头的 `keyframe_prompt`（首帧、关键帧——这两样在分镜阶段写好，是按 §6 模板填完的**完整**提示词；脚本从里面的 `same person as Picture N (外貌)` / `exact item shown in Picture N` / `The room is the one in Picture N` 三种句子读出每个图像输入接谁；两人加道具同框时写成两条的列表 = 两步编辑）。文件名不用另起：定妆照是 `<角色图所在目录>/<id>_bust.png`，其余就是分镜里已经写的路径。过肩镜头里背对镜头的人要背面视图时加 `--back <角色 id>`（脚本看到给首帧 / 关键帧的镜头写着 `over the shoulder of {id}` 会提醒）。只有资产表、还没有分镜时也能跑（先出定妆照、视图、母版、道具），分镜定了再跑一次补上首帧；已经在盘上的图标成已完成，已有的提示词文件不会被覆盖（手改过的保留，`--rewrite` 才重写）。
+
+下表是它列出来的命令的样子（`W` = `<skill>/assets/workflows`，`S` = `python <skill>/scripts/comfy_submit.py`；每条先加 `--dry-run` 看预览，确认后带 `--confirm`）：
 
 | 出什么 | 命令 |
 |--------|------|
 | 定妆照（1024×1024，6 个 seed） | `S $W/qwen21_t2i.api.json --set 459:452.prompt=@bible/prompts/<id>_bust.txt --batch 6 --seed 1 --out bible/candidates/<id> --tag bust` |
 | 场景母版（2688×1536，无人） | 同上，加 `--set 459:456.width=2688 --set 459:456.height=1536`，`--tag master` |
 | 道具白底图（2048×2048） | 同上，加 `--set 459:456.width=2048 --set 459:456.height=2048`，`--tag prop` |
-| 正面全身 / face.png / 侧 / 背（从锚点派生，1 张输入） | `S $W/qwen_edit2511_1ref.api.json --set 41.image=@bible/chars/<id>_bust.png --set 170:151.prompt=@bible/prompts/<id>_full.txt --set 170:300.width=1024 --set 170:300.height=1536 --batch 3 --seed 1 --out bible/candidates/<id> --tag full`（face.png 用 1024×1024） |
-| 单人首帧（人 + 场景裁切，1344×768） | `S $W/qwen_edit2511_2ref.api.json --set 41.image=@bible/chars/<id>_face.png --set 42.image=@bible/scenes/<场景>_<段>_crop.png --set 170:151.prompt=@bible/prompts/first_<段>.txt --batch 3 --seed 1 --out first/candidates/<段> --tag first` |
+| 场景九宫格（2688×1536，只给人看和裁单机位图，不当参考） | 同母版，提示词换成 `<场景>_grid9.txt`，`--batch 2 --tag grid` |
+| 正面全身 / face.png / 侧 / 背（从锚点派生，1 张输入） | `S $W/qwen_edit2511_1ref.api.json --set 41.image=@bible/chars/<id>_bust.png --set 170:151.prompt=@bible/prompts/<id>_full.txt --set 170:300.width=1024 --set 170:300.height=1536 --batch 3 --seed 1 --out bible/candidates/<id> --tag full`（face.png 用 1024×1024、`--tag face`；侧 / 背的 `image1` 是正面全身，`--tag side` / `--tag back`——每种视图各用自己的 tag，同一个 tag 再跑会把上一批候选挪进 `_prev_`） |
+| 单人首帧（人 + 场景裁切，1344×768） | `S $W/qwen_edit2511_2ref.api.json --set 41.image=@bible/chars/<id>_face.png --set 42.image=@bible/scenes/<场景>_<段>_crop.png --set 170:151.prompt=@bible/prompts/first_<段>.txt --set "170:149.prompt=text, watermark, caption, collage, split panels, extra person, extra fingers, waxy skin" --batch 3 --seed 1 --out first/candidates/<段> --tag first_<段>`（关键帧同样做，提示词 `key_<段>_<镜号>.txt`、`--tag key_<段>_<镜号>`） |
 | 两人首帧 / 人 + 道具首帧（3 张输入） | `S $W/qwen_edit2511_3ref.api.json`，再加 `--set 43.image=@…`；`image1`、`image2` 是人或道具，最后一张是场景裁切 |
 
 选中的图从 `…/candidates/…` 复制成正式的文件名（`bible/chars/<id>_bust.png`、`first/<段>.png`）。
 
-**先数一下要出多少张**（估时间用）：每个角色 定妆照 6 + 正面全身 3 + face.png 3；每个场景 母版 3–4（逐段的裁切用 ffmpeg，不占显卡）；每个道具 3–4；每段首帧 3。两个角色、一个场景、一个道具、四段的 30 s 样片大约是 2 × 12 + 4 + 4 + 4 × 3 = **44 张**。侧面、背面视图只在分镜里真有对应机位（过肩、背影、侧面走位）的角色身上出，每个再加 3 张。每张要多久没有 4090 的实测，`first-run-checklist.md` 第 5 项量出来之后乘一下就是这一步的时间。全集的首帧按分镜里计划的末态一次做完，和出视频分开各装一次模型。出图的默认步数是模板的（文生图 25 步、编辑 40 步）；成品想按官方管线的步数出，加 `--set 459:458.steps=50`；编辑想快一倍，`--set 170:169.steps=20`。
+**先数一下要出多少张**（估时间用）：每个角色 定妆照 6 + 正面全身 3 + face.png 3；每个场景 母版 3–4（逐段的裁切用 ffmpeg，不占显卡）；每个道具 3–4；每段首帧 3。两个角色、一个场景、一个道具、四段的 30 s 样片，光是这几样就是 2 × 12 + 3 + 3 + 4 × 3 = 42 张；再加上九宫格（2）、每张关键帧（3）、两人加道具同框要分两步的首帧（多 3）、过肩镜头要的背面视图（每人 3），一次独立复测按同样的规则数出来是 54 张左右——**以 `plan_stills.py` 打印的张数为准**，它是照你这份分镜一张一张数的。侧面、背面视图只在分镜里真有对应机位（过肩、背影、侧面走位）的角色身上出。每张要多久没有 4090 的实测，`first-run-checklist.md` 第 5 项量出来之后乘一下就是这一步的时间。全集的首帧按分镜里计划的末态一次做完，和出视频分开各装一次模型。出图的默认步数是模板的（文生图 25 步、编辑 40 步）；成品想按官方管线的步数出，加 `--set 459:458.steps=50`；编辑想快一倍，`--set 170:169.steps=20`。
 
 1. **定妆照**（Qwen 2.1，附带工作流默认 25 步——官方模板的默认值；挑中的那个 seed 想要更细可以加 `--set 459:458.steps=50` 重出一张，官方管线是 40–50 步；或 Z-Image-Turbo）：同一外观文字跑 4–8 个 seed，人挑一张，存 `bible/chars/<id>_bust.png`，之后不再换（mathruffian）；「冻结」要落成机器可读，记进 `bible/assets.json`（布局见本节「冻结与过期记录」）。外观文字（LOOK）存进系列圣经，**每一镜首帧原样照抄**，少写一次就掉眼镜换发型（mathruffian `frames()`）。
 2. **正面全身 + 派生视图**：Edit 2511 以 bust 为 Picture 1 套【派生视图】模板出一张**正面全身**（`<id>_full.png`），人确认后与 bust 一起冻结（待 A/B）；再逐张出 face.png（参考 bust）、纯 90° 侧与背（参考正面全身），每张单人单视图、只参考锚点、互不引用（编辑模型保脸，mathruffian「長相像」；shuohao character-refs）。16:9 角色板用脚本把这几张拼起来（`<id>_sheet.png`）只给人审。备选：Contact Sheet 从 bust 出五视图，逐视图存成单人图再拼板。infinite-creation 的做法是把一张现成三视图板当第 1 张参考让 2511 照「排版格式」出新人物（它的 2511 工作流示例提示）；这条路把版式当参考，身份另靠文字，出的是合成板，只作备选且只给人审。
@@ -188,7 +191,7 @@ ComfyUI 0.37.2 已内置 Qwen-Image 2.1（`TextEncodeQwenImage21`、`QwenImage21
 "characters": [{"id": "lin_lan", "reference_images": ["bible/chars/lin_lan_face.png", "bible/chars/lin_lan_full.png"], …}],
 "scenes":     [{"id": "corridor", "reference_images": ["bible/scenes/corridor_master.png", "bible/scenes/corridor_grid9.png"], …}],
 "props":      [{"id": "prop_folder", "reference_images": ["bible/props/prop_folder.png"], …}],
-"segments":   [{"id": "s03", "mode": "i2va", "first_frame": "first/s03.png", "first_frame_prompt": "<§3 首帧模板填好的全文>", …}]
+"segments":   [{"id": "s03", "mode": "i2va", "first_frame": "first/s03.png", "first_frame_prompt": "<assets/image-prompts.md §6 模板填好的全文>", …}]
 ```
 
 - 上面示例里的路径是相对项目根目录写的；分镜 JSON 放在 `episodes/` 下时两种写法都认（相对 JSON 所在目录，或相对运行脚本的项目根目录）。

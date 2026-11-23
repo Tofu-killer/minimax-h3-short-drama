@@ -41,7 +41,7 @@
 | VAE 解码出格子 | tile > 256 | 保持 256 |
 | 右 / 下边缘色条 | 二采 latent 宽高为奇数 | 像素 32 倍数且 latent 偶数 |
 | 重噪二采花屏 | stock `AddNoise` 对 CONST 流二次缩放 | rockerBOO `MiniMaxH3AddNoise` |
-| LoRA 好像没生效 | 日志无 `208 patches attached` | 检查加载顺序 / 文件 |
+| LoRA 好像没生效 | 日志无 `… 208 patches attached.`（这一行只在默认的 DynamicVRAM 加载路径下有；带 `--disable-dynamic-vram` / `--highvram` / `--gpu-only` 启动的没有，那时看有没有 `ERROR lora`） | 检查加载顺序 / 文件；预览里 LoRA 文件名和开关对不对 |
 | 画质微糊、偏噪 | int8 底模上把 LoRA 反量化合并 | 运行时分支 / bypass |
 | 采样中途卡 18–43 s | 轮询 HTTP | 轮询间隔 ≥ 20 s |
 | 同配置越跑越慢（1.8×） | CUDA 崩溃前兆 | 重启 ComfyUI |
