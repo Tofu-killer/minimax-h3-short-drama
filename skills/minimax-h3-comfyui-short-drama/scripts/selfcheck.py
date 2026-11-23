@@ -572,8 +572,20 @@ def main():
                 and (work / "stills/prompts/hero_bust.txt").read_text(encoding="utf-8") == "my own portrait text\n" \
                 and "hero_bust.txt differs from what the storyboard gives now and was kept as it is" in r4.stdout.replace("\\", "/") \
                 and "silver ring" in (work / "stills/prompts/hero_full.txt").read_text(encoding="utf-8") and "MAKE AGAIN (1)" in r4.stdout
+            # a picture made from another picture goes out of date when that input is made again: the first frame of a
+            # two-step frame, a frame made from a face picture
+            (work / "first/s03.png").write_bytes(b"made from the prompt of now")
+            (work / "bible/chars").mkdir(parents=True, exist_ok=True)
+            (work / "bible/chars/hero_face.png").write_bytes(b"face v1")
+            run(plan_cmd, work)                                   # both on disk: recorded as belonging together
+            (work / "bible/chars/hero_face.png").write_bytes(b"face v2")
+            r5 = run(plan_cmd, work)
+            plan5 = (work / "stills/plan.md").read_text(encoding="utf-8")
+            follows = follows and "first/s03.png" in r5.stdout.split("MAKE AGAIN")[-1] \
+                and "made from an earlier version of bible/chars/hero_face.png" in plan5 \
+                and "For other candidates of the same prompt" in plan5      # a picture on disk keeps its command
             record("plan_stills.py follows the storyboard (changed prompt rewritten, its picture listed to make again, hand edits kept)",
-                   "PASS" if follows else "FAIL", "" if follows else f"{r3.stdout.strip()[-260:]} | {r4.stdout.strip()[-200:]}")
+                   "PASS" if follows else "FAIL", "" if follows else f"{r3.stdout.strip()[-260:]} | {r4.stdout.strip()[-200:]} | {r5.stdout.strip()[-200:]}")
         except Exception as e:  # noqa: BLE001
             record("plan_stills.py", "FAIL", f"{type(e).__name__}: {e}")
 

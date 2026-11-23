@@ -7,8 +7,9 @@
 
 The list is assets/workflows/models.json: for every file its HuggingFace repository, the folder under ComfyUI/models
 it belongs in, its size and its SHA-256 (as listed on HuggingFace on the date in that file). Sets: ref2va (the main
-video path), stills (Qwen-Image 2.1 + Qwen-Image-Edit-2511), refine (the latent upscaler), fl2va (first / last frame
-and text-only segments). Without --sets: ref2va, stills and refine.
+video path), stills (= t2i, Qwen-Image 2.1, + edit, Qwen-Image-Edit-2511), refine (the latent upscaler), fl2va (first /
+last frame and text-only segments), zimage (Z-Image-Turbo, the Apache-2.0 text-to-picture model). Without --sets:
+ref2va, stills and refine. A project that earns money: --sets ref2va edit zimage refine.
 
 Check (default) tells for each file: ok / missing / incomplete (smaller than it should be: an interrupted download,
 the usual cause of "header too small" or a model that will not load) / wrong size / in the wrong folder (found
@@ -149,15 +150,21 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0], formatter_class=argparse.RawDescriptionHelpFormatter,
                                  epilog=__doc__[__doc__.index("The list is"):])
     ap.add_argument("--comfyui", required=True, help="the ComfyUI folder (the one that holds main.py and models/)")
-    ap.add_argument("--sets", nargs="+", default=["ref2va", "stills", "refine"], help="ref2va stills refine fl2va zimage (default: the first three; zimage = the Apache-2.0 text-to-image model for commercial projects)")
+    ap.add_argument("--sets", nargs="+", default=["ref2va", "stills", "refine"], help="ref2va, stills (= t2i + edit), refine, fl2va, zimage; default: ref2va stills refine. A project that earns money takes `ref2va edit zimage refine`: t2i is Qwen-Image 2.1 (research licence), zimage its Apache-2.0 replacement")
     ap.add_argument("--download", action="store_true", help="fetch what is missing or incomplete (default: only check)")
     ap.add_argument("--verify-hash", action="store_true", help="also compare the SHA-256 of files already on disk (slow)")
     a = ap.parse_args()
 
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    aliases = manifest.get("aliases", {})                   # stills = t2i + edit
+    asked, a.sets = a.sets, []
+    for name in asked:
+        for real in aliases.get(name, [name]):
+            if real not in a.sets:
+                a.sets.append(real)
     unknown = [s for s in a.sets if s not in manifest["sets"]]
     if unknown:
-        sys.exit(f"unknown set(s) {unknown}; there are: {', '.join(manifest['sets'])}")
+        sys.exit(f"unknown set(s) {unknown}; there are: {', '.join(list(manifest['sets']) + list(aliases))}")
     root = Path(a.comfyui)
     models = root / "models"
     if not models.is_dir():

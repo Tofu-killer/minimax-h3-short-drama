@@ -33,6 +33,7 @@ uses --t2i zimage instead (Z-Image-Turbo, Apache-2.0; workflow zimage_turbo_t2i.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -105,10 +106,10 @@ def view_prompt(look: str, style: str, view: str) -> str:
 def master_prompt(desc: str, style: str, ratio: str) -> str:
     place = desc.rstrip(". ")
     if is_anime(style):
-        return (f"An anime background painting of {place}, with nobody in it. Wide establishing view at eye level along the main axis, "
+        return (f"An anime background painting of {place}, unoccupied. Wide establishing view at eye level along the main axis, "
                 f"{ratio}, painted style matching the character sheets, {style.rstrip('. ')}. "
                 f"The space holds only its architecture and furniture, deserted and still.")
-    return (f"A cinematic film still of {place}, with nobody in it. Wide establishing view at eye level along the main axis, {ratio}. "
+    return (f"A cinematic film still of {place}, unoccupied. Wide establishing view at eye level along the main axis, {ratio}. "
             f"Soft falloff with detail kept in the shadows. Shot on a 35mm lens at f/4, deep focus, true-to-life colors, uncluttered. "
             f"The space holds only its architecture and furniture, deserted and still.")
 
@@ -117,7 +118,7 @@ def grid_prompt(desc: str, style: str, ratio: str) -> str:
     # the episode's style line describes people and acting; a board of empty rooms only takes the medium from it
     look = style.rstrip(". ") if is_anime(style) else "Live-action photograph, true-to-life colors"
     return (f"One {ratio} location board divided into exactly nine equal panels in a 3x3 grid with thin white gutters. All nine panels show "
-            f"the same place, empty of people, with identical architecture, furniture positions, materials, colors, time of day and light "
+            f"the same place, unoccupied, with identical architecture, furniture positions, materials, colors, time of day and light "
             f"direction; only the camera position changes. 1 view from the doorway into the room; 2 wide view of the main activity area; "
             f"3 the window side with the light falling in; 4 reverse view from inside toward the door; 5 high overhead view of the floor "
             f"layout; 6 long-lens diagonal view from one corner to the opposite corner; 7 close view of the most distinctive piece of "
@@ -176,6 +177,8 @@ class Plan:
         self.written: list[str] = []
         self.updated: list[str] = []
         self.kept: list[str] = []
+        self.why: dict[str, str] = {}             # picture -> why it has to be made again
+        self.frame_inputs_of: dict[tuple, set] = {}   # (segment, shot index) -> the pictures its frame picture is made from
         self.record_file = prompts / ".stills_plan.json"      # what this script wrote, and which prompt each picture was made from
         try:
             self.record = json.loads(self.record_file.read_text(encoding="utf-8"))
@@ -211,19 +214,39 @@ class Plan:
         self.record["prompts"][path.name] = new
         return path
 
-    def picture_state(self, dest: str, prompt: Path | None) -> str:
-        """'missing' | 'have' | 'stale' (on disk, but made before its prompt last changed)."""
+    def picture_state(self, dest: str, prompt: Path | None, inputs: list | None = None) -> str:
+        """'missing' | 'have' | 'stale' - on disk, but made before its prompt last changed, or from an input picture
+        (a face, a room crop, the first step of a two-step frame) that has been made again since. Why it is stale is
+        kept in self.why[dest]."""
         if not dest or not Path(dest).exists():
             self.record["pictures"].pop(dest, None)
             return "missing"
         if prompt is None or not prompt.exists():
             return "have"
         now, mtime = sha(prompt.read_text(encoding="utf-8")), round(Path(dest).stat().st_mtime, 2)
+        made_from = {}
+        for i in inputs or []:
+            try:
+                made_from[i] = hashlib.sha256(Path(i).read_bytes()).hexdigest()[:16]
+            except OSError:
+                pass                                          # an input that is not there yet says nothing
         rec = self.record["pictures"].get(dest)
-        if rec is None or rec.get("mtime") != mtime:          # first seen, or made again since: it belongs to the prompt of now
-            self.record["pictures"][dest] = {"prompt": now, "mtime": mtime}
+        if rec is None or rec.get("mtime") != mtime:          # first seen, or made again since: it belongs to what is there now
+            self.record["pictures"][dest] = {"prompt": now, "mtime": mtime, "inputs": made_from}
             return "have"
-        return "have" if rec.get("prompt") == now else "stale"
+        if rec.get("prompt") != now:
+            self.why[dest] = "the file on disk was made from an earlier version of this prompt"
+            return "stale"
+        if "inputs" not in rec:                               # recorded by an earlier version of this script
+            rec["inputs"] = made_from
+            return "have"
+        changed = [i for i, h in made_from.items() if rec["inputs"].get(i) not in (None, h)]
+        for i, h in made_from.items():
+            rec["inputs"].setdefault(i, h)                    # an input that did not exist when this picture was first seen
+        if changed:
+            self.why[dest] = f"it was made from an earlier version of {', '.join(changed)}"
+            return "stale"
+        return "have"
 
     # -- one picture -------------------------------------------------------------------------------------
     def add(self, phase: str, what: str, dest: str, workflow: str, prompt: Path | None, n: int, out: str, tag: str,
@@ -244,7 +267,7 @@ class Plan:
             if tuple(size) != default:
                 sets.append(f"--set {holder}.width={size[0]} --set {holder}.height={size[1]}")
         cmd = f"{self.script} {quoted(W / workflow)} {' '.join(sets)} --batch {n} --seed 1 --out {quoted(out)} --tag {tag}"
-        state = self.picture_state(dest, prompt)
+        state = self.picture_state(dest, prompt, [i for i in images or [] if not str(i).startswith("<")])
         self.items.append({"phase": phase, "what": what, "dest": dest, "have": state == "have", "stale": state == "stale", "n": n,
                            "cmd": cmd, "size": size, "problems": problems or [], "needs": needs or [], "out": out, "tag": tag})
 
@@ -259,6 +282,7 @@ class Plan:
                      "face": pick(refs, "face") or (base / f"{cid}_face.png").as_posix(),
                      "full": pick(refs, "full") or (base / f"{cid}_full.png").as_posix()}
             c["_face"] = paths["face"]
+            c["_front"] = {paths["bust"], paths["face"], paths["full"]}
             cand = f"bible/candidates/{cid}"
             if not look:
                 self.notes.append(f"character {cid} has no sheet_phrase: its bust and views cannot be written - add the full look "
@@ -375,6 +399,7 @@ class Plan:
         for k, text in enumerate(steps, 1):
             last = k == len(steps)
             images, problems = self.frame_inputs(text, seg, shot, carried)
+            self.frame_inputs_of.setdefault((seg["id"], shot.get("index", 1)), set()).update(images)
             if not images:
                 problems.append("the prompt names no Picture: a frame is made by the edit model from the character / prop / room "
                                 "pictures - start it with the Keep ... as Picture N sentences of the template")
@@ -405,6 +430,9 @@ class Plan:
                         ots.append((seg["id"], sh.get("index", "?"), who))
         chars = {c["id"]: c for c in self.raw.get("characters", [])}
         for sid, idx, who in ots:
+            given = self.frame_inputs_of.get((sid, idx if idx != "?" else 1), set())
+            if who in chars and not (given & chars[who].get("_front", set())):
+                continue                                      # the frame is given no front picture of that person: nothing to warn about
             if who in chars and not (chars[who].get("_back") and Path(chars[who]["_back"]).exists()):
                 self.notes.append(f"{sid} shot {idx} is framed over the shoulder of {who}, and it gets a frame picture: a face picture of "
                                   f"the person whose back is to the camera tends to be painted onto the back of the head. Give that "
@@ -440,7 +468,7 @@ def render(plan: Plan, episode: str) -> tuple[str, int, int]:
         lines += [f"## {titles[phase]}", ""]
         if phase == "C" and crops:
             w, h = plan.canvas or (1344, 768)
-            lines += ["Scene crops first (ffmpeg, no GPU): one single-camera view per frame picture, cut from the scene master at the "
+            lines += ["Scene crops first (ffmpeg, no GPU): one single-camera view per segment (its first frame and keyframes share it), cut from the scene master at the "
                       f"canvas ratio and scaled to {w}x{h}. Choose the window by looking at the master - `crop=width:height:x:y`, "
                       f"width:height = {w * 3 // 2}:{h * 3 // 2} or {w * 5 // 4}:{h * 5 // 4}:", ""]
             for c in crops:
@@ -452,9 +480,10 @@ def render(plan: Plan, episode: str) -> tuple[str, int, int]:
             state = "have it" if i["have"] else f"{i['n']} candidates"
             lines.append(f"- **{i['what']}** -> `{i['dest']}`  ({state})")
             if i["have"]:
+                lines += [f"  - on disk. For other candidates of the same prompt, run it with another --seed:", "", f"      {i['cmd']}", ""]
                 continue
             if i.get("stale"):
-                lines.append("  - MAKE AGAIN: the file on disk was made from an earlier version of this prompt")
+                lines.append(f"  - MAKE AGAIN: {plan.why.get(i['dest'], 'the file on disk no longer belongs to what it is made from')}")
             for p in i["problems"]:
                 lines.append(f"  - CHECK: {p}")
             missing = [n for n in i["needs"] if not Path(n).exists()]
@@ -512,7 +541,8 @@ def main():
           + (f", {len(plan.kept)} kept as they were" if plan.kept else ""))
     again = [i["dest"] for i in plan.items if i.get("stale")]
     if again:
-        print(f"MAKE AGAIN ({len(again)}): {', '.join(again)} - on disk, but made before the prompt changed; counted above as still to make")
+        print(f"MAKE AGAIN ({len(again)}): {', '.join(again)} - on disk, but made before its prompt or one of its input pictures changed; "
+              f"counted above as still to make")
     # a picture that exists needs no command - but one whose prompt quotes an outdated look was made from that look
     checks = [(i["what"], p) for i in plan.items for p in i["problems"] if not i["have"] or "sheet_phrase as it is now" in p]
     for what, p in checks:

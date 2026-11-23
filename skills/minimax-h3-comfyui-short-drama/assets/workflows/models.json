@@ -2,7 +2,8 @@
  "_about": "Files the shipped workflows load: where they come from on HuggingFace, where they go under ComfyUI/models, and their size and SHA-256 as listed there on 2026-11-23. Read by scripts/fetch_models.py.",
  "sets": {
   "ref2va": "MiniMax H3 reference-to-video drafts (h3_ref2va*.api.json)",
-  "stills": "Qwen-Image 2.1 and Qwen-Image-Edit-2511 (qwen*.api.json)",
+  "t2i": "Qwen-Image 2.1, text to picture: busts, scene masters, props (qwen21_t2i.api.json; research licence - not for projects that earn money)",
+  "edit": "Qwen-Image-Edit-2511: views, first frames, keyframes (qwen_edit2511_*.api.json; Apache-2.0)",
   "refine": "latent upscaler for the refine workflows (*_refine*.api.json)",
   "fl2va": "MiniMax H3 first/last-frame and text-only segments (h3_fl2va*.api.json)",
   "zimage": "Z-Image-Turbo, the Apache-2.0 text-to-image model for projects that earn money (zimage_turbo_t2i.api.json)"
@@ -49,7 +50,7 @@
    "sha256": "e56863a7524e0300729cbb7b64cc8b548d90698c1abbf7d83898b0122fbe1e81"
   },
   {
-   "set": "stills",
+   "set": "t2i",
    "repo": "Comfy-Org/Qwen-Image-2.1",
    "path": "diffusion_models/qwen_image_2.1_int8_convrot.safetensors",
    "folder": "diffusion_models",
@@ -57,7 +58,7 @@
    "sha256": "cb74113cb03faecd79611b01fd7fd642f0aa60d6f0b95086abee214d75eaa57d"
   },
   {
-   "set": "stills",
+   "set": "t2i",
    "repo": "Comfy-Org/Qwen-Image-2.1",
    "path": "text_encoders/qwen3vl_8b_int8_convrot.safetensors",
    "folder": "text_encoders",
@@ -65,7 +66,7 @@
    "sha256": "8bfd0f6e12abf2d2d697ecc888e5e90b0d6741d6708f05799f53afa560452e8f"
   },
   {
-   "set": "stills",
+   "set": "t2i",
    "repo": "Comfy-Org/Qwen-Image-2.1",
    "path": "vae/qwen_image_2.1_vae_bf16.safetensors",
    "folder": "vae",
@@ -73,7 +74,7 @@
    "sha256": "bb21f7473051e1ac368515dd3f2e15cd44d7a11748ee8823e1ddca3e4876b7c9"
   },
   {
-   "set": "stills",
+   "set": "edit",
    "repo": "Comfy-Org/Qwen-Image-Edit",
    "path": "split_files/diffusion_models/qwen_image_edit_2511_int8_convrot.safetensors",
    "folder": "diffusion_models",
@@ -81,7 +82,7 @@
    "sha256": "11b5af5ac601821d73930c84846c9a158e67177356daf927ce1c8d10f3963829"
   },
   {
-   "set": "stills",
+   "set": "edit",
    "repo": "Comfy-Org/Qwen-Image",
    "path": "split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors",
    "folder": "text_encoders",
@@ -89,7 +90,7 @@
    "sha256": "cb5636d852a0ea6a9075ab1bef496c0db7aef13c02350571e388aea959c5c0b4"
   },
   {
-   "set": "stills",
+   "set": "edit",
    "repo": "Comfy-Org/Qwen-Image",
    "path": "split_files/vae/qwen_image_vae.safetensors",
    "folder": "vae",
@@ -144,5 +145,11 @@
    "size": 335304388,
    "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
   }
- ]
+ ],
+ "aliases": {
+  "stills": [
+   "t2i",
+   "edit"
+  ]
+ }
 }

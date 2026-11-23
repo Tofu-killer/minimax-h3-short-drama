@@ -31,7 +31,7 @@
   - **备用做法（没存 latent 时）**：精修工作流 = 草稿工作流原样 + 后面接放大二采。提交时用 `comfy_submit.py --seed <中选那条的 seed>`，一采按同 seed、同设置重跑一遍，得到的就是中选的那一条，再往下精修。带二采节点的工作流不给 `--tag` 时自动用 `<段号>_refine`，结果落在 `<段号>_refine_<seed>`，不会压到草稿的目录；要并排留几版（不同的二采尺寸之类）再各给一个 `--tag`——落进一个已有别的结果的目录时，旧的会被挪进 `_prev_…`，批次预览里会提醒。多花一次一采的时间，但不用搬文件，`--media` 的接线也不用改。
   - **每条 take 记着自己是拿什么做的**：`run.json`（seed、提示词与参考的指纹、每个上传文件的 sha256、一采的设置）之外，文件夹里还有 `prompt.txt`（当时发给模型的提示词，一字不差）和 `media.json`（当时的参考清单，提示词指向旁边的 `prompt.txt`）。`prompts/<集>/<段>.txt` 会随分镜重写，这两份不会。用处：一条按旧提示词抽的片段被 `--stale-ok` 采纳之后，精修用 `--media <那条 take 的文件夹>/media.json`（`--out` 不用给，脚本认得这是 take 自己的副本，结果放在它旁边）——参考图本身没有复制，图后来换过内容的话预览照样会警告，这时到 ComfyUI 的 `input/` 里按 `run.json` 记的上传名能找到当时那张。`lint_prompt.py <take 文件夹>/prompt.txt` 也能直接查。
   - **`--keep-latent` / `--from-latent` 背后是什么**：ComfyUI 自带的 `SaveLatent` 直接接 H3 的输出会报错——H3 的 latent 是视频 + 音频两个张量合在一起的，`SaveLatent` 只会存单个张量（实测报 `'NestedTensor' object has no attribute 'contiguous'`）。所以先接自带的 `LTXVSeparateAVLatent` 拆成 video / audio 两路，各接一个 `SaveLatent`（落在 ComfyUI 的 `output/latents/`，脚本取回）；读回时两个文件要在 ComfyUI 的 `input/` 里（`LoadLatent` 只列那里的文件，脚本负责上传），两个 `LoadLatent` → `LTXVConcatAVLatent` 拼回去。社区的 Tr1dae Save Package / CGlide `.h3latent` 是把这几步包起来的节点。
-  - **验证到哪一步**（2026-11-23，真实的 ComfyUI 0.37.2 + 真实的 H3 视频 / 音频 VAE 和 LBH 放大权重，CPU 上小尺寸）：拆分、存、取回、传回、读入、拼回、解码成带声音的视频，以及 LBH 放大（448×256 的 latent 放大到 640×352，音频 latent 原样带着）都实际跑通了；`H3 Hires Fix` 的二采本身要 33B 的底模，没有跑——它在两种做法里都只通过了服务器校验。
+  - **验证到哪一步**（2026-11-23，真实的 ComfyUI 0.37.2 + 真实的 H3 视频 / 音频 VAE 和 LBH 放大权重，CPU 上小尺寸）：拆分、存、取回、传回、读入、拼回、解码成带声音的视频，以及 LBH 放大（448×256 的 latent 放大到 640×352，音频 latent 原样带着）都实际跑通了；`H3 Hires Fix` 的二采要底模：真实的 33B 权重没有跑过；后来用一套结构相同、宽度很小的随机权重模型把两种做法都执行到了出片（`--from-latent` 和 `--seed` 重跑，含分块版和首帧段；验证的是接线和节点的运行时行为，画面是噪声）——真模型下二采的画质、耗时、显存仍然要在你的机器上确认。
 - 电影质感且时间允许：中选镜头改用 **1 MP 原生 20 步 beta57** 重跑一采（或 Fast Tail：前 12 步 euler + 4 步 dpmpp_2m，−20%）；ResCascade 实测 Turbo 一采会丢细节 / 换 take，而精修阶段用 Turbo 无损。重跑出来的是另一条片段，要重新选片和观测。
 - 音频差但画面好：`H3 Audio Refine Sampler` 冻结视频、6 步 `audio_denoise 0.5`，精修分支从 Turbo LoRA **之前**的 MODEL 分出。TTS 对白的锁音频接法以 `audio-and-post.md` 链路 B 为准（逐句用 `MiniMaxH3DialogueAudioLock`，整条歌 / 口播用 `MiniMaxH3ExactAudioLock`）：`MiniMax H3 Timed Audio(start_frame)` → 锁音频节点，同一 `start_frame` 接 `MiniMaxH3AddGuide.frame_idx`，成片混 `exact_audio`。
 
@@ -45,7 +45,7 @@
 
 ## 4. Stage 3 · 放大精修到 1920×1088
 
-**首选 ResCascade 的 `H3 Hires Fix`**——放大和二采在一个节点里做完。**工作流用附带的** `assets/workflows/h3_ref2va_refine.api.json`（草稿用的是带 Sage 的版本就用 `h3_ref2va_sage_refine.api.json`）：它就是草稿工作流加上这个节点，`comfy_submit.py <它> --media <同一个 .media.json> --seed <中选那条的 seed> --tag <段>_refine`。下面的接法是 2026-11-21 读它 main 分支源码（`hires.py`）和 README 得到的；2026-11-23 把当天的版本装进一台真实的 ComfyUI 0.37.2，节点能加载、附带的两个精修工作流通过了服务器校验——但没有显卡，**二采本身没有跑过**。
+**首选 ResCascade 的 `H3 Hires Fix`**——放大和二采在一个节点里做完。**工作流用附带的** `assets/workflows/h3_ref2va_refine.api.json`（草稿用的是带 Sage 的版本就用 `h3_ref2va_sage_refine.api.json`）：它就是草稿工作流加上这个节点，`comfy_submit.py <它> --media <同一个 .media.json> --seed <中选那条的 seed> --tag <段>_refine`。下面的接法是 2026-11-21 读它 main 分支源码（`hires.py`）和 README 得到的；2026-11-23 把当天的版本装进一台真实的 ComfyUI 0.37.2，节点能加载、附带的精修工作流通过了服务器校验；同一天稍后用微型的随机权重模型把它们实际执行到了出片（控制台打印 `[H3HiresFix] (16, 28) -> (22, 40), sigmas [0.45, 0.225, 0.0]`）。**真实权重下的二采没有跑过**：画质、耗时、显存要第一次用时确认。
 
 - **节点的名字和输入**（真实 `/object_info`）：类名 `H3HiresFix`，界面里搜「H3 Hires Fix (1 MP -> bigger, audio pinned)」。必填 `model`、`positive`、`latent`、`width`（1920）、`height`（1088）、`sigma_start`（0.45）、`seed`、`lbh_model`（下拉里是 `models/latent_upscale_models/` 下的文件，没放权重时只有 `(none)`）；可选 `images`、`vae`、`schedule_steps`（20）、`steps_override`（0）、`face_atlas`、`face_margin`（2.0）。输出 `latent`、`sigmas`。
 
@@ -104,7 +104,7 @@
 ## 7. 禁忌
 
 - LoRA 文件必须是带 alpha 的 `*_comfyui_alpha8` 或官方 `*_comfyui_bf16`；缺 PEFT alpha 的会把更新放大 ~16 倍整幅融化。
-- 剪枝底模加载全量 LoRA 时的 51 行 `ERROR lora … adaln_proj` 可忽略（贡献 0.02%）。
+- 剪枝底模加载全量 LoRA（目前只有 FL2V 8 步 v1.2 是这种）时控制台的 51 行 `ERROR lora … adaln_proj`：任务不会中断，那 51 个模块被跳过、其余 208 个照常生效。社区里有「这部分贡献只有 0.02%，可以忽略」的说法，本项目没有验证；默认做法仍是不这么配——换成 v1.0 的 768p 版（`comfyui-nodes.md` §2、`pitfalls.md` 第一张表）。
 - 不要同时装 CGlide 的 `cglide` 与 `ComfyUI-CGlide` 两份；不装 xmarre LBH `-Plus` 分支。
 - 原生 VAE 解码固定 256 px tile 且每时间块写回 CPU；长片可用 Tr1dae `VAE Decode (fast)` 或 int8_convrot 视频 VAE（快 1.5×）。
 - Pika H3 Flex 6 步是另一条 take 路线（LoRA 在 SigmaShift 前，ManualSigmas `1.0, 0.972973, 0.923077, 0.8, 0.571429, 0.333333, 0`，lcm，CFG 1），不与 Turbo 叠。

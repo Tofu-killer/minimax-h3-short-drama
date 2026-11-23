@@ -2,7 +2,7 @@
 
 > **怎么来的**：用 ComfyUI 0.37.2 自带的官方模板（模板包 0.11.69，就是你模板面板里的那几份），在真实的 0.37.2 前端里执行「导出（API）」，再按下表改成本流程的设置。
 > **验证到哪一步**（2026-11-23）：每个文件、每种用法都提交给了一台真实的 ComfyUI 0.37.2（装了当天的 KJNodes、ResCascade、LBH 放大节点，模型文件用空的占位文件），**服务器自己的校验器全部接受**——节点存在、输入名和类型对得上、参考图 / 音色 / 首尾帧 / 关键帧的接法合法。
-> **执行到哪一步**：那台机器没有显卡，装不下真模型。后来造了一套结构相同、宽度很小的**随机权重** H3（文件格式和发布的一致，VAE 与 LBH 放大器用真实权重），把这些工作流不改一个字地从文本编码执行到了存片——草稿、关 Turbo 的 20 步、`--anchor`、精修、分块精修、`--keep-latent` / `--from-latent`、首帧 / 首尾帧 / 纯文字、首帧段的精修（细目见「已知的边界」和 `../../evals/results/iteration-13-miniature-model-and-retest-4.md`）。随机权重出的画面是噪声：这证明的是**接线在运行时成立**。
+> **执行到哪一步**：那台机器没有显卡，装不下真模型。后来造了一套结构相同、宽度很小的**随机权重** H3（文件格式和发布的一致，VAE 与 LBH 放大器用真实权重），把这些工作流不改一个字地从文本编码执行到了存片——草稿、关 Turbo 的 20 步、`--anchor`、精修、分块精修、`--keep-latent` / `--from-latent`、首帧 / 首尾帧 / 纯文字、首帧段的精修（细目见「已知的边界」；完整记录在 GitHub 仓库的 `skills/minimax-h3-comfyui-short-drama/evals/results/iteration-13-miniature-model-and-retest-4.md`，安装包里不带 `evals/`）。随机权重出的画面是噪声：这证明的是**接线在运行时成立**。
 > **没有验证的**：真模型下的画面、口型、耗时、显存，以及 Sage 的两个节点（那台机器没有 `sageattention` 包）。这些要在你的机器上第一次跑时确认（`../first-run-checklist.md`）。
 
 ## 文件
@@ -28,7 +28,7 @@
 
 ## 要下载的文件（HuggingFace；括号里是放进 `ComfyUI/models/` 的哪个子目录）
 
-先看全局：ComfyUI 开着时跑 `python <skill>/scripts/check_setup.py`，它问服务器本身，逐个工作流标出 READY 还是缺什么（节点包、模型文件）。再看文件：不用照着表手抄，`python <skill>/scripts/fetch_models.py --comfyui <ComfyUI 目录>` 会逐个告诉你哪个在、哪个缺、哪个没下全、哪个放错了目录（只检查，不改东西）；加 `--download` 就把缺的下到正确的目录里，断了重跑会接着下，下完校验 SHA-256。默认查 `ref2va`、`stills`、`refine` 三组，要 FL2VA 加 `--sets ref2va stills refine fl2va`；做营利项目的文生图用 `zimage` 组（`--sets ref2va stills refine zimage`——`stills` 组里的编辑模型仍然要，其中 Qwen-Image 2.1 的三个文件可以不下）。清单本身是同目录的 `models.json`。
+先看全局：ComfyUI 开着时跑 `python <skill>/scripts/check_setup.py`，它问服务器本身，逐个工作流标出 READY 还是缺什么（节点包、模型文件）。再看文件：不用照着表手抄，`python <skill>/scripts/fetch_models.py --comfyui <ComfyUI 目录>` 会逐个告诉你哪个在、哪个缺、哪个没下全、哪个放错了目录（只检查，不改东西）；加 `--download` 就把缺的下到正确的目录里，断了重跑会接着下，下完校验 SHA-256。默认查 `ref2va`、`stills`、`refine` 三组，要 FL2VA 加 `--sets ref2va stills refine fl2va`；`stills` 是 `t2i`（Qwen-Image 2.1，研究许可）加 `edit`（Edit-2511，Apache-2.0）两组的合称；做营利项目的把 `t2i` 换成 `zimage`：`--sets ref2va edit zimage refine`，这样不会把用不了的 Qwen-Image 2.1（17.3 GB）也下下来。清单本身是同目录的 `models.json`。
 
 | 用途 | 文件 | 大小 |
 |------|------|------|
