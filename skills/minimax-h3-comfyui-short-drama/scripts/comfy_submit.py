@@ -1269,6 +1269,12 @@ def main():
         die("--batch / --seed need a `seed` or `noise_seed` input the script can set (a number on KSampler, RandomNoise, "
             "SamplerCustom ..., or a Primitive node wired to it); in this workflow the seed is computed by another node - "
             "replace that with a plain number and export again")
+    if a.seed is None and a.from_latent:             # continue under the seed of the take the latent belongs to
+        try:
+            kept_seed = json.loads((Path(a.from_latent) / "run.json").read_text(encoding="utf-8")).get("seed")
+            a.seed = int(kept_seed) if kept_seed is not None and snodes else None
+        except (OSError, ValueError, json.JSONDecodeError):
+            pass
     base_seed = a.seed if a.seed is not None else (wf[snodes[0][0]]["inputs"][snodes[0][1]] if snodes else 0)
     if a.write_workflow:                 # exactly what the first take submits: wiring, overrides and its seed
         first = json.loads(json.dumps(wf))
