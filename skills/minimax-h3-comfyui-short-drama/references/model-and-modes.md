@@ -17,7 +17,7 @@
 | DiT | `minimax_h3_fl2va_pruned_int8_convrot.safetensors` / `minimax_h3_ref2va_pruned_int8_convrot.safetensors`（pruned = AdaLN 剪枝，只能在 ComfyUI 用） | 19.5 GiB |
 | DiT（不剪枝，画质更稳） | `minimax_h3_{fl2va,ref2va}_int8_convrot.safetensors` | 31.7 GiB（靠 offload，慢） |
 | 文本编码器 | `qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors`（type=`minimax`） | 14.6 GiB |
-| VAE | `minimax_h3_video_vae_int8_convrot.safetensors`（官方模板默认；另有 `…_fp16`）+ `minimax_h3_audio_vae_fp32.safetensors`（HF `Comfy-Org/MiniMax-H3` 的 `vae/`） | 4.9 GiB + 0.6 GiB（此前记录的数，未重新核对是哪一档的大小） |
+| VAE | `minimax_h3_video_vae_int8_convrot.safetensors`（官方模板默认；另有 `…_fp16`）+ `minimax_h3_audio_vae_fp32.safetensors`（HF `Comfy-Org/MiniMax-H3` 的 `vae/`） | int8 版 2.8 GB（fp16 版 5.2 GB）+ 0.6 GB（HuggingFace 文件清单，2026-11-23） |
 | 加速 LoRA | HF `lightx2v/Minimax-h3-Turbo`（2026-11-21 核对文件列表）：768p 训练版文件名带 `_768p_`——Ref2V `minimax_h3_ref2v_turbo_8step_v1.1_768p_comfyui_bf16`、FL2V `minimax_h3_fl2v_turbo_8step_v1.0_768p_comfyui_bf16`（8 步 v1.2 更新，但它多改的 51 个时间调制层挂不上 `pruned` 底模，24 GB 上不用）；不带 `768p` 的是 544p 档——Ref2V 只有 4 步的 `…ref2v_turbo_4step_v0.1_comfyui_bf16`，FL2V 有 `…fl2v_turbo_8step_v1.0_comfyui_bf16` 与 `…fl2v_turbo_4step_v0.1`。shift：模型默认 12/3；作者公布的例外只有 FL2V **v1.0** 的 768p 版 = 6/3（FL2V 8 步 v1.2 是 12/3），各版本见 `comfyui-nodes.md` §1 | 1.8–2.0 GiB |
 
 来源：MiniMax-AI/awesome-minimax-h3-integration（官方维护的生态索引，2026-11）。

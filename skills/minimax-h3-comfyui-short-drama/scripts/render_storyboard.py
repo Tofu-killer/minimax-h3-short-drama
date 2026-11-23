@@ -12,7 +12,7 @@ import argparse, re, sys
 from pathlib import Path
 sys.dont_write_bytecode = True      # keep the skill folder free of __pycache__
 sys.path.insert(0, str(Path(__file__).parent / "h3lib"))
-from storyboard import load_episode, blocking_sentence, effective_continuity, spoken_chars  # noqa: E402
+from storyboard import load_episode, blocking_sentence, effective_continuity, spoken_chars, line_capacity  # noqa: E402
 
 
 def _utf8_console() -> None:
@@ -87,11 +87,12 @@ def main():
             lines = []
             for d in sh.dialogue:
                 who = "旁白" if d.speaker == "narrator" else ep.char(d.speaker).name
-                talk = span - (1.5 if sh.end_hold else 0)            # the settle + hold second is not speaking time
-                rate = spoken_chars(d.text) / talk if talk > 0 else 0
+                room = line_capacity(span, sh.end_hold)             # the same figure the rhythm audit uses
+                used = sum(spoken_chars(x.text) for x in sh.dialogue)
                 tone = f"〔{d.delivery}〕" if d.delivery else ""
                 after = f" → {d.after_line.strip()}" if getattr(d, "after_line", "").strip() else ""
-                lines.append(f"{who}{'（画外）' if d.offscreen else ''}{tone}：{d.text}（摊到本镜 {rate:.1f} 字/s，上限 3）{after}")
+                fit = f"本镜台词 {used} 字 / 约可容 {room} 字" + ("，**超出**" if used > room else "")
+                lines.append(f"{who}{'（画外）' if d.offscreen else ''}{tone}：{d.text}（{fit}）{after}")
             out.append("| " + " | ".join([
                 str(sh.index), f"{bounds[i]:.2f}–{bounds[i + 1]:.2f}",
                 esc(sh.framing + (f"，{sh.lens}" if getattr(sh, "lens", "") else "")

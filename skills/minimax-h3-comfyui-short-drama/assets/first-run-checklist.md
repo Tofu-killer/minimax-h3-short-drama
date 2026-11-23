@@ -7,8 +7,8 @@
 | # | 做什么 | 看什么 | 结果决定什么 |
 |---|--------|--------|--------------|
 | 1 | `scripts/selfcheck.py`；照 `local-inventory-checklist.md` 盘点环境 | 自检全过；ffmpeg、可选依赖、中文字体都在 | 后期链路能不能用；缺什么先装（`local-stack-and-acceleration.md` §0b） |
-| 2 | **连通测试，不用模型**：`comfy_submit.py $W/selftest_no_model.api.json --set 1.image=@任意一张图.png --out takes/selftest --poll 2` | 几秒后 `takes/selftest/` 里有一个 2 s 的 mp4 | 脚本连得上 ComfyUI、能上传和取回文件；连不上先查地址 / 端口（`--server`） |
-| 3 | **官方模板原样跑一次**：在 ComfyUI 界面打开模板 `video_minimax_h3_r2v`，不改任何东西直接运行（模板自带示例图和提示词；默认 864×480、5 s、20 步） | 出得来、有声音；记下这一条的耗时（含冷启动） | 模型文件都放对了；这台机器跑通 H3 的最低门槛 |
+| 2 | **连通测试，不用模型**：`comfy_submit.py $W/selftest_no_model.api.json --set 1.image=@任意一张图.png --out takes/selftest --poll 2` | 几秒后 `takes/selftest/take_1/` 里有一个 2 s 的 mp4 | 脚本连得上 ComfyUI、能上传和取回文件；连不上先查地址 / 端口（`--server`） |
+| 3 | **H3 冒烟测试，不用任何素材**：`comfy_submit.py $W/h3_ref2va.api.json --set 136.prompt=@$W/smoke_test_prompt.txt --set 136.length=124 --set 136.width=864 --set 136.height=480 --out takes/smoke --tag smoke`（一段 5 s 的纯文字提示词，864×480、8 步；没有参考图，画面好坏不算数） | 出得来、有画面有声音；记下耗时（第一条含冷启动）和显存峰值 | 模型文件都放对了、这台机器能跑 H3。要是这一步报模型文件不完整 / 找不到，先解决它再往下。想改用官方模板原样跑也行，但要另下它开关里挂的 `minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors`（HF `Comfy-Org/MiniMax-H3` 的 `loras/`，2.0 GB——关着开关 ComfyUI 也会校验这个文件）和模板说明里列的两张示例图 |
 | 4 | **预检附带的草稿工作流，不花 GPU**：`build_prompts.py <skill>/assets/episode.example.json --out prompts/_example --allow-planned`，再 `comfy_submit.py $W/h3_ref2va_sage.api.json --media prompts/_example/s01.media.json --dry-run` | 第二行是 `preflight ok`；预览里 1344×768、8 步、LoRA 文件名、Sage 两个节点都在；没有 advice | 草稿档要的文件和节点齐不齐——缺哪个，预检会点名并给出最接近的文件名。没装 Sage 就换 `h3_ref2va.api.json` |
 | 5 | **出图**：`qwen21_t2i.api.json` 出一张定妆照；`qwen_edit2511_2ref.api.json` 出一张 1344×768 的首帧（命令见 `workflows/README.md`） | 出得来、尺寸对；每张耗时 | 生图阶段要多久；首帧的做法定稿 |
 | 6 | **基线计时**：样片第一段的提示词做好后，把它的 `.txt` 和 `.media.json` 复制到 `logs/baseline/`，用草稿工作流连出两条（`--media logs/baseline/s01.media.json --tag baseline --out takes/baseline --batch 2 --keep-latent --log logs/takes.csv`） | 第二条的耗时（第一条含冷启动，不算数）；ComfyUI 控制台里的显存峰值 | 一条草稿到底要几分钟 → 每段抽几个 seed、一晚上能出多少；以后每开一个加速项都拿这份副本比 |
@@ -29,13 +29,14 @@
 | 项 | 条件 | 结果 | 结论 |
 |----|------|------|------|
 | 连通 | selftest_no_model | 通 / 不通 | … |
-| 官方模板 | video_minimax_h3_r2v 原样，864×480 × 5 s × 20 步 | ___ s（含冷启动） | 模型齐全 |
+| 冒烟测试 | h3_ref2va + smoke_test_prompt，864×480 × 5 s × 8 步 | ___ s（含冷启动），显存峰值 ___ GB | 模型齐全 |
 | 草稿耗时 | h3_ref2va_sage：Ref2VA int8 + Turbo 8 步 v1.1 768p + Sage，1344×768 × ___ 帧（logs/baseline） | 第 2 条 ___ s，显存峰值 ___ GB | 每段抽 ___ 个 seed |
 | Sage 路线 | KJ 节点 / --use-ck-attention | ___ s / ___ s | 用 ___ |
 | 采样器 | euler / res_multistep | … | 用 ___ |
 | 参考保持 | 3 个 seed | 脸 _/3、服装 _/3、嗓音 _/3 | … |
 | 首帧 | 只当参考 / --anchor | … | 默认 ___ |
-| 出图 | qwen21_t2i 定妆照 / qwen_edit2511_2ref 首帧 | ___ s / ___ s | … |
+| 出图 | qwen21_t2i 定妆照 / qwen_edit2511_2ref 首帧 | 每张 ___ s / ___ s | 全集约 ___ 张 → ___ 分钟 |
+| 换模型 | 出图 → 出视频（第一条草稿比后面的多花多久） | +___ s | 一集里换几次 |
 | 精修 | 5 s / 10 s，同 seed + H3 Hires Fix | 同一条？显存 ___ GB，+___ s | 10 s 以上：整段 / 分块 |
 | 后期 | 真实片段全链路 | 验收 ___；剪映打开 ___ | … |
 ```

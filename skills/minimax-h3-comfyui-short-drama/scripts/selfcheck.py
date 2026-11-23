@@ -305,10 +305,26 @@ def main():
                 if r.returncode != 0 or from_wf[src[0]]["class_type"] != "LTXVConcatAVLatent" or "kept first-pass latent" not in r.stdout \
                         or "BasicScheduler" in r.stdout:
                     notes.append(f"--from-latent: {(r.stderr.strip() or r.stdout.strip())[-200:]}")
+                # stills: what the workflow still lacks is refused with the --set that supplies it; a complete job shows size and prompt
+                (work / "bust.txt").write_text("a studio portrait of a tall man in a grey coat, soft window light", encoding="utf-8")
+                t2i = [sys.executable, str(HERE / "comfy_submit.py"), str(flows / "qwen21_t2i.api.json"), "--server", "http://127.0.0.1:9", "--out", "qc/t2i", "--dry-run"]
+                edit = [sys.executable, str(HERE / "comfy_submit.py"), str(flows / "qwen_edit2511_2ref.api.json"), "--server", "http://127.0.0.1:9", "--out", "qc/edit",
+                        "--dry-run", "--set", "170:151.prompt=Keep the same person as Picture 1, in the room of Picture 2", "--set", "41.image=@bible/face.png"]
+                for what, r, need in (("an empty prompt", run(t2i, work), "prompt is empty"),
+                                      ("a misspelt --set name", run(t2i + ["--set", "459:452.text=@bust.txt", "--set", "459:452.prompt=@bust.txt"], work), "no input `text`"),
+                                      ("a picture slot left open", run(edit, work), "no file given yet")):
+                    if r.returncode != 2 or need not in (r.stdout + r.stderr):
+                        notes.append(f"stills, {what}: {(r.stderr.strip() or r.stdout.strip())[-160:]}")
+                r = run(edit + ["--set", "42.image=@bible/room.png"], work)
+                if r.returncode != 0 or "1344x768" not in r.stdout or "prompt (" not in r.stdout or "image2" not in r.stdout:
+                    notes.append(f"stills, a complete edit job: {(r.stderr.strip() or r.stdout.strip())[-200:]}")
+                r = run([sys.executable, str(HERE / "lint_prompt.py"), str(flows / "smoke_test_prompt.txt"), "--seconds", "5", "--images", "0", "--audios", "0"], work)
+                if r.returncode != 0:
+                    notes.append(f"smoke_test_prompt.txt does not lint: {r.stdout.strip()[-160:]}")
                 broken = [f.name for f in sorted(flows.glob("*.api.json"))
                           if not all(isinstance(v, dict) and "class_type" in v and "inputs" in v for v in json.loads(f.read_text(encoding="utf-8")).values())]
                 good = not notes and not broken and len(list(flows.glob("*.api.json"))) >= 11
-                record("shipped workflows take the segments (draft, Sage, refine; LoRA switch; keeping and reusing the latent)", "PASS" if good else "FAIL",
+                record("shipped workflows (draft, Sage, refine, LoRA switch, kept latent; stills refuse what is still missing)", "PASS" if good else "FAIL",
                        f"{len(list(flows.glob('*.api.json')))} workflow files" if good else "; ".join(notes + broken)[:300])
             except Exception as e:  # noqa: BLE001
                 record("shipped workflows", "FAIL", f"{type(e).__name__}: {e}")
@@ -339,6 +355,29 @@ def main():
                    "" if same and rebuilt else f"kept {same}, rebuilt on request {rebuilt}: {(r.stderr.strip() or r.stdout.strip())[-200:]}")
         except Exception as e:  # noqa: BLE001
             record("build_prompts.py leaves an accepted segment's prompt alone", "FAIL", f"{type(e).__name__}: {e}")
+
+        # plan first, reconcile after: a take confirmed with --as-planned leaves the next segment's prompt (and its drafts) valid
+        try:
+            flow = json.loads(json.dumps(ep))
+            flow["segments"][1]["continuity"] = "@observed"
+            (work / "ep_flow.json").write_text(json.dumps(flow, ensure_ascii=False, indent=1), encoding="utf-8")
+            r1 = run([sys.executable, str(HERE / "build_prompts.py"), "ep_flow.json", "--out", "prompts_flow"], work)
+            r2 = run([sys.executable, str(HERE / "build_prompts.py"), "ep_flow.json", "--out", "prompts_flow", "--allow-planned"], work)
+            planned = (work / "prompts_flow/s02.txt").read_bytes()
+            r3 = run([sys.executable, str(HERE / "observe_take.py"), "selects/s01.mp4", "--episode", "ep_flow.json", "--segment", "s01",
+                      "--as-planned", "--out", "qc/observe_flow"], work)
+            r4 = run([sys.executable, str(HERE / "build_prompts.py"), "ep_flow.json", "--out", "prompts_flow"], work)
+            kept = "WAITING" in r1.stdout and "planned end of s01" in r2.stdout and r3.returncode == 0 \
+                and (work / "prompts_flow/s02.txt").read_bytes() == planned and "[unchanged]" in r4.stdout
+            r5 = run([sys.executable, str(HERE / "observe_take.py"), "selects/s01.mp4", "--episode", "ep_flow.json", "--segment", "s01",
+                      "--write", "Hero stands by the door with his back to the window, one hand on the handle.", "--confidence", "medium",
+                      "--deviation", "he went to the door, not the window", "--out", "qc/observe_flow"], work)
+            r6 = run([sys.executable, str(HERE / "build_prompts.py"), "ep_flow.json", "--out", "prompts_flow"], work)
+            changed = r5.returncode == 0 and "CHANGED since the last build" in r6.stdout
+            record("plan first, reconcile after (--allow-planned, observe_take --as-planned, change report)", "PASS" if kept and changed else "FAIL",
+                   "" if kept and changed else f"kept {kept}, change reported {changed}: {(r4.stdout.strip() + ' | ' + r6.stdout.strip())[-260:]}")
+        except Exception as e:  # noqa: BLE001
+            record("plan first, reconcile after", "FAIL", f"{type(e).__name__}: {e}")
 
         # QC over a folder looks at each take once: superseded takes and trimmed copies are left out, a file named alone is not
         both, n_skipped = signals.live_takes([Path("t/s01_1/a.mp4"), Path("t/s01_1/a_trimmed.mp4"), Path("t/s01_1/_prev_ab/a.mp4")])

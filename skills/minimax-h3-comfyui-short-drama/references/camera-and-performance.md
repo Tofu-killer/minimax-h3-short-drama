@@ -4,7 +4,7 @@
 
 ## 1. 运镜能不能出来，取决于步数
 
-- **4 步 Turbo 几乎抹掉运镜**，只能用于抽卡构图；有运镜的镜头精修用 **20 步、关 Turbo、`res_multistep/simple`、帧数 ≥ 124（三段式动作 192）、`ref_image_size = max`**。
+- **4 步 Turbo 几乎抹掉运镜**，只能用于抽卡构图；有运镜的镜头精修用 **20 步、关 Turbo、`res_multistep/simple`、帧数 ≥ 124（三段式动作 192）、`ref_image_size = max`**（附带的工作流上：`--set 146.value=false --set 123.sampler_name=res_multistep --set 136.ref_image_size=max`；`max` 让每张参考图按原图大小进模型，token 多几倍、更慢）。
 - 场景参考板是一笔交换：挂上后场景漂移降到约 1/4，运镜幅度减半（0.81× → 0.47×）。短剧的同一个场景要跨段保持，所以分镜默认挂（`use_scene_reference` 默认 true）；**运镜是主体的段**、或只出现一次的场景，在该段写 `"use_scene_reference": false`——不挂场景图，地点由场景描述的文字带入。
 - 开场景别决定方向：运镜要收紧就从大全景开，要放宽就从近景开（dolly zoom / snorricam 例外，开在结束处）。镜头 / 机身型号是装饰，要宽就写宽景别。
 - 开场全景必须**动**（运镜 + 持续动作）：固定全景开场首秒动作量 2.9 vs 推 / 跟 19.6；删 `holds a static shot`；全片 `slow motion` 最多一次（egguy886）。

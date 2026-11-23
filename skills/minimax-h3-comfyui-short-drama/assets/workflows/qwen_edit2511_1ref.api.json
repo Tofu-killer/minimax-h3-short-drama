@@ -1,7 +1,7 @@
 {
  "41": {
   "inputs": {
-   "image": "example.png"
+   "image": "(not set)"
   },
   "class_type": "LoadImage",
   "_meta": {
@@ -91,7 +91,7 @@
   },
   "class_type": "TextEncodeQwenImageEditPlus",
   "_meta": {
-   "title": "negative (leave empty)"
+   "title": "negative prompt (optional)"
   }
  },
  "170:151": {

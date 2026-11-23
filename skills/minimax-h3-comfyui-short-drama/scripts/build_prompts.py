@@ -77,7 +77,8 @@ def main():
             _text, source = effective_continuity(ep, seg, a.allow_planned)
             bp = build(ep, seg)
         except NotObservedYet as e:
-            waiting.append(str(e))
+            waiting.append(str(e) + (f" (the {seg.id} files in {out} are from an earlier build and were left as they are)"
+                                     if (out / f"{seg.id}.txt").exists() else ""))
             continue
         except ValueError as e:
             blocked.append(str(e))
@@ -89,7 +90,9 @@ def main():
         text = next(c["text"] for c in bp.content if c["type"] == "text")
         media = [c for c in bp.content if c["type"] != "text"]
         frames = frames_for_seconds(seg.duration)
-        (out / f"{seg.id}.txt").write_text(text, encoding="utf-8")
+        target = out / f"{seg.id}.txt"
+        before = target.read_text(encoding="utf-8") if target.exists() else None
+        target.write_text(text, encoding="utf-8")
         (out / f"{seg.id}.media.json").write_text(json.dumps(
             {"segment": seg.id, "mode": bp.mode or seg.mode, "ratio": ep.ratio, "duration": seg.duration, "frames": frames,
              "effective_seconds": round(frames / 24, 3),
@@ -101,6 +104,8 @@ def main():
         built_as = bp.mode or seg.mode
         if built_as != seg.mode:
             note += f"  [built as {built_as}: nothing bound to this segment has a reference picture or voice sample]"
+        if before is not None:              # takes made from the earlier text stay valid only when nothing changed
+            note += "  [unchanged]" if before == text else "  [CHANGED since the last build - takes made from the earlier prompt no longer match it]"
         print(f"{seg.id}: {built_as} {seg.duration}s = {frames} frames, {len(text.split())} words, {len(media)} media{note}")
     # planned subtitle cues for the whole episode (they depend on the storyboard only, not on which prompts were built)
     srt, idx, offset = [], 1, 0.0

@@ -440,6 +440,14 @@ def _framing_class(framing: str) -> str:
     return "other"
 
 
+def line_capacity(shot_seconds: float, end_hold: bool) -> int:
+    """Spoken characters that fit in one shot: 3 per second of the time the shot can be spoken in (the settle and
+    hold at the end of an end_hold shot is not speaking time), plus one. The rhythm audit and the storyboard table
+    both use this figure. It is a room estimate, not a speech rate."""
+    talk = shot_seconds - (1.5 if end_hold else 0.0)
+    return max(0, int(3 * talk + 1))
+
+
 def rhythm_warnings(ep: "Episode") -> list[str]:
     """Pure arithmetic on the storyboard - no model involved. Every item is advice, not an error."""
     out: list[str] = []
@@ -459,9 +467,11 @@ def rhythm_warnings(ep: "Episode") -> list[str]:
                        f"as mechanical; give the key shot more time and shorten a reaction")
         for sh, s0, e0 in spans:
             chars = sum(spoken_chars(d.text) for d in sh.dialogue)
-            if chars and chars > 3 * (e0 - s0) + 1:
+            if chars and chars > line_capacity(e0 - s0, sh.end_hold):
                 out.append(f"segment {seg.id} shot {sh.index}: {chars} characters in a {e0 - s0:.1f}s shot "
-                           f"(about {3 * (e0 - s0):.0f} fit) - the line will be rushed or cut off")
+                           f"(about {line_capacity(e0 - s0, sh.end_hold)} fit"
+                           + (", its last 1.5 s being the settle and hold" if sh.end_hold else "")
+                           + ") - the line will be rushed or cut off")
             all_shots.append((seg.id, sh.index, _framing_class(sh.framing), seg.scene_id))
             events_by_t.append(offset + s0)
             events_by_t += [offset + s0] * len(sh.dialogue)
@@ -532,6 +542,61 @@ def speech_problems(ep: "Episode") -> list[str]:
 _NEG = re.compile(r"\b(no|not|never|without|don't|doesn't|do not|does not|avoid|nothing)\b", re.I)
 _NEG_OK = re.compile(r"with no camera movement whatsoever|no other (item|garment|person|people)|is not transferred|"
                      r"never transfer facial traits|no black letterbox bars", re.I)
+
+
+def audio_seconds(path: str) -> Optional[float]:
+    """Length of a sound file: the wave module for .wav, ffprobe for anything else; None when neither can tell."""
+    try:
+        if str(path).lower().endswith(".wav"):
+            import wave
+            with wave.open(str(path), "rb") as w:
+                return w.getnframes() / float(w.getframerate() or 1)
+    except Exception:  # noqa: BLE001 - e.g. a float wav the module does not read
+        pass
+    try:
+        import subprocess
+        r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
+                           capture_output=True, text=True, timeout=30)
+        return float(r.stdout.strip())
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def voice_and_frame_advice(ep: "Episode") -> list[str]:
+    """Advice that saves a wasted batch: voice samples of a usable length, a first line long enough to cut a
+    sample from when there is none yet, and a first frame for live-action dialogue (it wins blind tests 4:0)."""
+    out: list[str] = []
+    speaks: dict[str, list[tuple["Segment", int]]] = {}
+    for seg in ep.segments:
+        for sh in seg.shots:
+            for d in sh.dialogue:
+                if d.speaker != "narrator":
+                    speaks.setdefault(d.speaker, []).append((seg, spoken_chars(d.text)))
+    for c in ep.characters:
+        if c.voice_reference and Path(c.voice_reference).exists():
+            secs = audio_seconds(c.voice_reference)
+            if secs is not None and not 2.0 <= secs <= 15.0:
+                out.append(f"character {c.id}: WARN the voice sample is {secs:.1f} s - the model takes 2-15 s (6-8 s is the "
+                           f"steadiest); join two or three clean lines of this person or trim it")
+        elif c.id in speaks and not c.voice_reference:
+            done = [seg.id for seg, _n in speaks[c.id] if seg.status.startswith("accepted")]
+            if done:
+                out.append(f"character {c.id}: WARN speaks in the accepted segment {done[0]} but has no voice_reference - cut a "
+                           f"sample from that take now (references/audio-and-post.md), so that later segments keep the voice")
+            else:
+                first = speaks[c.id][0][0]
+                longest = max(n for seg, n in speaks[c.id] if seg is first)
+                if longest < 12:
+                    out.append(f"character {c.id}: WARN has no voice sample yet, and the longest line in {first.id} (the take a "
+                               f"sample will be cut from) is {longest} characters, about {longest / 3.6:.1f} s - give one line of "
+                               f"12 or more characters there, or plan to join two lines into the sample")
+    live = "live-action" in (ep.style or "").lower() or "真人" in (ep.style or "")
+    for seg in ep.segments:
+        if live and seg.mode == "ref2va" and not seg.first_frame and not seg.status.startswith("accepted") \
+                and any(sh.dialogue for sh in seg.shots):
+            out.append(f"segment {seg.id}: WARN live-action dialogue without a first_frame - in blind tests the same segment "
+                       f"with a first frame won 4:0; make one (references/image-stage.md), or go without and expect more re-rolls")
+    return out
 
 
 def negation_problems(ep: "Episode") -> list[str]:
@@ -808,6 +873,7 @@ def validate_episode(ep: Episode) -> list[str]:
     problems += state_problems(ep)
     problems += speech_problems(ep)
     problems += negation_problems(ep)
+    problems += voice_and_frame_advice(ep)
     problems += list(getattr(ep, "unknown", []))
     problems += reference_problems(ep)
     problems += restated_look_problems(ep)

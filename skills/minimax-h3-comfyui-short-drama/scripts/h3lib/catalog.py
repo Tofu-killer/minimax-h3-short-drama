@@ -47,7 +47,7 @@ def build(root: Path, kind: str) -> list[dict]:
         name = p.stem
         rar = rarity_of(str(rel.parent)) or rarity_of(name)
         items.append({
-            "id": f"{kind}_{slug(name)}",
+            "id": slug(name) if slug(name).startswith(kind + "_") else f"{kind}_{slug(name)}",     # prop_watch.png -> prop_watch
             "kind": kind,
             "name": name,
             "rarity": rar,

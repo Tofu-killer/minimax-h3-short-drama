@@ -71,6 +71,9 @@ def main():
     ap.add_argument("--write", help="the observed end state, one or two sentences")
     ap.add_argument("--confidence", choices=["low", "medium", "high"], help="how sure the frames make you (required with --write)")
     ap.add_argument("--deviation", action="append", default=[], help="what differs from the planned end_state and is accepted anyway (repeatable)")
+    ap.add_argument("--as-planned", action="store_true",
+                    help="the take ends the way the storyboard's end_state says: accept it and hand that sentence on unchanged "
+                         "(the next segment's prompt, built earlier from the plan, then stays valid - and so do its takes)")
     ap.add_argument("--reject", action="store_true", help="mark the segment's take as rejected instead")
     a = ap.parse_args()
 
@@ -96,6 +99,12 @@ def main():
         print(f"{a.segment}: marked rejected in {ep_path}")
         return
 
+    if a.as_planned:
+        if a.write or a.deviation:
+            sys.exit("--as-planned means there is nothing to add: leave out --write and --deviation, or describe the end state with --write")
+        if not (seg.get("end_state") or "").strip():
+            sys.exit(f"segment {a.segment} has no planned end_state to confirm - describe what the frames show with --write")
+        a.write, a.confidence = seg["end_state"], a.confidence or "high"
     if a.write:
         if not a.confidence:
             sys.exit("--write needs --confidence low|medium|high")

@@ -8,6 +8,7 @@
 
 | 文件 | 用途 | 改自 | 需要的自定义节点 |
 |------|------|------|------------------|
+| `smoke_test_prompt.txt` | **H3 冒烟测试用的提示词**（5 s、纯文字、一句中文台词）：配 `h3_ref2va.api.json` 在没有任何素材时确认 H3 能出片——命令见下面第 0b 条 | 用本 skill 的生成器出的 | — |
 | `selftest_no_model.api.json` | **连通测试**：不用任何模型，几秒出一个 2 s 的小视频，确认脚本能连上 ComfyUI、上传文件、取回结果（脚本默认每 20 s 查一次进度，测试时加 `--poll 2`） | 手写 | 无 |
 | `h3_ref2va.api.json` | Ref2VA 草稿 / 定稿：1344×768，Turbo 8 步（`euler` / `simple`）；关掉开关就是 20 步不挂 LoRA | `video_minimax_h3_r2v` | 无 |
 | `h3_ref2va_sage.api.json` | 同上，模型链上多 KJNodes 的两个 Sage 节点 | 同上 | KJNodes（+ `sageattention` 包） |
@@ -35,7 +36,7 @@
 | 编辑出图 | `Comfy-Org/Qwen-Image-Edit`：`split_files/diffusion_models/qwen_image_edit_2511_int8_convrot.safetensors`（`diffusion_models/`） | 20.5 GB |
 | | `Comfy-Org/Qwen-Image`：`split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors`（`text_encoders/`）、`split_files/vae/qwen_image_vae.safetensors`（`vae/`） | 9.4 + 0.3 GB |
 
-合计：只做 Ref2VA 视频约 **42 GB**；加两套出图模型约 **89 GB**；再加精修约 **90 GB**；还要 FL2VA 的话约 **113 GB**。文件名和大小取自 HuggingFace 的文件清单（2026-11-23）。下载页上文件在子目录里，放进 ComfyUI 时只放文件本身；放错目录或带着子目录，预检会报「not offered by the server」并给出最接近的名字。
+合计：只做 Ref2VA 视频约 **42 GB**；加两套出图模型约 **89 GB**；再加精修约 **90 GB**；还要 FL2VA 的话约 **113 GB**。模型之外再留 20 GB 以上：语音识别模型约 0.5 GB，身份门禁的模型几十 MB，每条 10 s 的草稿连同存下的 latent 约 40–60 MB，ComfyUI 的 `output/` 里还会各留一份。文件名和大小取自 HuggingFace 的文件清单（2026-11-23）。下载页上文件在子目录里，放进 ComfyUI 时只放文件本身；放错目录或带着子目录，预检会报「not offered by the server」并给出最接近的名字。
 
 ## 怎么用
 
@@ -46,6 +47,9 @@
 ```
 # 0. 连通测试（不用模型）
 python <skill>/scripts/comfy_submit.py $W/selftest_no_model.api.json --set 1.image=@任意一张图.png --out takes/selftest --poll 2
+
+# 0b. H3 冒烟测试（不用素材；864×480 × 5 s × 8 步，画面好坏不算数，只看能不能出片、多久）
+python <skill>/scripts/comfy_submit.py $W/h3_ref2va.api.json --set 136.prompt=@$W/smoke_test_prompt.txt --set 136.length=124 --set 136.width=864 --set 136.height=480 --out takes/smoke --tag smoke
 
 # 1. 一段 ref2va 草稿，3 个 seed
 python <skill>/scripts/comfy_submit.py $W/h3_ref2va_sage.api.json --media prompts/ep01/s01.media.json --batch 3 --seed 1001 --keep-latent --log logs/takes.csv --dry-run
@@ -72,12 +76,15 @@ python <skill>/scripts/comfy_submit.py $W/qwen_edit2511_2ref.api.json --set 41.i
 | | 采样器 | `--set 123.sampler_name=res_multistep` |
 | | 画布（快速预览） | `--set 136.width=864 --set 136.height=480` |
 | | LoRA 强度 | `--set 145.strength_model=0.75` |
+| | 参考图按原图大小进模型（20 步定稿时） | `--set 136.ref_image_size=max`（默认 `match`：每张约 1,000 token；`max` 多几倍、更慢） |
 | `h3_ref2va*_refine` | 二采强度 / 尺寸 | `--set 300.sigma_start=0.31`、`--set 300.width=… --set 300.height=…` |
 | | 关了 Turbo 之后 | 同时 `--set 300.steps_override=0`（不关时保持 2；预览的 advice 会提醒配错的情况） |
 | `h3_fl2va*` | 关 Turbo / 采样器 / 画布 / shift | `--set 105:126.value=false`、`--set 105:17.sampler_name=…`、`--set 105:104.width=…`、`--set 105:200.shift_video=…` |
 | `qwen21_t2i` | 提示词 / 尺寸 / 步数 | `--set 459:452.prompt=@文件`、`--set 459:456.width=… .height=…`、`--set 459:458.steps=50` |
 | `qwen_edit2511_*` | 输入图 | `--set 41.image=@…`（`image1`）、`--set 42.image=@…`（`image2`）、`--set 43.image=@…`（`image3`）；也可以按标题：`--set-title image1.image=@…` |
 | | 提示词 / 输出尺寸 / 步数 | `--set 170:151.prompt=@文件`、`--set 170:300.width=… --set 170:300.height=…`、`--set 170:169.steps=20` |
+
+这些工作流里要你给的东西出厂时是空的：H3 和出图的提示词是空字符串，编辑工作流的图片位写着 `(not set)`。漏给任何一个，预检会直接拦下并写出该补的那条 `--set`（ComfyUI 自己不会拦——空提示词、拼错的输入名它都照收）；`--set` 写了节点没有的输入名也会被拦，并列出这个节点真正的输入名。出图的预览会列出尺寸、每张输入图和提示词的开头。
 
 种子不用 `--set`：`--seed N --batch K` 会把工作流里所有种子一起设成 N、N+1…（精修工作流里一采和 `H3 Hires Fix` 的种子是同一个数）。提示词、帧数、参考图、音色、首尾帧由 `--media` 接，不用手改。
 

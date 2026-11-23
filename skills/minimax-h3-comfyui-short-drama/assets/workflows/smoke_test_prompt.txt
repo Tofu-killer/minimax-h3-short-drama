@@ -1,0 +1,5 @@
+integrated_multimodal_description: [Shot 1] Live-action, cinematic, soft daylight from a window on the left, shallow depth of field, a medium close-up of the woman at the table. The setting is a small tidy kitchen with a wooden table by a window, a white cup on the table. The woman lifts the white cup with both hands and looks into the lens. The camera holds a static shot. The woman in her thirties with shoulder-length black hair, wearing a cream knit sweater, speaking in a calm, warm female voice, (S1) says: <d>[Chinese] 今天天气真好。</d> The woman in her thirties closes her lips. Speak only the quoted dialogue line. After that nobody says anything else.
+
+overall_soundscape: Quiet room tone, a kettle hums faintly, the cup clinks softly on the table.
+
+non_diegetic_music: N/A

@@ -176,7 +176,9 @@ def main():
         edge = sm.group(1) == "1" or int(sm.group(1)) == nshots     # the first shot carries the set-up, the last one the end state
         cap = 300 if edge else 240
         if fields is THREE and sm.group(1) == "1": cap = 380          # ... and, without pictures, every look and the whole place
-        if n_words > cap: warns.append(f"[Shot {sm.group(1)}] runs to {n_words} words (over {cap}): one shot holds one action and one camera move")
+        if n_words > cap: warns.append(f"[Shot {sm.group(1)}] runs to {n_words} words (over {cap}): one shot holds one action and one camera move. "
+                                          f"What can be shortened sits in the storyboard - this shot's action and performance, the segment's "
+                                          f"continuity, the characters' identity_phrase; the sentences the builder adds are counted too")
     if len(text) > 7000: warns.append(f"prompt is {len(text)} characters: the MiniMax cloud API rejects text over 7000; the local "
                                       f"ComfyUI node has no length limit, but a prompt this long is followed less closely")
     if fields is SIX:

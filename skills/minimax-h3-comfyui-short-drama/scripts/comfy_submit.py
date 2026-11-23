@@ -179,6 +179,9 @@ def find_by_title(wf: dict, title: str) -> str:
     return hits[0]
 
 
+SET_TARGETS: list[tuple[str, str, bool]] = []     # (node id, input name, was the input already in the workflow file)
+
+
 def apply_sets(wf, sets, server, media, do_upload, by_title=False):
     for s in sets:
         target, _, raw = s.partition("=")
@@ -187,7 +190,26 @@ def apply_sets(wf, sets, server, media, do_upload, by_title=False):
         nid = find_by_title(wf, node) if by_title else node
         if nid not in wf:
             die(f"node {nid} not in workflow")
+        SET_TARGETS.append((nid, inp, inp in wf[nid]["inputs"]))
         wf[nid]["inputs"][inp] = parse_value(raw, inp, server, media, do_upload)
+
+
+def audio_seconds(path: Path) -> float | None:
+    """Length of a voice sample: the wave module for .wav, ffprobe for the rest; None when neither can tell."""
+    try:
+        if path.suffix.lower() == ".wav":
+            import wave
+            with wave.open(str(path), "rb") as w:
+                return w.getnframes() / float(w.getframerate() or 1)
+    except Exception:  # noqa: BLE001 - a float or extensible wav the module cannot read
+        pass
+    try:
+        import subprocess
+        r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
+                           capture_output=True, text=True, timeout=30)
+        return float(r.stdout.strip())
+    except Exception:  # noqa: BLE001
+        return None
 
 
 H3_REF, H3_I2V, H3_EMPTY = "MiniMaxH3ReferenceToVideo", "MiniMaxH3ImageToVideo", "EmptyMiniMaxH3LatentAV"
@@ -343,7 +365,9 @@ def apply_media(wf: dict, media_json: Path, server: str, media: dict, do_upload:
             new = load_node("audio", path, f"Audio {n_aud + 1}")
             inputs[f"ref_audios.ref_audio_{n_aud}"] = [new, 0]
             n_aud += 1
-            lines.append(f"<Audio {n_aud}>    <- {path.name}")
+            secs = audio_seconds(path)
+            lines.append(f"<Audio {n_aud}>    <- {path.name}" + ("" if secs is None else f"   ({secs:.1f} s"
+                         + ("" if 2.0 <= secs <= 15.0 else " - outside the 2-15 s the model takes as a voice reference") + ")"))
     # --anchor: pin every frame picture where it belongs on the timeline - one MiniMaxH3AddGuide per picture, chained
     # behind the reference node as ComfyUI's multiframe reference template chains them for its keyframes
     if anchors and anchor and not guides:
@@ -568,6 +592,7 @@ def literals(wf: dict, inputs: dict) -> dict:
 def settings_summary(wf: dict) -> list[str]:
     """What this workflow will actually run with - for the batch preview."""
     out = []
+    h3_graph = any(v.get("class_type") in (H3_REF, H3_I2V, H3_EMPTY) for v in wf.values())
     for k, v in wf.items():
         cls, inp = v.get("class_type", ""), v.get("inputs", {})
         lit = literals(wf, inp)
@@ -598,6 +623,13 @@ def settings_summary(wf: dict) -> list[str]:
             out.append(f"{cls} [{k}]: {lit['unet_name']}")
         elif "shift_video" in lit:
             out.append(f"{cls} [{k}]: shift video {lit['shift_video']} / audio {lit.get('shift_audio')}")
+        elif cls.startswith("Empty") and "Latent" in cls and cls != H3_EMPTY and "width" in lit and "height" in lit:
+            out.append(f"{cls} [{k}]: {lit['width']}x{lit['height']}" + (f", batch {lit['batch_size']}" if lit.get("batch_size", 1) != 1 else ""))
+        elif cls == "LoadImage" and not h3_graph and isinstance(lit.get("image"), str):
+            out.append(f"LoadImage [{k}]" + (f" {v['_meta']['title']}" if v.get("_meta", {}).get("title") else "") + f": {lit['image']}")
+        elif not h3_graph and isinstance(lit.get("prompt", lit.get("text")), str) and lit.get("prompt", lit.get("text")).strip():
+            text = " ".join(lit.get("prompt", lit.get("text")).split())
+            out.append(f"{cls} [{k}] prompt ({len(text.split())} words): " + (text if len(text) <= 110 else text[:107] + "..."))
         elif "SageAttention" in cls or cls in ("MiniMaxLowVRAMAttention", "MiniMaxChunkFeedForward"):
             detail = ", ".join(f"{n} {x}" for n, x in lit.items() if n in ("sage_attention", "head_chunks", "chunks", "seq_threshold"))
             out.append(f"{cls} [{k}]" + (f": {detail}" if detail else ""))
@@ -790,16 +822,46 @@ def log_take(path: Path, row: dict) -> None:
             w.writerow({k: r.get(k, "") for k in LOG_HEADER})
 
 
-def estimate(history: list[tuple[float, int, int]], frames: int, pixels: int, n: int, where: str) -> str:
-    """history: (seconds, frames, pixels) of finished takes. Scaled to this job's size when the sizes are known."""
-    scaled = [sec / (f * px) * frames * pixels for sec, f, px in history if f and px and frames and pixels]
+def job_steps(wf: dict) -> int:
+    """Sampling steps of the first pass as they will run (0 when they cannot be read)."""
+    for v in wf.values():
+        lit = literals(wf, v.get("inputs", {}))
+        if isinstance(lit.get("steps"), int) and ("scheduler" in lit or "sampler_name" in lit or "cfg" in lit):
+            return lit["steps"]
+    return 0
+
+
+def estimate(history: list[tuple[float, int, int, int]], frames: int, pixels: int, steps: int, n: int, where: str) -> str:
+    """history: (seconds, frames, pixels, steps) of finished takes. Scaled to this job's size when the sizes are
+    known; takes made with another step count (the same file with the Turbo switch off) are scaled by the steps."""
+    same = [h for h in history if not steps or not h[3] or h[3] == steps]
+    by_steps = ""
+    if not same:
+        others = "/".join(sorted({str(h[3]) for h in history}))
+        history = [(sec * steps / st, f, px, steps) for sec, f, px, st in history]
+        by_steps = f"; they were {others}-step takes, scaled to {steps} steps - a rough figure"
+    else:
+        history = same
+    scaled = [sec / (f * px) * frames * pixels for sec, f, px, _st in history if f and px and frames and pixels]
     if scaled:
         per = statistics.median(scaled)
-        note = f"median of {len(scaled)} finished take(s) {where}, scaled to this job's frame count and canvas"
+        note = f"median of {len(scaled)} finished take(s) {where}, scaled to this job's frame count and canvas{by_steps}"
     else:
-        per = statistics.median(sec for sec, _f, _px in history)
-        note = f"median of {len(history)} finished take(s) {where}; frame count or canvas is not known for both, so this is not scaled"
+        per = statistics.median(h[0] for h in history)
+        note = (f"median of {len(history)} finished take(s) {where}; frame count or canvas is not known for both, "
+                f"so this is not scaled{by_steps}")
     return f"about {per * n / 60:.1f} min at {per:.0f}s per take ({note})"
+
+
+def exec_seconds(status: dict) -> float | None:
+    """Seconds the server spent executing the job, from the time stamps in its history entry (None when absent).
+    Unlike the wall clock of this script it does not count time in the queue, the polling interval or a resume."""
+    t = {m[0]: m[1].get("timestamp") for m in status.get("messages", [])
+         if isinstance(m, list) and len(m) > 1 and isinstance(m[1], dict) and m[1].get("timestamp")}
+    end = t.get("execution_success") or t.get("execution_error") or t.get("execution_interrupted")
+    if t.get("execution_start") and end and end >= t["execution_start"]:
+        return round((end - t["execution_start"]) / 1000.0, 1)
+    return None
 
 
 SEED_KEYS = ("seed", "noise_seed")      # KSampler-style nodes / RandomNoise and SamplerCustom (the official H3 templates use the latter)
@@ -927,12 +989,52 @@ def h3_node_problems(where: str, cls: str, inputs: dict) -> list[str]:
     return errors
 
 
+NOT_SET = "(not set)"            # placeholder in the shipped workflows for a file that --set has to supply
+
+
+def unfilled_problems(wf: dict) -> list[str]:
+    """What a workflow still lacks before it means anything: a positive prompt that is empty, a picture slot that
+    still holds the placeholder. Looked for in the part that will run (the server accepts both without a word)."""
+    view = effective(wf)
+    pos: set[str] = set()
+    neg: set[str] = set()
+    for v in view.values():
+        cls, inp = str(v.get("class_type", "")), v["inputs"]
+        for name, link in inp.items():
+            if not (isinstance(link, list) and len(link) == 2):
+                continue
+            if name == "negative":
+                neg |= upstream(view, link)
+            elif name == "positive" or (name == "conditioning" and "Guider" in cls):
+                pos |= upstream(view, link)
+    out = []
+    for k, v in view.items():
+        cls, lit = str(v.get("class_type", "")), literals(view, v["inputs"])
+        where = f"node {k} ({v.get('_meta', {}).get('title') or cls})"
+        for name in ("prompt", "text"):
+            if name in v["inputs"] and isinstance(lit.get(name), str) and not lit[name].strip() \
+                    and (cls in (H3_REF, H3_I2V) or k in pos) and not (k in neg and k not in pos):
+                out.append(f"{where}: the prompt is empty - give it with "
+                           + ("--media <segment>.media.json" if cls in (H3_REF, H3_I2V) else f"--set {k}.{name}=@<text file>"))
+        for name in ("image", "audio", "latent"):
+            if cls.startswith("Load") and lit.get(name) == NOT_SET:
+                out.append(f"{where}: no file given yet - --set {k}.{name}=@<file>")
+    return out
+
+
 def static_problems(wf: dict) -> list[str]:
     """The part of the preflight that needs no server."""
     out = []
     for nid, node in wf.items():
         cls = node.get("class_type")
         out += h3_node_problems(f"node {nid} ({node.get('_meta', {}).get('title') or cls})", cls, node.get("inputs", {}))
+    out += unfilled_problems(wf)
+    for nid, inp, existed in SET_TARGETS:                       # without a server only the file itself can be asked
+        if not existed and "." not in inp:
+            has = ", ".join(sorted(k for k in wf[nid]["inputs"] if k != inp)) or "none"
+            out.append(f"--set {nid}.{inp}: the node in the workflow file has no input `{inp}` (it has: {has}) - a misspelt name is "
+                       f"ignored by ComfyUI in silence. If `{inp}` is a real optional input of this node, run with the server "
+                       f"reachable: the check is then made against the node's definition")
     return out
 
 
@@ -987,7 +1089,7 @@ def preflight(server: str, wf: dict, media: dict) -> list[str]:
             if isinstance(val, (list, dict)):             # a link to another node, or a group of links
                 continue
             choices = combo_choices(req.get(name) or opt.get(name))
-            if choices and isinstance(val, str) and val not in choices and val not in media:   # empty list = filled at run time
+            if choices and isinstance(val, str) and val not in choices and val not in media and val != NOT_SET:   # empty list = filled at run time
                 pool = [str(c) for c in choices]
                 for fam in ("ref2v", "fl2v"):               # never offer a FL2V file for a missing Ref2V one, or the reverse
                     if fam in val.lower():
@@ -996,6 +1098,15 @@ def preflight(server: str, wf: dict, media: dict) -> list[str]:
                 errors.append(f"{where}: {name} = {val!r} is not offered by the server"
                               + (f" (closest: {near[0]!r})" if near else f" ({len(choices)} choice(s) available)"))
         errors += h3_node_problems(where, cls, inputs)
+    for nid, inp, _existed in SET_TARGETS:
+        cls = wf.get(nid, {}).get("class_type")
+        spec = (info.get(cls) or {}).get("input", {})
+        names = set(spec.get("required", {}) or {}) | set(spec.get("optional", {}) or {})
+        if names and inp.split(".")[0] not in names:
+            near = difflib.get_close_matches(inp, sorted(names), n=1)
+            errors.append(f"--set {nid}.{inp}: {cls} has no input `{inp}`" + (f" - did you mean `{near[0]}`?" if near else "")
+                          + f" (inputs: {', '.join(sorted(names))}). ComfyUI ignores an unknown input in silence")
+    errors += unfilled_problems(wf)
     return errors
 
 
@@ -1317,12 +1428,13 @@ def main():
     batch_id = hashlib.sha256("|".join(p["fp"] for p in plan).encode()).hexdigest()[:12]
     view = effective(wf)                 # what will really run: switches followed, unused branches left out
     frames, pixels = job_size(view)
+    steps = job_steps(view)
     past = []
     for rj in out.glob("*/run.json"):
         try:
             r = json.loads(rj.read_text(encoding="utf-8"))
             if r.get("status") == "success" and r.get("seconds") and Path(str(r.get("workflow") or "")).name == Path(a.workflow).name:
-                past.append((float(r["seconds"]), int(r.get("frames") or 0), int(r.get("pixels") or 0)))
+                past.append((float(r["seconds"]), int(r.get("frames") or 0), int(r.get("pixels") or 0), int(r.get("steps") or 0)))
         except (OSError, json.JSONDecodeError, ValueError):
             pass
     todo = [p for p in plan if p["state"] != "done"]
@@ -1330,7 +1442,9 @@ def main():
     if not past and todo and a.log and Path(a.log).exists():               # no history here: look in the takes log
         try:
             with open(a.log, newline="", encoding="utf-8-sig") as fh:
-                past = [(float(r["seconds"]), int(r.get("frames") or 0), int(r.get("pixels") or 0)) for r in csv.DictReader(fh)
+                past = [(float(r["seconds"]), int(r.get("frames") or 0), int(r.get("pixels") or 0),
+                         int((re.search(r"(\d+) steps", r.get("settings") or "") or [0, 0])[1]))
+                        for r in csv.DictReader(fh)
                         if r.get("workflow") == Path(a.workflow).name and r.get("status") == "success" and r.get("seconds")]
             where = f"of this workflow in {a.log}"
         except (OSError, ValueError, KeyError):
@@ -1338,7 +1452,7 @@ def main():
     if not todo:
         est = "nothing to do"
     elif past:
-        est = estimate(past, frames, pixels, len(todo), where)
+        est = estimate(past, frames, pixels, steps, len(todo), where)
     else:
         est = "no finished take to estimate the time from yet"
     for line in wiring:
@@ -1409,7 +1523,10 @@ def main():
             status = entry.get("status", {})
             ok = status.get("status_str") != "error"
             files = download(a.server, entry, dest) if ok else []
-            meta = {"prompt_id": pid, "seed": seed, "fingerprint": fp, "seconds": round(time.time() - t0, 1),
+            wall = round(time.time() - t0, 1)
+            ran_for = exec_seconds(status)
+            meta = {"prompt_id": pid, "seed": seed, "fingerprint": fp, "seconds": ran_for if ran_for is not None else wall,
+                    "wall_seconds": wall, "steps": steps,
                     "status": "success" if ok and files else ("error" if not ok else "no_output"),
                     "files": [str(f) for f in files], "workflow": str(a.workflow), "comfyui_version": version,
                     "overrides": a.set + a.set_title, "media_sha256": media, "inputs_sha": inputs_sha, "frames": frames, "pixels": pixels}
@@ -1437,7 +1554,9 @@ def main():
                 rc = 1
                 print("  finished but produced no output files - does the workflow end in a Save node?")
             else:
-                print(f"  done in {meta['seconds']}s -> {', '.join(f.name for f in files)}")
+                waited = meta["wall_seconds"] - meta["seconds"]
+                print(f"  done in {meta['seconds']}s" + (f" (plus {waited:.0f}s queued or waiting for the next poll)" if waited >= 30 else "")
+                      + f" -> {', '.join(f.name for f in files)}")
     except KeyboardInterrupt:
         print("\ninterrupted: jobs already queued keep running on the server; run the same command again to collect them",
               file=sys.stderr)
