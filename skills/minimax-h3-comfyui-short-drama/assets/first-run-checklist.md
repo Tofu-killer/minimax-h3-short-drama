@@ -19,7 +19,7 @@
 | 11 | 精修：中选的那条用 `h3_ref2va_sage_refine.api.json`（或不带 Sage 的那份）按同 seed 重跑，先 5 s 段、再 10 s 段 | 预览写着「same prompt and references as …」；出来是不是同一条片段；显存够不够；多花多久 | 10 s 以上的段能不能整段二采，还是要走分块（`quality-pipeline.md` §4） |
 | 12 | 后期：对真实片段跑 `qc_probe.py` → `qc_dialogue.py` → `make_edl.py` → `retime_subtitles.py` → `mix_episode.py`，导出剪映草稿并打开 | 验收行 OK；字幕时间对；剪映里能打开 | 交付链路可用；切点对账在真实 H3 片段上准不准 |
 
-用到 `i2va` / `fl2va` 的项目再加两项：`h3_fl2va.api.json` 出一条（FL2V v1.2 LoRA 按默认 shift 12 / 3，预览不应报 shift）；首帧比例故意差 5% 出一条，确认预览会提醒、画面确实被拉伸。
+用到 `i2va` / `fl2va` 的项目再加两项：`h3_fl2va.api.json` 出一条（FL2V v1.0 768p LoRA + shift 6 / 3，预览里应能看到 `MiniMaxH3SigmaShift … 6.0 / 3.0`、没有 advice；控制台应有 `208 patches attached`、没有 `ERROR lora`）；首帧比例故意差 5% 出一条，确认预览会提醒、画面确实被拉伸。
 
 ## `logs/machine-notes.md` 模板
 

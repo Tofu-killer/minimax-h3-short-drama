@@ -13,7 +13,7 @@
 | `h3_ref2va_sage.api.json` | 同上，模型链上多 KJNodes 的两个 Sage 节点 | 同上 | KJNodes（+ `sageattention` 包） |
 | `h3_ref2va_refine.api.json` | 精修：一采按同 seed 原样重跑，再接 `H3 Hires Fix` 到 1920×1088 | 同上 | ResCascade、LBH 放大节点 |
 | `h3_ref2va_sage_refine.api.json` | 草稿用的是 `_sage` 版时的精修（一采要和草稿走同一条注意力路径才是同一条片段） | 同上 | 以上三个 |
-| `h3_fl2va.api.json` | `i2va` / `fl2va` / `t2va` 段：FL2VA 权重，1344×768，Turbo 8 步 | `video_minimax_h3_i2v` | 无 |
+| `h3_fl2va.api.json` | `i2va` / `fl2va` / `t2va` 段：FL2VA 权重，1344×768，Turbo 8 步（v1.0 的 768p 版 LoRA + shift 6 / 3；shift 节点只在 LoRA 那条分支上，关掉 Turbo 就回到模型默认的 12 / 3） | `video_minimax_h3_i2v` | 无 |
 | `h3_fl2va_sage.api.json` | 同上 + Sage | 同上 | KJNodes |
 | `qwen21_t2i.api.json` | 文生图（定妆照、场景母版、道具）：Qwen-Image 2.1，25 步 CFG 1 | `image_qwen_image_2_1_t2i` | 无 |
 | `qwen_edit2511_1ref / 2ref / 3ref.api.json` | 编辑出图（派生视图、逐镜首帧）：Qwen-Image-Edit-2511 int8，40 步 CFG 4，**输出尺寸固定为 1344×768**（不跟着第一张图走），1 / 2 / 3 张输入图 | `image_qwen_image_edit_2511_int8` | 无 |
@@ -29,7 +29,7 @@
 | Ref2VA | `diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors`（`diffusion_models/`） | 21.0 GB |
 | | `lightx2v/Minimax-h3-Turbo`：`minimax_h3_ref2v_turbo_8step_v1.1_768p_comfyui_bf16.safetensors`（`loras/`） | 2.0 GB |
 | FL2VA（用到 `i2va` / `fl2va` / `t2va` 段才下） | `Comfy-Org/MiniMax-H3`：`diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors`（`diffusion_models/`） | 21.0 GB |
-| | `lightx2v/Minimax-h3-Turbo`：`minimax_h3_fl2v_turbo_8step_v1.2_768p_comfyui_bf16.safetensors`（`loras/`） | 2.1 GB |
+| | `lightx2v/Minimax-h3-Turbo`：`minimax_h3_fl2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors`（`loras/`） | 2.0 GB |
 | 精修 | `LBH-123-AI/Minimax_h3_latent_Upscaler`：`minimax_h3_latent_upscaler_3d_conv_v1/minimax_h3_latent_upscaler_3d_conv_v1_fp16.safetensors`（直接放 `latent_upscale_models/`，不带那层子文件夹） | 0.7 GB |
 | 文生图 | `Comfy-Org/Qwen-Image-2.1`：`diffusion_models/qwen_image_2.1_int8_convrot.safetensors`（`diffusion_models/`）、`text_encoders/qwen3vl_8b_int8_convrot.safetensors`（`text_encoders/`）、`vae/qwen_image_2.1_vae_bf16.safetensors`（`vae/`） | 7.3 + 9.4 + 0.7 GB |
 | 编辑出图 | `Comfy-Org/Qwen-Image-Edit`：`split_files/diffusion_models/qwen_image_edit_2511_int8_convrot.safetensors`（`diffusion_models/`） | 20.5 GB |
@@ -73,7 +73,7 @@ python <skill>/scripts/comfy_submit.py $W/qwen_edit2511_2ref.api.json --set 41.i
 | | LoRA 强度 | `--set 145.strength_model=0.75` |
 | `h3_ref2va*_refine` | 二采强度 / 尺寸 | `--set 300.sigma_start=0.31`、`--set 300.width=… --set 300.height=…` |
 | | 关了 Turbo 之后 | 同时 `--set 300.steps_override=0`（不关时保持 2；预览的 advice 会提醒配错的情况） |
-| `h3_fl2va*` | 关 Turbo / 采样器 / 画布 | `--set 105:126.value=false`、`--set 105:17.sampler_name=…`、`--set 105:104.width=…` |
+| `h3_fl2va*` | 关 Turbo / 采样器 / 画布 / shift | `--set 105:126.value=false`、`--set 105:17.sampler_name=…`、`--set 105:104.width=…`、`--set 105:200.shift_video=…` |
 | `qwen21_t2i` | 提示词 / 尺寸 / 步数 | `--set 459:452.prompt=@文件`、`--set 459:456.width=… .height=…`、`--set 459:458.steps=50` |
 | `qwen_edit2511_*` | 输入图 | `--set 41.image=@…`（`image1`）、`--set 42.image=@…`（`image2`）、`--set 43.image=@…`（`image3`）；也可以按标题：`--set-title image1.image=@…` |
 | | 提示词 / 输出尺寸 / 步数 | `--set 170:151.prompt=@文件`、`--set 170:300.width=… --set 170:300.height=…`、`--set 170:169.steps=20` |

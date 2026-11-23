@@ -653,6 +653,13 @@ def advice(wf: dict, ratio: str | None) -> list[str]:
         fam = "ref2v" if "ref2v" in name.lower() else "fl2v" if "fl2v" in name.lower() else ""
         if fam and family and fam != family:
             out.append(f"{name} is a {fam.upper()} LoRA but the diffusion model loaded is {unet} - use the LoRA made for those weights")
+    for name in distilled:                                       # read from the files' headers, 2026-11-23: see comfyui-nodes.md
+        low = name.lower()
+        if "fl2v" in low and "8step" in low and "v1.2" in low and "pruned" in unet.lower():
+            out.append(f"{name} patches 259 layers, 51 of them AdaLN layers that the pruned weights ({unet}) store in another "
+                       f"form: ComfyUI skips those 51 with an error line each and applies the other 208. Either load the unpruned "
+                       f"minimax_h3_fl2va_int8_convrot (34 GB) with this LoRA, or stay on the pruned weights with "
+                       f"minimax_h3_fl2v_turbo_8step_v1.0_768p (all 208 layers fit; shift 6 / 3)")
     lora_nodes = {k: literals(wf, v.get("inputs", {})).get("lora_name") for k, v in wf.items() if "lora_name" in v.get("inputs", {})}
     for k, name in lora_nodes.items():                           # two distillation LoRAs in one chain
         if name not in distilled:
