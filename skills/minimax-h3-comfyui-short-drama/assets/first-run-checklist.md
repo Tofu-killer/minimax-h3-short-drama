@@ -6,7 +6,7 @@
 
 | # | 做什么 | 看什么 | 结果决定什么 |
 |---|--------|--------|--------------|
-| 1 | `scripts/selfcheck.py`；照 `local-inventory-checklist.md` 盘点环境 | 自检全过；ffmpeg、可选依赖、中文字体都在 | 后期链路能不能用；缺什么先装（`local-stack-and-acceleration.md` §0b） |
+| 1 | `scripts/selfcheck.py`；照 `local-inventory-checklist.md` 盘点环境 | 自检全过；ffmpeg、可选依赖、中文字体都在；ComfyUI 启动日志里 `Found comfy_kitchen backend cuda: {'available': True, …}`（`False` 时 int8 权重没有快速核，原因多半是 PyTorch 不是 cu130 的构建，见 `local-stack-and-acceleration.md` §5 第 9 条） | 后期链路能不能用；缺什么先装（`local-stack-and-acceleration.md` §0b） |
 | 2 | **连通测试，不用模型**：`comfy_submit.py $W/selftest_no_model.api.json --set 1.image=@任意一张图.png --out takes/selftest --poll 2` | 几秒后 `takes/selftest/take_1/` 里有一个 2 s 的 mp4 | 脚本连得上 ComfyUI、能上传和取回文件；连不上先查地址 / 端口（`--server`） |
 | 2b | **核对模型文件，不花 GPU**：`fetch_models.py --comfyui <ComfyUI 目录>`（缺的加 `--download` 下） | 每个文件都是 `OK`；`INCOMPLETE` 是没下全，`ELSEWHERE` 是放错了目录 | 模型齐了再往下——没下全的文件是第一次跑不起来最常见的原因 |
 | 3 | **H3 冒烟测试，不用任何素材**：`comfy_submit.py $W/h3_ref2va.api.json --set 136.prompt=@$W/smoke_test_prompt.txt --set 136.length=124 --set 136.width=864 --set 136.height=480 --out takes/smoke --tag smoke`（一段 5 s 的纯文字提示词，864×480、8 步；没有参考图，画面好坏不算数。这是借 Ref2VA 工作流确认模型能出片——正式的纯文字段要用 FL2VA 的工作流，`--media` 遇到纯文字段配 Ref2VA 工作流会拒绝） | **通过 = 命令以 `done in …s -> ….mp4` 结束，这个 mp4 是 864×480、124 帧、有声音**（内容不论）；记下耗时（第一条含冷启动）和显存峰值 | 模型文件都放对了、这台机器能跑 H3。要是这一步报模型文件不完整 / 找不到，先解决它再往下。想改用官方模板原样跑也行，但要另下它开关里挂的 `minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors`（HF `Comfy-Org/MiniMax-H3` 的 `loras/`，2.0 GB——关着开关 ComfyUI 也会校验这个文件）和模板说明里列的两张示例图 |
