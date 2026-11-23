@@ -36,8 +36,18 @@
 | **0.44.0** | `MiniMaxH3ContextWindows`（官方滑窗长视频：context_length 124、context_overlap 39、fuse pyramid、freenoise 开、`split_conds_to_windows` 每窗一条提示词）、`MiniMaxH3LatentUpscaleWithModel`、`PH3ImageConditioning` |
 | **0.45.0** | `MiniMaxH3ImageConditioning`、`RelayVSRConditioning`（像素超分 ×2 / ×4） |
 
+**权重文件从哪个版本开始能加载**（同样是逐 tag 对着 `comfy/sd.py`、`comfy/quant_ops.py`、`comfy/model_detection.py` 查的，2026-11-23；这类文件在旧版本上不是「缺节点」，而是加载时报错或者悄悄出坏图）：
+
+| ComfyUI 版本 | 新认得的文件 | 在 0.37.2 上会怎样 |
+|------|------|------|
+| **0.38.0** | `…_pruned_w6a8.safetensors`（6 bit 底模，格式 `w6a8_int8`，16.0 GB） | 加载报 `KeyError: 'w6a8_int8'`（0.37.2–0.37.4 的格式表里没有它） |
+| **0.39.0** | 层数比官方少的视频 VAE（按文件里的层数建解码器）：LynnReal light VAE（26 层） | **不报错**地加载成 36 层，控制台 `Missing weight for layer decoder.transformer_blocks.26…35` + `Missing VAE keys`，画面是坏的（实际在 0.37.2 的加载代码上试过） |
+| **0.41.0** | 编码器也剪过的视频 VAE：LightVAE Lite（12 层） | `WARNING: No VAE weights detected, VAE not initalized.`（实际试过：0.37.2 靠编码器里的一个键认这种 VAE，剪过的编码器没有它） |
+| **0.42.0** | FastH3 Omni（末层叠着 PDD 头的蒸馏整模） | 识别出错的潜空间维数，见下面「FastH3 Omni」 |
+| **0.44.0** | Sol-H3-VAE（`minimax_h3_sol_vae_*`，24 层整段解码器） | `WARNING: No VAE weights detected, VAE not initalized.`（实际试过） |
+
 - 0.37.2 上没有 `MiniMaxH3LatentUpscaleWithModel` 时用社区节点 `LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler`；FunControl 在 0.37.2 已是原生，不必装社区版。
-- **要不要升级**：升到 ≥ 0.45 能拿到官方滑窗、原生 latent 放大、两个出图节点和 RelayVSR；升级前逐个核对已装节点的版本窗口（Spark-H3 跳过 0.41、只支持 0.38.x–0.40.x 与 0.42.x–0.44.x；Motion-Context 启动时会自检并拒绝不匹配的核心；FeiHou 流式块不与 kitchen 同用），并先整目录备份或另装一份便携版做 A/B，不要在唯一能出片的环境上直接升。
+- **要不要升级**：升到 ≥ 0.45 能拿到官方滑窗、原生 latent 放大、两个出图节点和 RelayVSR，以及上表那几种更小、更快的权重（6 bit 底模省 5 GB 显存，Sol 解码器省解码时间——各自的数字见 `local-stack-and-acceleration.md` §2 与 `model-and-modes.md`）；升级前逐个核对已装节点的版本窗口（Spark-H3 跳过 0.41、只支持 0.38.x–0.40.x 与 0.42.x–0.44.x；Motion-Context 启动时会自检并拒绝不匹配的核心；FeiHou 流式块不与 kitchen 同用），并先整目录备份或另装一份便携版做 A/B，不要在唯一能出片的环境上直接升。
 
 **latent 的实际形状**（2026-11-23，在真实的 0.37.2 上用真实的 H3 视频 / 音频 VAE 实测）：
 

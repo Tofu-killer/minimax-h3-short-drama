@@ -41,6 +41,7 @@
 | VAE 解码出格子 | tile > 256 | 保持 256 |
 | 右 / 下边缘色条 | 二采 latent 宽高为奇数 | 像素 32 倍数且 latent 偶数 |
 | 重噪二采花屏 | stock `AddNoise` 对 CONST 流二次缩放 | rockerBOO `MiniMaxH3AddNoise` |
+| 换了一个更小的视频 VAE 之后画面全花，控制台有 `Missing weight for layer decoder.transformer_blocks.NN…` / `Missing VAE keys`，或 `No VAE weights detected, VAE not initalized` | 轻量解码器（Sol-H3-VAE、LynnReal light VAE、LightVAE Lite）要更新的 ComfyUI：0.37.2–0.38.2 把解码器写死成 36 层，层数少的文件缺的层是随机值；Sol 的结构 0.44.0 起才支持 | 0.37.2 上用官方的 `minimax_h3_video_vae_int8_convrot.safetensors`；想用轻量解码器先升级（各自的最低版本见 `local-stack-and-acceleration.md` §2「更快的视频解码」） |
 | LoRA 好像没生效 | 日志无 `… 208 patches attached.`（这一行只在默认的 DynamicVRAM 加载路径下有；带 `--disable-dynamic-vram` / `--highvram` / `--gpu-only` 启动的没有，那时看有没有 `ERROR lora`） | 检查加载顺序 / 文件；预览里 LoRA 文件名和开关对不对 |
 | 画质微糊、偏噪 | int8 底模上把 LoRA 反量化合并 | 运行时分支 / bypass |
 | 采样中途卡 18–43 s | 轮询 HTTP | 轮询间隔 ≥ 20 s |

@@ -16,8 +16,9 @@
 |------|------|------|
 | DiT | `minimax_h3_fl2va_pruned_int8_convrot.safetensors` / `minimax_h3_ref2va_pruned_int8_convrot.safetensors`（pruned = AdaLN 剪枝，只能在 ComfyUI 用） | 19.5 GiB |
 | DiT（不剪枝，画质更稳） | `minimax_h3_{fl2va,ref2va}_int8_convrot.safetensors` | 31.7 GiB（靠 offload，慢） |
+| DiT（更小，**要 ComfyUI ≥ 0.38**） | `minimax_h3_{fl2va,ref2va}_pruned_w6a8.safetensors`：6 bit 权重 + int8 激活，同在官方仓库的 `diffusion_models/`。格式名 `w6a8_int8` 在 0.37.2–0.37.4 的格式表里没有（加载时报 `KeyError: 'w6a8_int8'`），0.38.0 起才有。相对 int8 的画质和速度没有公开数字，这套流程里也没试过——升级之后显存吃紧（10 s 以上的 1344×768、1920×1088 二采）时可以拿它和 int8 各出一条对比；默认仍用 int8 | 16.0 GB（比 int8 的 21.0 GB 小 5 GB） |
 | 文本编码器 | `qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors`（type=`minimax`） | 14.6 GiB |
-| VAE | `minimax_h3_video_vae_int8_convrot.safetensors`（官方模板默认；另有 `…_fp16`）+ `minimax_h3_audio_vae_fp32.safetensors`（HF `Comfy-Org/MiniMax-H3` 的 `vae/`） | int8 版 2.8 GB（fp16 版 5.2 GB）+ 0.6 GB（HuggingFace 文件清单，2026-11-23） |
+| VAE | `minimax_h3_video_vae_int8_convrot.safetensors`（官方模板默认；另有 `…_fp16`；同目录的 `minimax_h3_sol_vae_*` 是更快的蒸馏解码器，要 ComfyUI ≥ 0.44，见 `local-stack-and-acceleration.md` §2「更快的视频解码」）+ `minimax_h3_audio_vae_fp32.safetensors`（HF `Comfy-Org/MiniMax-H3` 的 `vae/`） | int8 版 2.8 GB（fp16 版 5.2 GB）+ 0.6 GB（HuggingFace 文件清单，2026-11-23） |
 | 加速 LoRA | HF `lightx2v/Minimax-h3-Turbo`（2026-11-21 核对文件列表）：768p 训练版文件名带 `_768p_`——Ref2V `minimax_h3_ref2v_turbo_8step_v1.1_768p_comfyui_bf16`、FL2V `minimax_h3_fl2v_turbo_8step_v1.0_768p_comfyui_bf16`（8 步 v1.2 更新，但它多改的 51 个时间调制层挂不上 `pruned` 底模，24 GB 上不用）；不带 `768p` 的是 544p 档——Ref2V 只有 4 步的 `…ref2v_turbo_4step_v0.1_comfyui_bf16`，FL2V 有 `…fl2v_turbo_8step_v1.0_comfyui_bf16` 与 `…fl2v_turbo_4step_v0.1`。shift：模型默认 12/3；作者公布的例外只有 FL2V **v1.0** 的 768p 版 = 6/3（FL2V 8 步 v1.2 是 12/3），各版本见 `comfyui-nodes.md` §1 | 1.8–2.0 GiB |
 
 来源：MiniMax-AI/awesome-minimax-h3-integration（官方维护的生态索引，2026-11）。

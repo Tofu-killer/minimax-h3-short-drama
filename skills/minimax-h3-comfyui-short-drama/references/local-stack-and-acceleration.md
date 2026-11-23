@@ -67,6 +67,20 @@
 
 - **可选：FastH3（下面这个 V2 只支持 `t2va` / `i2va` / `fl2va`；参考生视频的 FastH3 Omni 是另一个整模，要 ComfyUI ≥ 0.42，0.37.2 上加载不了——原因见 `comfyui-nodes.md` §1）**——FastVideo 团队的蒸馏整模，固定 8 步，改步数会掉质量。ComfyUI ≥ 0.36 自带模板 `video_fastvideo_fasth3_t2v` / `video_fastvideo_fasth3_i2v`；权重是 HF `FastVideo/FastVideo-FastH3-Comfy` 的 `diffusion_models/fastvideo_fasth3_8step_v2_pruned_int8_convrot.safetensors`，文本编码器和两个 VAE 与 H3 共用。模板里的设置：`MiniMaxH3SigmaShift` 10 / 3、`res_multistep` + `simple` 8 步、`BlockSparseAttention`（VSA，`keep_percent` 10，从调度的 20% 处开始）。官方的定位是牺牲一些动作和音频保真换速度，用于草稿和迭代；它本身就是蒸馏模型，不再挂 Turbo LoRA（铁律 8）。4090 上没有实测，想用就拿同一张首帧、同一段提示词和 Turbo 那一档各出一条，比时间、口型和音质再决定（ComfyUI 官方 FastH3 教程，2026-11-21 读）。
 
+### 更快的视频解码（三个轻量解码器，都要比 0.37.2 新的 ComfyUI）
+
+官方视频 VAE 的解码器是 36 层的 ViT，按瓦片和时间块解码，是每条 take 里一段固定的开销（Sol 的模型卡：RTX 5090 上 768p × 5 s，官方解码器 12.5 s）。下面三个替代品的 latent 空间和官方 VAE 完全相同（同样的通道、归一化、时空压缩），所以**同一个 latent 可以先用轻量解码器看草稿，定稿再用官方 VAE 解码**。
+
+| 解码器 | 文件（HuggingFace） | 大小 | ComfyUI 最低版本 | 它是什么、自述的效果 |
+|--------|--------------------|------|------------------|----------------------|
+| Sol-H3-VAE | `Comfy-Org/MiniMax-H3` 的 `vae/minimax_h3_sol_vae_int8_convrot.safetensors`（原版 `Efficient-Large-Model/Sol-H3-VAE`） | 1.99 GB | **0.44.0** | 24 层，蒸馏成整段一次解码（不分瓦片、不做时间重叠重算）。模型卡：5090 上 768p × 5 s 从 12.5 s 降到 5.0 s；和官方解码器比 PSNR 45.4 dB（留出的 latent）/ 38.2 dB（一条生成的 768p 片段）；占用随片段长度增长 |
+| LynnReal light VAE | `Kijai/MiniMax-H3-experimental` 的 `minimax_h3_lynnreal_light_vae_int8_convrot.safetensors`（原版 `stdstu123/LynnReal-Onmi-light-vae`） | 2.14 GB | **0.39.0** | 26 层的蒸馏解码器，编码器不变。Kijai 的说明：解码约快 1.3 倍 |
+| LightVAE Lite | 同仓库 `minimax_h3_lightvae_lite_vae_int8_convrot.safetensors` | 1.04 GB | **0.41.0** | 12 层解码器，编码器也剪过 |
+
+- **0.37.2 上三个都不能用。** 版本是逐个 tag 对着 `comfy/sd.py` 查的：0.37.2–0.38.2 把解码器写死成 36 层，0.39.0 起才按文件里的层数建；剪过的编码器 0.41.0 起；Sol 的键名 0.44.0 起才认。在 0.37.2 的加载代码上实际试过（只用文件头部的形状）：LynnReal 的 26 层文件**不报错地加载成 36 层**，控制台刷 `Missing weight for layer decoder.transformer_blocks.26…35` 和一行 `Missing VAE keys`，缺的 10 层是未初始化的值，解出来的画面是坏的；Sol 和 LightVAE Lite 的文件是 `WARNING: No VAE weights detected, VAE not initalized.`。要用就先升级 ComfyUI（§6 的检查照做）；不升级就继续用 `minimax_h3_video_vae_int8_convrot`——它已经是量化过的版本（Kijai：比 fp16 解码快约 2 倍）。
+- 用法（升级之后）：`VAELoader` 换个文件名就行，附带的工作流里是节点 119（`--set 119.vae_name=minimax_h3_sol_vae_int8_convrot.safetensors`；FL2VA 那几份是 `105:11`）。蒸馏的解码器和官方的不逐像素相同，建议只在草稿档用：草稿带 `--keep-latent`，选中的那条精修时仍由官方 VAE 解码。
+- 三个都没有在这套流程里实跑过，速度是各自作者的数字、口径不同（Sol 的是它自己的引擎，不是 ComfyUI 里的耗时）。升级后第一次用，先拿同一条存下的 latent 用两种解码器各出一遍对比画面和耗时。
+
 ## 3. 明确不要叠加
 
 - 任何两种蒸馏：lightx2v Turbo × PDD × HyperFlow × VDN turbo adapter × larryvrh。
