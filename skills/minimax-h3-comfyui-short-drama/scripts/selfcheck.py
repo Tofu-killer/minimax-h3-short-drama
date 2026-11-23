@@ -238,9 +238,9 @@ def main():
             key_wf = json.loads((work / "qc/wired_key.api.json").read_text(encoding="utf-8"))
             kg = [v["inputs"] for v in key_wf.values() if v["class_type"] == "MiniMaxH3AddGuide"]
             keyed = r3.returncode == 0 and len(kg) == 1 and kg[0]["frame_idx"] == 72 \
-                and key_wf[kg[0]["image"][0]]["inputs"]["image"] == "key_s02_2.png" \
+                and key_wf[kg[0]["image"][0]]["inputs"]["image"].startswith("key_s02_2_") \
                 and "keyframe corresponds to <Picture 1>" in (work / "prompts/s02.txt").read_text(encoding="utf-8")
-            good = r.returncode == 0 and r2.returncode == 0 and pics[:1] == ["first_s03.png"] and len(pics) == 3 and plain and pinned \
+            good = r.returncode == 0 and r2.returncode == 0 and pics[0].startswith("first_s03_") and len(pics) == 3 and plain and pinned \
                 and h3["length"] == 124 and "2 take(s)" in r.stdout and keyed
             record("comfy_submit.py --dry-run (references in order; --anchor pins the first frame and a shot keyframe)", "PASS" if good else "FAIL",
                    f"pictures {pics}; with --anchor: guide {guide}, keyframe at frame {kg[0]['frame_idx']}" if good

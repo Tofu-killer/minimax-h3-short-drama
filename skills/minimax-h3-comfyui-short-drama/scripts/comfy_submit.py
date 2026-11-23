@@ -127,10 +127,19 @@ def sha256_file(p: Path) -> str:
     return h.hexdigest()
 
 
+def upload_name(path: Path) -> str:
+    """The name a file gets in ComfyUI's input folder: its stem in plain ASCII plus the first 8 hex digits of its
+    content hash. Two different files that share a base name (face.png of two characters) can then not overwrite
+    each other, the same file always lands on the same name, and a Chinese file name never has to travel in an
+    HTTP header."""
+    stem = re.sub(r"[^A-Za-z0-9._-]+", "_", path.stem).strip("._") or "file"
+    return f"{stem}_{sha256_file(path)[:8]}{path.suffix.lower()}"
+
+
 def upload(server, path: Path) -> str:
     boundary = uuid.uuid4().hex
     ctype = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
-    body = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"image\"; filename=\"{path.name}\"\r\n"
+    body = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"image\"; filename=\"{upload_name(path)}\"\r\n"
             f"Content-Type: {ctype}\r\n\r\n").encode() + path.read_bytes() + \
            f"\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"overwrite\"\r\n\r\ntrue\r\n--{boundary}--\r\n".encode()
     res = json.loads(http(server, "/upload/image", body, {"Content-Type": f"multipart/form-data; boundary={boundary}"}))
@@ -145,7 +154,7 @@ def parse_value(raw: str, input_name: str, server: str, media: dict, do_upload: 
         if not p.exists():
             die(f"file not found: {p}")
         if input_name in MEDIA_INPUTS or p.suffix.lower() in MEDIA_EXT:
-            name = upload(server, p) if do_upload else p.name
+            name = upload(server, p) if do_upload else upload_name(p)
             media[name] = sha256_file(p)
             return name
         return p.read_text(encoding="utf-8")
@@ -287,7 +296,7 @@ def apply_media(wf: dict, media_json: Path, server: str, media: dict, do_upload:
         nonlocal next_id
         if not path.exists():
             die(f"--media: reference file not found: {path}")
-        name = upload(server, path) if do_upload else path.name
+        name = upload(server, path) if do_upload else upload_name(path)
         media[name] = sha256_file(path)
         new = str(next_id)
         next_id += 1
