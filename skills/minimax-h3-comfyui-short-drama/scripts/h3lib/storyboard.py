@@ -80,6 +80,8 @@ class Shot:
     performance: str = ""           # optional: trigger -> reception -> one response -> settled state (observable cues)
     sound_cue: str = ""             # optional: one diegetic sound tied to an action in this shot
     end_hold: bool = False          # optional: last shot settles 0.5 s then holds 1 s (trimmed at assembly)
+    keyframe: Optional[str] = None  # optional (ref2va, shots 2..): a picture of the frame this shot starts on
+    keyframe_note: str = ""         # optional: what that picture shows, for the definition line
 
 
 @dataclass
@@ -175,7 +177,7 @@ def load_episode(path: str | Path) -> Episode:
         shots = []
         for sh in s["shots"]:
             dl = [_from_dict(Dialogue, d) for d in sh.get("dialogue", [])]
-            shots.append(_from_dict(Shot, {**sh, "dialogue": dl}))
+            shots.append(_from_dict(Shot, {**sh, "dialogue": dl, "keyframe": _resolve(base, sh.get("keyframe"))}))
         segments.append(_from_dict(Segment, {**s, "shots": shots}))
     return Episode(title=raw["title"], ratio=raw["ratio"], style=raw.get("style", "Live-action, cinematic"),
                    characters=characters, scenes=scenes, props=props, segments=segments,
@@ -497,7 +499,7 @@ def reference_count(ep: "Episode", seg: "Segment") -> tuple[int, int]:
     if seg.mode != "ref2va":
         return (1 if seg.first_frame else 0) + (1 if seg.last_frame else 0), 0
     speakers = {d.speaker for sh in seg.shots for d in sh.dialogue}
-    pics = 1 if seg.first_frame else 0
+    pics = (1 if seg.first_frame else 0) + sum(1 for sh in seg.shots if sh.keyframe and sh.index > 1)
     audio = 0
     for cid in seg.character_ids:
         try:
@@ -542,7 +544,8 @@ def reference_problems(ep: "Episode") -> list[str]:
             out.append(f"segment {seg.id}: WARN {pics} picture(s) + {audio} voice reference(s) = {pics + audio} references; community "
                        f"tests found 6 or fewer the most stable. Options: fewer pictures for a secondary character in this "
                        f"segment (\"character_refs\": {{\"<id>\": 1}}), "
-                       f"use_scene_reference false, or leave out a prop that is only glimpsed")
+                       f"use_scene_reference false (a first frame or keyframes already show the room), fewer shot keyframes, "
+                       f"or leave out a prop that is only glimpsed")
     return out
 
 
@@ -674,6 +677,14 @@ def validate_episode(ep: Episode) -> list[str]:
             problems.append(f"{tag}: mode {seg.mode} requires first_frame")
         if seg.mode == "fl2va" and not seg.last_frame:
             problems.append(f"{tag}: fl2va requires last_frame")
+        for sh in seg.shots:
+            if not sh.keyframe:
+                continue
+            if sh.index == 1:
+                problems.append(f"{tag} shot 1: the picture the segment opens on is the segment's first_frame, not a shot keyframe")
+            elif seg.mode != "ref2va":
+                problems.append(f"{tag} shot {sh.index}: keyframe needs mode ref2va (it is wired as a reference picture; "
+                                f"{seg.mode} takes only first_frame / last_frame)")
         if not seg.shots:
             problems.append(f"{tag}: no shots")
             continue

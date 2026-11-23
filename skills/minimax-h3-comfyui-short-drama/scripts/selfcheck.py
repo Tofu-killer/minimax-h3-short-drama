@@ -122,6 +122,7 @@ def main():
         for n in ("face.png", "room.png"):
             run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=512x512:d=1", "-frames:v", "1", str(work / "bible" / n)], work)
         run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=1344x768:d=1", "-frames:v", "1", str(work / "bible" / "first_s03.png")], work)
+        shutil.copyfile(work / "bible" / "first_s03.png", work / "bible" / "key_s02_2.png")
         record("make synthetic clips", "PASS" if ok else "FAIL", "" if ok else "ffmpeg could not encode test clips (libx264 / aac missing?)")
         if not ok:
             sys.exit(1)
@@ -166,7 +167,8 @@ def main():
                   {"id": "s02", "duration": 6, "scene_id": "room", "character_ids": ["hero"], "soundscape": "The hum continues, a chair creaks once.",
                    "continuity": "Hero stands at frame centre facing the window, hands at his sides.", "end_state": "Hero sits on the chair at frame left, facing the camera.",
                    "shots": [shot(1, 0, "a medium shot from behind Hero", "Hero turns from the window toward the chair and walks to it slowly."),
-                             shot(2, 3.0, "a close-up on Hero's face", "Hero sits down, looks into the lens and speaks one calm sentence.", "开始吧")]},
+                             dict(shot(2, 3.0, "a close-up on Hero's face", "Hero sits down, looks into the lens and speaks one calm sentence.", "开始吧"),
+                                  keyframe="bible/key_s02_2.png", keyframe_note="{hero} seated, facing the lens")]},
                   {"id": "s03", "duration": 5, "scene_id": "room", "character_ids": ["hero"], "soundscape": "The hum fades under a soft breath.",
                    "first_frame": "bible/first_s03.png",
                    "continuity": "Hero sits on the chair at frame left, facing the camera.", "end_state": "Hero sits still at frame left, eyes closed.",
@@ -178,7 +180,7 @@ def main():
         record("validate_episode.py", "PASS" if ok else "FAIL", note)
         ok, note = script("build_prompts.py", ["ep.json", "--out", "prompts"], work)
         record("build_prompts.py", "PASS" if ok else "FAIL", note)
-        ok, note = script("lint_prompt.py", ["prompts/s02.txt", "--seconds", "6", "--images", "2", "--audios", "0"], work)
+        ok, note = script("lint_prompt.py", ["prompts/s02.txt", "--seconds", "6", "--images", "3", "--audios", "0"], work)
         record("lint_prompt.py", "PASS" if ok else "FAIL", note)
 
         # the linter must report a broken prompt, not crash on it: full-width brackets are the classic paste accident
@@ -221,10 +223,19 @@ def main():
             pinned = len(guide) == 1 and pinned_wf["13"]["inputs"]["conditioning"] == [guide[0], 0] \
                 and pinned_wf[pinned_wf[guide[0]]["inputs"]["image"][0]]["inputs"]["image"] == pics[0] \
                 and pinned_wf[guide[0]]["inputs"]["frame_idx"] == 0
+            # the two-shot segment carries a keyframe for shot 2 (cut at 3.0 s): a <Picture N> by default, pinned at frame 72 with --anchor
+            r3 = run([sys.executable, str(HERE / "comfy_submit.py"), "wf.api.json", "--server", "http://127.0.0.1:9", "--media", "prompts/s02.media.json",
+                      "--dry-run", "--anchor", "--write-workflow", "qc/wired_key.api.json"], work)
+            key_wf = json.loads((work / "qc/wired_key.api.json").read_text(encoding="utf-8"))
+            kg = [v["inputs"] for v in key_wf.values() if v["class_type"] == "MiniMaxH3AddGuide"]
+            keyed = r3.returncode == 0 and len(kg) == 1 and kg[0]["frame_idx"] == 72 \
+                and key_wf[kg[0]["image"][0]]["inputs"]["image"] == "key_s02_2.png" \
+                and "keyframe corresponds to <Picture 1>" in (work / "prompts/s02.txt").read_text(encoding="utf-8")
             good = r.returncode == 0 and r2.returncode == 0 and pics[:1] == ["first_s03.png"] and len(pics) == 3 and plain and pinned \
-                and h3["length"] == 124 and "2 take(s)" in r.stdout
-            record("comfy_submit.py --dry-run (references wired in order; --anchor pins the first frame)", "PASS" if good else "FAIL",
-                   f"pictures {pics}; with --anchor: guide node {guide}" if good else (r.stderr.strip() or r2.stderr.strip() or r.stdout.strip())[-300:])
+                and h3["length"] == 124 and "2 take(s)" in r.stdout and keyed
+            record("comfy_submit.py --dry-run (references in order; --anchor pins the first frame and a shot keyframe)", "PASS" if good else "FAIL",
+                   f"pictures {pics}; with --anchor: guide {guide}, keyframe at frame {kg[0]['frame_idx']}" if good
+                   else (r.stderr.strip() or r2.stderr.strip() or r3.stderr.strip() or r.stdout.strip())[-300:])
         except Exception as e:  # noqa: BLE001
             record("comfy_submit.py --dry-run", "FAIL", f"{type(e).__name__}: {e}; {(r.stderr.strip() or r.stdout.strip())[-200:]}")
 

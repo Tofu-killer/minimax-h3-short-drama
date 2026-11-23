@@ -73,14 +73,15 @@ non_diegetic_music:
 N/A
 ```
 
-**脚本替你做的事**（前四件来自官方完整示例；分镜里不要自己再写一遍）：
+**脚本替你做的事**（前四件和第 6 件来自官方指南与完整示例；分镜里不要自己再写一遍）：
 
 1. **人不写名字。** 定义行是 `the <who> in <Picture N>, with <features>`（官方 §2.1）；一个人有多张图就写明每张图提供什么（`whose face and hairstyle come from … and whose build and outfit come from …`，官方「state what each asset provides」）。没有标签的地方（三段式、没参考图的人、状态里提到的不在本段的人）用短称 `the woman in the black suit jacket`（`short_phrase`，不填就取 `identity_phrase` 的开头：`the woman in her early thirties`）。
 2. **首次清楚出场处把外貌再说一遍**（官方 §5.3：at the first clear appearance describe its referenced characteristics）：紧跟在这一镜里第一次提到它的标签后面，作同位语。「清楚出场」= 人在画面里、不是只露肩膀 / 手 / 背影，并且这一镜是中景或更宽（在场的人都看得清），或者景别写的就是他，或者景别没写任何人（建立镜头）；别人的特写镜头不算。在那之前的一瞥只给短称；之后每次切镜、该镜的主体会带一句 `…, the <短称> from Shot k`。道具同理，首次出现处带一遍描述。
 3. **台词后闭嘴。** 官方示例每句台词后面都跟一句 `She closes her lips and …`。`dialogue[].after_line` 写这句（说完之后这个人做什么）；不写则补 `<Subject N> closes his / her lips.`
 4. **音色参考每句都引用，并带上嗓音的文字描述**（官方 §5.3：在音频关系起作用的地方引用 `<Audio N>`；官方示例写的是 `using the clear youthful voice timbre referenced from <Audio 1>`）：首句 `using the voice timbre referenced from <Audio 1>, with a tired, gravelly voice and slow, measured delivery,`（后半句取自 `voice_phrase`），之后 `in the same voice referenced from <Audio 1>`。没有音色参考的人，首次开口处只写嗓音。该镜的景别里点到说话人时，`(S1)` 也跟在那里的标签后面。
 5. **只说引号里的词。** 有台词的段在末尾加 `Speak only the quoted dialogue lines.`（单人再加 `After that nobody says anything else.`，多人加 `Those are the only words in the video.`）——这句不是官方写法，是社区实测的防多说词手段（多说词 9.3% → 1.3%，`camera-and-performance.md` §5）；没有台词的段在 `[Shot 1]` 里写 `Nobody speaks in this video; every mouth stays closed …`。
-6. **`appears in` 和 `the setting comes from` 自动对账**：保留行里的出场镜头是从写好的镜头正文里读出来的；人物行末尾的「场景取自」写的是场景的标签。
+6. **首帧和关键帧在镜头里点名**（官方 §5.3 的原话）：段填了 `first_frame`，第 1 镜正文开头加 `The shot begins from <Picture 1>.`；某一镜写了 `keyframe`，该镜加 `The shot's keyframe corresponds to <Picture N>.`，定义行是 `<Picture N> is the keyframe of [Shot n], showing …`。
+7. **`appears in` 和 `the setting comes from` 自动对账**：保留行里的出场镜头是从写好的镜头正文里读出来的；人物行末尾的「场景取自」写的是场景的标签。
 
 **状态怎么进提示词**：
 

@@ -323,7 +323,7 @@ def _opening(ep: Episode, seg: Segment, labels: dict[str, str]) -> dict[str, str
     return out
 
 
-ORDER = ("setting", "blocking", "state", "nospeech", "body", "closing")      # how a shot's parts follow its framing sentence
+ORDER = ("anchor", "setting", "blocking", "state", "nospeech", "body", "closing")   # how a shot's parts follow its framing sentence
 
 
 def _join_shot(head: str, parts: dict[str, str]) -> str:
@@ -454,6 +454,22 @@ def build_ref2va(ep: Episode, seg: Segment) -> BuiltPrompt:
         defs.append(f"<Picture {pic}> is the first frame of [Shot 1], showing the opening composition, positions and lighting.")
         retention.append(f"<Picture {pic}> ([Shot 1] first frame): fully_preserved - the composition, character positions "
                          f"and lighting of the opening frame are retained and the action develops from it.")
+    # optional keyframes of later shots (official ref guide 5.3 and ComfyUI's multiframe template): one picture per shot
+    frame_pics: dict[int, int] = {1: 1} if seg.first_frame else {}     # shot index -> <Picture N> the shot starts on
+    key_notes: dict[int, str] = {}
+    for sh in seg.shots:
+        if not sh.keyframe or sh.index == 1:
+            continue
+        if pic >= MAX_REF_IMAGES:
+            import sys
+            print(f"WARN {seg.id}: keyframe of shot {sh.index} dropped (9-slot limit): {sh.keyframe}", file=sys.stderr)
+            continue
+        pic += 1
+        content.append({**image_item(sh.keyframe, "reference_image"), "anchor": {"shot": sh.index, "frame": int(round(sh.start * 24))}})
+        frame_pics[sh.index] = pic
+        key_notes[pic] = (sh.keyframe_note or "").strip().rstrip(".")
+        retention.append(f"<Picture {pic}> ([Shot {sh.index}] keyframe): fully_preserved - the composition, character positions "
+                         f"and lighting of this keyframe are established as the shot starts.")
 
     # characters first (identity), then scene, then props
     for cid in seg.character_ids:
@@ -582,6 +598,13 @@ def build_ref2va(ep: Episode, seg: Segment) -> BuiltPrompt:
         h, b = _shot_parts(seg, sh, i == 0, labels, speak, closure, speakers=speakers)
         heads.append(h)
         parts.append({"body": " ".join(b)})
+        if sh.index in frame_pics:                          # official wording for frame anchors inside a shot (ref guide 5.3)
+            parts[-1]["anchor"] = (f"The shot begins from <Picture {frame_pics[sh.index]}>." if sh.index == 1
+                                   else f"The shot's keyframe corresponds to <Picture {frame_pics[sh.index]}>.")
+    key_defs = [f"<Picture {n}> is the keyframe of [Shot {idx}], showing "
+                + (fill(key_notes[n], labels) if key_notes.get(n) else "the composition the shot starts on") + "."
+                for idx, n in sorted(frame_pics.items()) if idx > 1]
+    defs[1 if seg.first_frame else 0:1 if seg.first_frame else 0] = key_defs      # right after the first-frame line
     parts[0].update(setting=setting, **_opening(ep, seg, labels))            # the set-up sits inside [Shot 1]
     parts[-1]["closing"] = _closing(ep, seg, labels)
     _introduce(heads, parts, subjects, [_framing_class(sh.framing) for sh in seg.shots])
@@ -595,7 +618,7 @@ def build_ref2va(ep: Episode, seg: Segment) -> BuiltPrompt:
     retention = [re.sub(r"@@SHOTS:(<Subject \d+>)@@", lambda m: appears(m.group(1)), r).replace("@@SETTING@@", setting_ref)
                  for r in retention]
 
-    types = (["keyframe completion"] if seg.first_frame else []) + ["reference generation"] + (["audio reference"] if aud else [])
+    types = (["keyframe completion"] if frame_pics else []) + ["reference generation"] + (["audio reference"] if aud else [])
     people = [labels[c] for c in seg.character_ids]
     n = len(seg.shots)
     if seg.summary.strip():

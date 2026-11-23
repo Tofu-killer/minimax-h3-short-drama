@@ -248,9 +248,9 @@ def apply_media(wf: dict, media_json: Path, server: str, media: dict, do_upload:
     """Put a segment into the workflow exactly as build_prompts.py numbered it: prompt text, frame count, and one
     Load node per reference wired to ref_images.ref_image_0.. / ref_audios.ref_audio_0.. (Ref2VA) or to
     first_frame / last_frame (I2VA / FL2VA). Whatever references the workflow carried before are replaced.
-    A Ref2VA segment's first frame is <Picture 1>, a reference (as in ComfyUI's multiframe reference template);
-    with `anchor` it is also pinned at frame 0 by a MiniMaxH3AddGuide node placed between the reference node and
-    whatever read its conditioning. Returns the lines of the wiring table."""
+    A Ref2VA segment's frame pictures (its first frame, the keyframes of later shots) are references the prompt
+    names as those frames; with `anchor` each is also pinned on the timeline by a MiniMaxH3AddGuide node, chained
+    between the reference node and whatever read its conditioning. Returns the lines of the wiring table."""
     spec = json.loads(media_json.read_text(encoding="utf-8"))
     mode = spec.get("mode", "ref2va")
     want = H3_REF if mode == "ref2va" else H3_I2V
@@ -297,7 +297,7 @@ def apply_media(wf: dict, media_json: Path, server: str, media: dict, do_upload:
 
     n_img = n_aud = 0
     guides = [k for k, v in wf.items() if v.get("class_type") == H3_GUIDE]        # guide nodes the export already carried
-    has_first = False
+    anchors: list[dict] = []                                                      # frame pictures of this segment
     for item in spec.get("media", []):
         path = Path(item["path"])
         if item["type"] == "image" and item.get("role") in ("first_frame", "last_frame"):
@@ -313,41 +313,58 @@ def apply_media(wf: dict, media_json: Path, server: str, media: dict, do_upload:
             new = load_node("image", path, f"Picture {n_img + 1}")
             inputs[f"ref_images.ref_image_{n_img}"] = [new, 0]
             n_img += 1
-            if item.get("anchor") != "first_frame":
+            mark = item.get("anchor")                    # "first_frame", or {"shot": n, "frame": f} for a later shot's keyframe
+            if not mark:
                 lines.append(f"<Picture {n_img}>  <- {path.name}")
                 continue
-            has_first = True
-            if not anchor:
-                lines.append(f"<Picture {n_img}>  <- {path.name}   (the first frame: a reference the prompt names as the opening; "
-                             "--anchor would also pin it at frame 0)")
-            elif guides:
-                lines.append(f"<Picture {n_img}>  <- {path.name}   (the first frame, as a reference only)")
-            elif not isinstance(inputs.get("vae"), list):
-                lines.append(f"<Picture {n_img}>  <- {path.name}   (the first frame, as a reference only)")
-                lines.append(f"advice: the first frame cannot be pinned at frame 0: the H3 reference node has no `vae` input - connect the video VAE")
-            else:
-                guide = str(next_id)
-                next_id += 1
-                for other in wf.values():                # whatever read the reference node's conditioning now reads the guide's
-                    for name, val in other.get("inputs", {}).items():
-                        if isinstance(val, list) and len(val) == 2 and str(val[0]) == nid and val[1] == 0:
-                            other["inputs"][name] = [guide, 0]
-                wf[guide] = {"class_type": H3_GUIDE, "_meta": {"title": "first frame anchor"},
-                             "inputs": {"positive": [nid, 0], "vae": inputs["vae"], "latent": [nid, 1], "image": [new, 0], "frame_idx": 0}}
-                lines.append(f"<Picture {n_img}>  <- {path.name}   (the first frame: also pinned at frame 0 - {H3_GUIDE} [{guide}] added)")
-                fit = frame_fit("anchor", path, literals(wf, inputs))
-                if fit:
-                    lines.append(fit)
+            frame = 0 if mark == "first_frame" else int(mark.get("frame", 0))
+            what = "the first frame" if mark == "first_frame" else f"keyframe of shot {mark.get('shot', '?')}"
+            anchors.append({"picture": n_img, "load": new, "frame": frame, "what": what, "path": path, "line": len(lines)})
+            lines.append(f"<Picture {n_img}>  <- {path.name}   ({what}: a reference the prompt names as that frame)")
         elif item["type"] == "audio":
             new = load_node("audio", path, f"Audio {n_aud + 1}")
             inputs[f"ref_audios.ref_audio_{n_aud}"] = [new, 0]
             n_aud += 1
             lines.append(f"<Audio {n_aud}>    <- {path.name}")
+    # --anchor: pin every frame picture where it belongs on the timeline - one MiniMaxH3AddGuide per picture, chained
+    # behind the reference node as ComfyUI's multiframe reference template chains them for its keyframes
+    if anchors and anchor and not guides:
+        total = inputs.get("length") if isinstance(inputs.get("length"), int) else None
+        if not isinstance(inputs.get("vae"), list):
+            lines.append("advice: --anchor cannot pin the frame pictures: the H3 reference node has no `vae` input - connect the video VAE")
+        else:
+            prev = [nid, 0]
+            guide_ids = []
+            for a in anchors:
+                if total is not None and a["frame"] >= total:
+                    lines.append(f"advice: {a['what']} would be pinned at frame {a['frame']}, past the end of the {total}-frame take - left as a reference only")
+                    continue
+                guide = str(next_id)
+                next_id += 1
+                wf[guide] = {"class_type": H3_GUIDE, "_meta": {"title": f"{a['what']} anchor"},
+                             "inputs": {"positive": prev, "vae": inputs["vae"], "latent": [nid, 1], "image": [a["load"], 0], "frame_idx": a["frame"]}}
+                prev = [guide, 0]
+                guide_ids.append(guide)
+                lines[a["line"]] = (f"<Picture {a['picture']}>  <- {a['path'].name}   ({a['what']}: also pinned at frame {a['frame']} - "
+                                    f"{H3_GUIDE} [{guide}] added)")
+                fit = frame_fit("anchor", a["path"], literals(wf, inputs))
+                if fit:
+                    lines.append(fit)
+            if guide_ids:
+                for k, other in wf.items():              # whatever read the reference node's conditioning now reads the last guide's
+                    if k in guide_ids:
+                        continue
+                    for name, val in other.get("inputs", {}).items():
+                        if isinstance(val, list) and len(val) == 2 and str(val[0]) == nid and val[1] == 0:
+                            other["inputs"][name] = prev
+    elif anchors and not anchor:
+        lines.append("--anchor would also pin " + ("these pictures" if len(anchors) > 1 else "this picture")
+                     + " on the timeline (" + ", ".join(f"<Picture {a['picture']}> at frame {a['frame']}" for a in anchors) + ")")
     if guides and want == H3_REF:
         ids = ", ".join(guides)
         lines.append(f"advice: the exported workflow already has {H3_GUIDE} node(s) [{ids}]; they are left as exported, so whatever "
                      "picture they load is pinned into this take"
-                     + (" and this segment's first frame is not pinned by the script" if has_first and anchor else "")
+                     + (" and --anchor adds nothing for this segment" if anchors and anchor else "")
                      + " - export the draft workflow without guide nodes")
     return lines
 
@@ -803,9 +820,10 @@ def main():
                     help="also write the workflow exactly as it will be queued (after --media / --set, before the seed is set) "
                          "to this file - to see the wiring the script made, or to open it in ComfyUI")
     ap.add_argument("--anchor", action="store_true",
-                    help="Ref2VA segments with a first frame: besides wiring it as <Picture 1>, pin it at frame 0 with a "
-                         "MiniMaxH3AddGuide node (an exact opening frame, e.g. when continuing from the previous take's last frame). "
-                         "Default: reference only, as ComfyUI's multiframe reference template treats its first picture")
+                    help="Ref2VA segments with frame pictures (a first frame, keyframes of later shots): besides wiring them as "
+                         "<Picture N>, pin each on the timeline with a MiniMaxH3AddGuide node - the first frame at frame 0 (an exact "
+                         "opening, e.g. when continuing from the previous take's last frame), a keyframe at its shot's cut. "
+                         "Default: references only")
     ap.add_argument("--server", default="http://127.0.0.1:8188")
     ap.add_argument("--set", action="append", default=[], help="node_id.input=value (value may be @file)")
     ap.add_argument("--set-title", action="append", default=[], help='"Node title".input=value')

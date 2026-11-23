@@ -45,6 +45,7 @@
 - soundscape：1–4 个完整句：一句安静的底噪（A quiet indoor room tone.）+ 本段动作发出的声音（物体 + 动作）。持续的环境声（雨、街声、人群、机器声）不写在这里——后期按场景铺一条连续的环境声，逐段各出各的会在切点断开。不写人声、不用情绪形容词。
 - music："N/A"（全集后期统一配乐）。
 - first_frame_prompt：仅需要首帧的段，按 assets/image-prompts.md §6「逐镜首帧」的模板写英文静帧描述。
+- shots[].keyframe（可选，只在 ref2va 段的第 2 个及以后的镜头上）：该镜起手那一帧的图片路径；只在这个镜头的构图必须按设计来时才配（正反打的反打、道具特写），每张占一个参考位。keyframe_note 用一句英文写这张图画的是什么。
 
 【开场站位 stagings】（顶层数组；两个人以上的场景，每进入一次就给它的第一段写一条；有了它，这一段的 continuity 可以留空——两样都写会把位置说两遍）
 {"scene_id", "segment", "places": [{"character", "at", "side": "left|centre|right", "posture", "facing"}], "enters_later": [角色 id], "others"}

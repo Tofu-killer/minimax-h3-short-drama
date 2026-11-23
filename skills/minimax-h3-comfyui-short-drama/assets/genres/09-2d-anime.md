@@ -12,7 +12,7 @@
 
 | 项 | 建议 |
 |----|------|
-| 模式 | Ref2VA 直出（2D 不需要先出首帧）；子镜头钉帧用官方 multiframe_reference 工作流 |
+| 模式 | Ref2VA 直出（2D 不需要先出首帧）；子镜头要按分镜图来时给该镜写 `keyframe`，提交时加 `--anchor` 钉帧（`image-stage.md` §5） |
 | 段长 / 镜数 | 8–12 s，对白 2 镜；动作 / 日常 2–3 镜 |
 | 步数 | 草稿 Turbo 8 步（没有运镜的镜头可以 4 步），有运镜的镜头精修 20 步、关 Turbo，shift 12/3；二采按需 |
 | LoRA | `Inner-Reflections/MiniMax-H3-Looping-Sketch-Anime` 0.75–1.25（叠 Turbo 再加），提示含 `hand-drawn 2D anime art style, rough textured outlines, flat colors, white outline`；adf99 Anime Slider 正值更 2D（小幅）（`lora-and-style.md` §3） |

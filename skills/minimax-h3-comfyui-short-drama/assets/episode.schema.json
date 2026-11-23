@@ -413,7 +413,9 @@
          "type": "boolean",
          "default": false,
          "description": "Last shot of the segment: settle 0.5 s then hold 1 s (trimmed at assembly)"
-        }
+        },
+        "keyframe": {"type": ["string", "null"], "description": "Optional, ref2va, shots 2 and later: a picture of the frame this shot starts on. It becomes a <Picture N> the prompt names as the keyframe of this shot; comfy_submit.py --anchor also pins it at the shot's cut. Shot 1 uses the segment's first_frame instead"},
+        "keyframe_note": {"type": "string", "description": "Optional: what the keyframe shows, in English, with {asset_id} placeholders; written into its definition line"}
        }
       }
      },

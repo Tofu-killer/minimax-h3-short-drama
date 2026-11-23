@@ -94,7 +94,8 @@ def main():
                 lines.append(f"{who}{'（画外）' if d.offscreen else ''}{tone}：{d.text}（摊到本镜 {rate:.1f} 字/s，上限 3）{after}")
             out.append("| " + " | ".join([
                 str(sh.index), f"{bounds[i]:.2f}–{bounds[i + 1]:.2f}",
-                esc(sh.framing + (f"，{sh.lens}" if getattr(sh, "lens", "") else "")),
+                esc(sh.framing + (f"，{sh.lens}" if getattr(sh, "lens", "") else "")
+                    + (f"（关键帧：{Path(sh.keyframe).name}）" if getattr(sh, "keyframe", None) else "")),
                 esc(sh.camera), esc(sh.action), esc(getattr(sh, "performance", "")),
                 esc(getattr(sh, "lighting", "")), esc("<br>".join(lines)),
                 esc(getattr(sh, "sound_cue", ""))]) + " |")

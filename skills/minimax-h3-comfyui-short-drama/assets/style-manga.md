@@ -22,7 +22,7 @@ Line quality, proportions and character colors stay identical in every frame. Mo
 
 ## 可用的公开工作流
 - ComfyUI 自带模板里的 MiniMax H3 Reference to Video（`comfyui-nodes.md` §2；参考图全部用动画风）；仓库 `workflows/official/` 里也有一份，不随 skill 安装；
-- 子镜头分镜图钉帧：ComfyUI 自带模板里的多帧参考（`MiniMaxH3AddGuide` 链，`comfyui-nodes.md`）；
+- 子镜头分镜图钉帧：给该镜写 `keyframe`，提交时加 `--anchor`（脚本按 ComfyUI 多帧模板的方式串 `MiniMaxH3AddGuide`，`comfyui-nodes.md` §3）；
 - 分镜图生成：Qwen‑Image‑Edit「人物多视角」「换装」工作流；
 - 动画示例写法见 `genres/09-2d-anime.md`。
 

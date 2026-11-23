@@ -52,6 +52,11 @@ def main():
     for pr in ep.props:
         for f in pr.reference_images:
             if not _P(f).exists(): problems.append(f"prop {pr.id}: reference image missing: {f}")
+    for seg in ep.segments:                                # frame pictures named by a segment or a shot
+        for what, f in (("first_frame", seg.first_frame), ("last_frame", seg.last_frame)):
+            if f and not _P(f).exists(): problems.append(f"segment {seg.id}: {what} missing: {f}")
+        for sh in seg.shots:
+            if sh.keyframe and not _P(sh.keyframe).exists(): problems.append(f"segment {seg.id} shot {sh.index}: keyframe missing: {sh.keyframe}")
     if a.catalog:
         from catalog import check as check_catalog  # type: ignore
         problems += check_catalog(Path(a.episode), Path(a.catalog))
@@ -61,6 +66,7 @@ def main():
         n += 1 if ep.scene(seg.scene_id).reference_images else 0
         n += sum(1 for p in seg.prop_ids if ep.prop(p).reference_images)
         n += 1 if (seg.mode == "ref2va" and seg.first_frame) else 0
+        n += sum(1 for sh in seg.shots if sh.keyframe and sh.index > 1) if seg.mode == "ref2va" else 0
         if n > 9: problems.append(f"segment {seg.id}: {n} reference images exceed the 9-slot limit (drop a character detail image or a prop)")
     warnings = [p.replace(": WARN ", ": ", 1) for p in problems if ": WARN " in p]
     errors = [p for p in problems if ": WARN " not in p]
