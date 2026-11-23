@@ -480,7 +480,7 @@ def render(plan: Plan, episode: str) -> tuple[str, int, int]:
             state = "have it" if i["have"] else f"{i['n']} candidates"
             lines.append(f"- **{i['what']}** -> `{i['dest']}`  ({state})")
             if i["have"]:
-                lines += [f"  - on disk. For other candidates of the same prompt, run it with another --seed:", "", f"      {i['cmd']}", ""]
+                lines += ["  - on disk. For other candidates of the same prompt, run it with another --seed:", "", f"      {i['cmd']}", ""]
                 continue
             if i.get("stale"):
                 lines.append(f"  - MAKE AGAIN: {plan.why.get(i['dest'], 'the file on disk no longer belongs to what it is made from')}")
