@@ -11,6 +11,8 @@
 - 我的工作流 JSON 目录：[/path/to/workflows]
 - 其他相关目录（整合包、启动器、输出目录）：[ ]
 
+先跑 `python <skill>/scripts/check_setup.py --json logs/setup.json`（ComfyUI 要开着）：第 1–4 部分里能从服务器问到的它都会报——版本、PyTorch 构建、启动参数、显存、附带工作流缺的节点包和模型文件——把它的输出贴进清单，再补它看不到的（驱动与控制面板设置、启动日志、磁盘、custom_nodes 的 git 信息、`sageattention` 包）。
+
 请按下面七个部分逐项探测并填写。每一项都要给出你是怎么得到的（命令或文件路径），拿不到的写「未知」并说明原因，不要猜。
 
 ## 1. 硬件与系统

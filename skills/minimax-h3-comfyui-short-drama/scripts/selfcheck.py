@@ -222,6 +222,37 @@ def main():
         except Exception as e:  # noqa: BLE001
             record("advice that does not contradict itself", "FAIL", f"{type(e).__name__}: {e}")
 
+        # the setup check reads a server's own answers: an old CUDA build, a loading flag, a node pack that is not installed,
+        # a model file that is missing or sits one folder too deep must each be named
+        try:
+            setup = load("check_setup")
+            facts, warned = setup.system_findings({"system": {"comfyui_version": "0.37.2", "python_version": "3.12.9 (x)", "pytorch_version": "2.8.0+cu126",
+                                                               "ram_total": 64 * 2**30, "ram_free": 40 * 2**30,
+                                                               "argv": ["main.py", "--windows-standalone-build", "--lowvram"],
+                                                               "comfy_package_versions": [{"name": "comfy-kitchen", "installed": "0.2.30", "required": "0.2.35"}]},
+                                                    "devices": [{"name": "cuda:0 NVIDIA GeForce RTX 4090", "type": "cuda",
+                                                                 "vram_total": 24 * 2**30, "vram_free": 23 * 2**30}]})
+            told = any("CUDA 12.6 build" in w for w in warned) and any("--lowvram" in w for w in warned) \
+                and any("comfy-kitchen" in w and "0.2.35" in w for w in warned) and not any("VRAM" in w for w in warned)
+            ref = json.loads((HERE.parent / "assets/workflows/h3_ref2va_sage_refine.api.json").read_text(encoding="utf-8"))
+            fake = {}
+            for node in ref.values():                        # a server that has every core node, none of the packs, and one file in a sub-folder
+                if node["class_type"] in setup.PACKS:
+                    continue
+                spec = fake.setdefault(node["class_type"], {"input": {"required": {}}})["input"]["required"]
+                for name, val in node["inputs"].items():
+                    if isinstance(val, str) and val.lower().endswith(".safetensors"):
+                        offered = ["sub\\" + val] if "lora" in name else ([] if "unet" in name else [val])
+                        spec.setdefault(name, [[]])[0].extend(offered)      # two VAE loaders share one class
+            classes, files = setup.workflow_state(ref, fake)
+            found = set(classes.values()) == {"kijai/ComfyUI-KJNodes", "tazmannner/ComfyUI-H3-ResCascade"} \
+                and any(i == "lora_name" and near.startswith("sub") for i, _v, near in files) \
+                and any(i == "unet_name" and near == "" for i, _v, near in files) and not any(i == "vae_name" for i, _v, _n in files)
+            record("check_setup.py names what a server lacks (old CUDA build, loading flag, node packs, missing or misplaced model files)",
+                   "PASS" if told and found else "FAIL", "" if told and found else f"system {told}: {warned} | workflow {found}: {classes} {files}")
+        except Exception as e:  # noqa: BLE001
+            record("check_setup.py", "FAIL", f"{type(e).__name__}: {e}")
+
         # a mistyped path or a broken JSON file must end in one line, not in a Python traceback
         (work / "broken.json").write_text('{"segments": ', encoding="utf-8")
         slips = [run([sys.executable, str(HERE / "validate_episode.py"), "no_such_file.json"], work),
