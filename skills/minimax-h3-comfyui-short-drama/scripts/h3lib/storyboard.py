@@ -475,10 +475,12 @@ def placeholder_problems(ep: "Episode") -> list[str]:
 
 
 def shot_spans(seg: "Segment") -> list[tuple["Shot", float, float]]:
-    """[(shot, start, end)] with ends taken from the next shot's start / the segment duration."""
+    """[(shot, start, end)] with ends taken from the next shot's start; the last shot ends where the generated clip
+    ends (the 17k+5 frame grid makes that a little later than the seconds asked for) - the same length the
+    storyboard table shows."""
     out = []
     for i, sh in enumerate(seg.shots):
-        end = seg.shots[i + 1].start if i + 1 < len(seg.shots) else float(seg.duration)
+        end = seg.shots[i + 1].start if i + 1 < len(seg.shots) else frames_for_seconds(seg.duration) / 24.0
         out.append((sh, float(sh.start), float(end)))
     return out
 
@@ -513,11 +515,21 @@ def rhythm_warnings(ep: "Episode") -> list[str]:
         spans = shot_spans(seg)
         durs = [e - s for _sh, s, e in spans]
         n_lines = sum(len(sh.dialogue) for sh in seg.shots)
+        # the same figures as the table in references/storyboard-and-assets.md, so the audit never objects to what the table allows
+        room_shots = 2 if seg.duration <= 6 else 3 if seg.duration <= 10 else 4
+        room_spoken = 2 if seg.duration <= 11 else 3
+        spoken = sum(1 for sh in seg.shots if sh.dialogue)
+        if len(seg.shots) > room_shots:
+            out.append(f"segment {seg.id}: {len(seg.shots)} shots in {seg.duration}s - at this length up to {room_shots} "
+                       f"(6 s or less: 1-2, 7-10 s: 2-3, 11-13 s: 3-4); split the segment or drop a shot")
+        elif spoken > room_spoken:
+            out.append(f"segment {seg.id}: {spoken} shots with lines in {seg.duration}s - at this length up to {room_spoken} "
+                       f"(a silent reaction shot may sit between them); move a line or split the segment")
         events = len(seg.shots) + n_lines
         load = seg.duration / events if events else seg.duration
-        if load < 2.0:
-            out.append(f"segment {seg.id}: {events} shots + lines in {seg.duration}s ({load:.1f}s each) - overloaded; "
-                       f"split the segment or drop a beat")
+        if load < 1.5:                               # the densest plan the table allows (10 s: 3 shots + 3 lines) is 1.7 s a beat
+            out.append(f"segment {seg.id}: {len(seg.shots)} shot(s) + {n_lines} line(s) in {seg.duration}s ({load:.1f}s a beat) - "
+                       f"overloaded: lines get rushed or dropped; split the segment or drop a beat")
         if len(durs) >= 3 and max(durs) - min(durs) <= 0.5:
             out.append(f"segment {seg.id}: all {len(durs)} shots last about {sum(durs) / len(durs):.1f}s - even pacing reads "
                        f"as mechanical; give the key shot more time and shorten a reaction")
@@ -642,10 +654,25 @@ def voice_and_frame_advice(ep: "Episode") -> list[str]:
             else:
                 first = speaks[c.id][0][0]
                 longest = max(n for seg, n in speaks[c.id] if seg is first)
-                if longest < 12:
+                # the room the shots of that segment leave for one line of this person (the same figure the rhythm audit uses):
+                # asking for 12 characters where 11 fit would contradict the audit
+                room = max((line_capacity(e0 - s0, sh.end_hold) for sh, s0, e0 in shot_spans(first)
+                            if any(d.speaker == c.id for d in sh.dialogue)), default=0)
+                if longest < 12 and room >= 12:
                     out.append(f"character {c.id}: WARN has no voice sample yet, and the longest line in {first.id} (the take a "
                                f"sample will be cut from) is {longest} characters, about {longest / 3.6:.1f} s - give one line of "
                                f"12 or more characters there, or plan to join two lines into the sample")
+                elif longest < 8:
+                    out.append(f"character {c.id}: WARN has no voice sample yet, and the longest line in {first.id} (the take a "
+                               f"sample will be cut from) is {longest} characters, about {longest / 3.6:.1f} s - the model takes "
+                               f"samples of 2-15 s, and the shots of {first.id} hold about {room} characters at most. One line "
+                               f"there cannot make the sample: plan to join it with this person's next clean line "
+                               f"(references/audio-and-post.md), or give the line a longer shot")
+                elif longest < 12:
+                    out.append(f"character {c.id}: WARN has no voice sample yet; the longest line in {first.id} (the take a sample will "
+                               f"be cut from) is {longest} characters, about {longest / 3.6:.1f} s, and its shot holds about {room} - "
+                               f"usable (the model takes 2-15 s) but short: when a later take has another clean line of this "
+                               f"person, join the two into a longer sample (6-8 s is the steadiest)")
     live = "live-action" in (ep.style or "").lower() or "真人" in (ep.style or "")
     for seg in ep.segments:
         if live and seg.mode == "ref2va" and not seg.first_frame and not seg.status.startswith("accepted") \

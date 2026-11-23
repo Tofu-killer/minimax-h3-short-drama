@@ -13,21 +13,22 @@
 | `selftest_no_model.api.json` | **连通测试**：不用任何模型，几秒出一个 2 s 的小视频，确认脚本能连上 ComfyUI、上传文件、取回结果（脚本默认每 20 s 查一次进度，测试时加 `--poll 2`） | 手写 | 无 |
 | `h3_ref2va.api.json` | Ref2VA 草稿 / 定稿：1344×768，Turbo 8 步（`euler` / `simple`）；关掉开关就是 20 步不挂 LoRA | `video_minimax_h3_r2v` | 无 |
 | `h3_ref2va_sage.api.json` | 同上，模型链上多 KJNodes 的两个 Sage 节点 | 同上 | KJNodes（+ `sageattention` 包） |
-| `h3_ref2va_refine.api.json` | 精修：一采按同 seed 原样重跑，再接 `H3 Hires Fix` 到 1920×1088 | 同上 | ResCascade、LBH 放大节点 |
+| `h3_ref2va_refine.api.json` | 精修：接 `H3 Hires Fix` 二采到 1920×1088。默认加 `--from-latent` 从草稿存下的一采 latent 开始；没存 latent 时改给 `--seed`，文件里带着的一采按同 seed 原样重跑 | 同上 | ResCascade、LBH 放大节点 |
 | `h3_ref2va_sage_refine.api.json` | 草稿用的是 `_sage` 版时的精修（一采要和草稿走同一条注意力路径才是同一条片段） | 同上 | 以上三个 |
 | `h3_ref2va_refine_split.api.json` / `h3_ref2va_sage_refine_split.api.json` | **精修的备用方案**——上面两份在二采时显存不够才用：先用 LBH 放大 latent，再用 LBH 节点包的 `MMH3 Split Upscale` 把二采按时间切成 73 帧一块（重叠 22 帧）分块做，音频同样钉死；二采的 sigma 是 `0.45, 0.225, 0`，和 `H3 Hires Fix` 的 `steps_override 2` 相同 | 同上 | ResCascade、LBH 放大节点（带 Sage 的再加 KJNodes） |
 | `h3_fl2va.api.json` | `i2va` / `fl2va` / `t2va` 段：FL2VA 权重，1344×768，Turbo 8 步（v1.0 的 768p 版 LoRA + shift 6 / 3；shift 节点只在 LoRA 那条分支上，关掉 Turbo 就回到模型默认的 12 / 3） | `video_minimax_h3_i2v` | 无 |
 | `h3_fl2va_sage.api.json` | 同上 + Sage | 同上 | KJNodes |
 | `h3_fl2va_refine.api.json` / `h3_fl2va_sage_refine.api.json` | `i2va` / `fl2va` / `t2va` 段的精修：同样的 `H3 Hires Fix` 二采到 1920×1088，用法和 Ref2VA 的精修一样（`--from-latent` 或 `--seed`）。首帧、尾帧是按一采的尺寸编码的，节点在二采时把它们从条件里去掉（放大的 latent 里已经有了），所以不用另建一个大尺寸的条件节点 | 同上 | ResCascade、LBH 放大节点（带 Sage 的再加 KJNodes） |
 | `h3_fl2va_refine_split.api.json` / `h3_fl2va_sage_refine_split.api.json` | 上一行在二采时显存不够才用的分块版，和 Ref2VA 的分块版同一种接法 | 同上 | 同上 |
-| `qwen21_t2i.api.json` | 文生图（定妆照、场景母版、道具）：Qwen-Image 2.1，25 步 CFG 1 | `image_qwen_image_2_1_t2i` | 无 |
+| `qwen21_t2i.api.json` | 文生图（定妆照、场景母版、道具）：Qwen-Image 2.1，25 步 CFG 1。**许可是研究用途，不能用在营利的项目里** | `image_qwen_image_2_1_t2i` | 无 |
+| `zimage_turbo_t2i.api.json` | 同样三类图的**可商用**替代：Z-Image-Turbo（Apache-2.0），`ModelSamplingAuraFlow` 3、`res_multistep` / `simple`、8 步、CFG 1——官方模板原样，只把提示词清空、种子固定。`plan_stills.py --t2i zimage` 出的命令用它。只通过了服务器校验，没有出过图；模板的尺寸是 1024×1024，清单里母版排 2048×1152、道具 1024×1024，更大的尺寸没试过 | `image_z_image_turbo_int8` | 无 |
 | `qwen_edit2511_1ref / 2ref / 3ref.api.json` | 编辑出图（派生视图、逐镜首帧）：Qwen-Image-Edit-2511 int8，40 步 CFG 4，**输出尺寸固定为 1344×768**（不跟着第一张图走），1 / 2 / 3 张输入图 | `image_qwen_image_edit_2511_int8` | 无 |
 
 和官方模板不一样的地方：尺寸、帧数写成了数字（模板用选择器和公式算）；模板自带的示例图、示例提示词去掉了；H3 的 LoRA 换成 8 步 768p 版、开关默认打开、采样器换成 `euler`；编辑模板的 Lightning 4 步分支去掉了（所以不用下那个 LoRA），latent 从「取第一张图的尺寸」换成固定的 `EmptySD3LatentImage`。
 
 ## 要下载的文件（HuggingFace；括号里是放进 `ComfyUI/models/` 的哪个子目录）
 
-不用照着表手抄：`python <skill>/scripts/fetch_models.py --comfyui <ComfyUI 目录>` 会逐个告诉你哪个在、哪个缺、哪个没下全、哪个放错了目录（只检查，不改东西）；加 `--download` 就把缺的下到正确的目录里，断了重跑会接着下，下完校验 SHA-256。默认查 `ref2va`、`stills`、`refine` 三组，要 FL2VA 加 `--sets ref2va stills refine fl2va`。清单本身是同目录的 `models.json`。
+不用照着表手抄：`python <skill>/scripts/fetch_models.py --comfyui <ComfyUI 目录>` 会逐个告诉你哪个在、哪个缺、哪个没下全、哪个放错了目录（只检查，不改东西）；加 `--download` 就把缺的下到正确的目录里，断了重跑会接着下，下完校验 SHA-256。默认查 `ref2va`、`stills`、`refine` 三组，要 FL2VA 加 `--sets ref2va stills refine fl2va`；做营利项目的文生图用 `zimage` 组（`--sets ref2va stills refine zimage`——`stills` 组里的编辑模型仍然要，其中 Qwen-Image 2.1 的三个文件可以不下）。清单本身是同目录的 `models.json`。
 
 | 用途 | 文件 | 大小 |
 |------|------|------|
@@ -39,6 +40,7 @@
 | | `lightx2v/Minimax-h3-Turbo`：`minimax_h3_fl2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors`（`loras/`） | 2.0 GB |
 | 精修 | `LBH-123-AI/Minimax_h3_latent_Upscaler`：`minimax_h3_latent_upscaler_3d_conv_v1/minimax_h3_latent_upscaler_3d_conv_v1_fp16.safetensors`（直接放 `latent_upscale_models/`，不带那层子文件夹） | 0.7 GB |
 | 文生图 | `Comfy-Org/Qwen-Image-2.1`：`diffusion_models/qwen_image_2.1_int8_convrot.safetensors`（`diffusion_models/`）、`text_encoders/qwen3vl_8b_int8_convrot.safetensors`（`text_encoders/`）、`vae/qwen_image_2.1_vae_bf16.safetensors`（`vae/`） | 7.3 + 9.4 + 0.7 GB |
+| 文生图（可商用的替代） | `Comfy-Org/Z-Image-Turbo`：`split_files/diffusion_models/z_image_turbo_int8_convrot.safetensors`（`diffusion_models/`）、`split_files/text_encoders/qwen_3_4b_fp8_mixed.safetensors`（`text_encoders/`）、`split_files/vae/ae.safetensors`（`vae/`） | 6.2 + 5.6 + 0.3 GB |
 | 编辑出图 | `Comfy-Org/Qwen-Image-Edit`：`split_files/diffusion_models/qwen_image_edit_2511_int8_convrot.safetensors`（`diffusion_models/`） | 20.5 GB |
 | | `Comfy-Org/Qwen-Image`：`split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors`（`text_encoders/`）、`split_files/vae/qwen_image_vae.safetensors`（`vae/`） | 9.4 + 0.3 GB |
 
@@ -64,7 +66,9 @@ python <skill>/scripts/comfy_submit.py $W/h3_ref2va_sage.api.json --media prompt
 python <skill>/scripts/comfy_submit.py $W/h3_ref2va_sage.api.json --media prompts/ep01/s01.media.json --seed 1001 --tag s01_full --set 146.value=false --set 123.sampler_name=res_multistep --dry-run
 
 # 3. 精修中选的那条（草稿是 _sage 版就用 _sage_refine）：从草稿存下的 latent 开始，一采不重跑
-python <skill>/scripts/comfy_submit.py $W/h3_ref2va_sage_refine.api.json --media prompts/ep01/s01.media.json --from-latent takes/ep01/s01/s01_1002 --tag s01_refine --dry-run
+python <skill>/scripts/comfy_submit.py $W/h3_ref2va_sage_refine.api.json --media prompts/ep01/s01.media.json --from-latent takes/ep01/s01/s01_1002 --dry-run
+#    结果放进 takes/ep01/s01/s01_refine_1002（带二采节点的工作流默认 tag 是 <段>_refine，不和草稿挤一个目录）
+#    那条草稿是 --stale-ok 采纳的（它之后提示词改过）：把 --media 换成它自己留的那份 takes/ep01/s01/s01_1002/media.json
 #    草稿当时没加 --keep-latent：去掉 --from-latent，改给 --seed 1002（一采按同 seed 重跑一遍）
 #    i2va / fl2va / t2va 段同理：草稿 h3_fl2va_sage.api.json，精修 h3_fl2va_sage_refine.api.json
 
@@ -90,6 +94,7 @@ python <skill>/scripts/comfy_submit.py $W/qwen_edit2511_2ref.api.json --set 41.i
 | | 关了 Turbo 之后的二采 sigma | `--set 311.sigmas="0.45, 0.3095, 0.1719, 0.0569, 0.0"`（`H3 Hires Fix` 不挂 Turbo 时用的那 4 步，由 0.37.2 的调度器算出） |
 | `h3_fl2va*` | 关 Turbo / 采样器 / 画布 / shift | `--set 105:126.value=false`、`--set 105:17.sampler_name=…`、`--set 105:104.width=…`、`--set 105:200.shift_video=…` |
 | `qwen21_t2i` | 提示词 / 尺寸 / 步数 | `--set 459:452.prompt=@文件`、`--set 459:456.width=… .height=…`、`--set 459:458.steps=50` |
+| `zimage_turbo_t2i` | 提示词 / 尺寸 / 步数 | `--set 57:27.text=@文件`（这个节点的输入叫 `text`，不是 `prompt`）、`--set 57:13.width=… --set 57:13.height=…`、`--set 57:3.steps=8` |
 | `qwen_edit2511_*` | 输入图 | `--set 41.image=@…`（`image1`）、`--set 42.image=@…`（`image2`）、`--set 43.image=@…`（`image3`）；也可以按标题：`--set-title image1.image=@…` |
 | | 提示词 / 输出尺寸 / 步数 | `--set 170:151.prompt=@文件`、`--set 170:300.width=… --set 170:300.height=…`、`--set 170:169.steps=20` |
 

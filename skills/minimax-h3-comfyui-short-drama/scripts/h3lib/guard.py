@@ -15,6 +15,12 @@ def run(main) -> None:
         return
     try:
         main()
+    except BrokenPipeError:                 # the reader went away (`... | head`): nothing is wrong, stop quietly
+        try:
+            sys.stdout = open(os.devnull, "w")      # keeps the interpreter from complaining again while it exits
+        except OSError:
+            pass
+        sys.exit(0)
     except FileNotFoundError as e:
         name = str(e.filename) if e.filename else str(e)
         if os.path.basename(name) in ("ffmpeg", "ffprobe", "ffmpeg.exe", "ffprobe.exe"):

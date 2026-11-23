@@ -184,6 +184,44 @@ def main():
         ok, note = script("lint_prompt.py", ["prompts/s02.txt", "--seconds", "6", "--images", "3", "--audios", "0"], work)
         record("lint_prompt.py", "PASS" if ok else "FAIL", note)
 
+        # a shot's length is judged on what the storyboard wrote for it, not on the set-up and end state the builder adds;
+        # the rhythm audit objects to nothing the shot table allows; the mixer says why a line gives it no speech window
+        try:
+            words = json.loads((work / "prompts/s02.media.json").read_text(encoding="utf-8")).get("shot_words") or {}
+            counted = all(isinstance(words.get(k), dict) and 0 < words[k]["own"] <= words[k]["all"] for k in ("1", "2")) \
+                and words["1"]["own"] < words["1"]["all"]                       # shot 1 carries the set-up the builder adds
+            (work / "prompts_long").mkdir(exist_ok=True)
+            long_text = (work / "prompts/s02.txt").read_text(encoding="utf-8").replace(
+                " [Shot 2]", " " + " ".join(["He lifts the cup and puts it down again"] * 32) + ". [Shot 2]", 1).replace(
+                "\n[Shot 2]", " " + " ".join(["He lifts the cup and puts it down again"] * 32) + ".\n[Shot 2]", 1)
+            (work / "prompts_long/s02.txt").write_text(long_text, encoding="utf-8")
+            shutil.copyfile(work / "prompts/s02.media.json", work / "prompts_long/s02.media.json")
+            r_ok = run([sys.executable, str(HERE / "lint_prompt.py"), "prompts/s02.txt"], work)
+            r_long = run([sys.executable, str(HERE / "lint_prompt.py"), "prompts_long/s02.txt"], work)
+            judged = counted and "words of its own" not in r_ok.stdout and "runs to" not in r_ok.stdout and "[Shot 1] carries" in r_long.stdout
+            dense = json.loads(json.dumps(ep))
+            dense["segments"][2]["shots"] = [shot(1, 0, "a medium close-up on Hero", "Hero looks up and speaks.", "我们开始吧"),
+                                             dict(shot(2, 3.0, "a close-up on Hero's hands", "His hands fold on his knees."), end_hold=True)]
+            (work / "ep_dense.json").write_text(json.dumps(dense, ensure_ascii=False, indent=1), encoding="utf-8")
+            packed = json.loads(json.dumps(dense))
+            packed["segments"][2]["shots"][0]["dialogue"] += [{"speaker": "hero", "language": "Chinese", "text": "好"},
+                                                              {"speaker": "hero", "language": "Chinese", "text": "走"}]
+            (work / "ep_packed.json").write_text(json.dumps(packed, ensure_ascii=False, indent=1), encoding="utf-8")
+            a1 = run([sys.executable, str(HERE / "validate_episode.py"), "ep_dense.json", "--rhythm"], work)
+            a2 = run([sys.executable, str(HERE / "validate_episode.py"), "ep_packed.json", "--rhythm"], work)
+            agrees = "overloaded" not in a1.stdout and "overloaded" in a2.stdout          # 5 s: 2 shots + 1 line is in the table, + 3 lines is not
+            mix_mod = load("mix_episode")
+            why = [mix_mod.untimed_reason([{"text": "a"}]),
+                   mix_mod.untimed_reason([{"text": "a", "start": 0.3, "end": 1.4, "needs_review": "not_heard"}]),
+                   mix_mod.heard({"start": 0.3, "end": 1.4, "needs_review": "not_heard", "locked": True})]
+            named = "run retime_subtitles.py" in why[0] and "did not hear" in why[1] and "run retime_subtitles.py before" not in why[1] and why[2] is True
+            good = judged and agrees and named
+            record("advice that does not contradict itself (a shot judged on its own words, rhythm audit vs shot table, why a line has no speech window)",
+                   "PASS" if good else "FAIL",
+                   "" if good else f"own words {judged} ({words}), rhythm {agrees}, mixer {named}: {r_long.stdout.strip()[-160:]} | {a1.stdout.strip()[-160:]}")
+        except Exception as e:  # noqa: BLE001
+            record("advice that does not contradict itself", "FAIL", f"{type(e).__name__}: {e}")
+
         # a mistyped path or a broken JSON file must end in one line, not in a Python traceback
         (work / "broken.json").write_text('{"segments": ', encoding="utf-8")
         slips = [run([sys.executable, str(HERE / "validate_episode.py"), "no_such_file.json"], work),
@@ -305,8 +343,35 @@ def main():
                 from_wf = json.loads((work / "qc/from.api.json").read_text(encoding="utf-8"))
                 src = from_wf["300"]["inputs"]["latent"]
                 if r.returncode != 0 or from_wf[src[0]]["class_type"] != "LTXVConcatAVLatent" or "kept first-pass latent" not in r.stdout \
-                        or "BasicScheduler" in r.stdout:
+                        or "BasicScheduler" in r.stdout or "s03_refine_" not in r.stdout:      # a refine files itself beside the draft
                     notes.append(f"--from-latent: {(r.stderr.strip() or r.stdout.strip())[-200:]}")
+                # the job around a kept latent is compared with the take it belongs to: another canvas or length is said, with the fix
+                (work / "kept_take/run.json").write_text(json.dumps({
+                    "status": "success", "seed": 7, "frames": 124,
+                    "first_pass": "MiniMaxH3ReferenceToVideo [136]: 960x544, 124 frames = 5.17s, ref_image_size match, 2 reference image(s), 0 audio"}),
+                    encoding="utf-8")
+                from_cmd = [sys.executable, str(HERE / "comfy_submit.py"), str(flows / "h3_ref2va_refine.api.json"), "--server", "http://127.0.0.1:9",
+                            "--media", "prompts/s03.media.json", "--from-latent", "kept_take", "--dry-run"]
+                r, r_same = run(from_cmd, work), run(from_cmd + ["--set", "136.width=960", "--set", "136.height=544"], work)
+                r_len = run(from_cmd + ["--set", "136.width=960", "--set", "136.height=544", "--set", "136.length=73"], work)
+                if not ("WARNING: continues the take in kept_take" in r.stdout and "960x544 canvas" in r.stdout
+                        and "--set 136.width=960 --set 136.height=544" in r.stdout
+                        and "continues the take in kept_take (same canvas, same length)" in r_same.stdout and "WARNING: continues" not in r_same.stdout
+                        and "124 frames long and the H3 node is now set to 73" in r_len.stdout):
+                    notes.append(f"--from-latent on another canvas / length: {r.stdout.strip()[-200:]} | {r_same.stdout.strip()[-160:]}")
+                # a take keeps what it was made from (prompt.txt + media.json): submitting from that copy files beside that take
+                made = work / "takes/keep/s03/s03_7"
+                made.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(work / "prompts/s03.txt", made / "prompt.txt")
+                copy = json.loads((work / "prompts/s03.media.json").read_text(encoding="utf-8"))
+                copy.update(prompt_file="prompt.txt", copied_from="prompts/s03.media.json")
+                (made / "media.json").write_text(json.dumps(copy, ensure_ascii=False), encoding="utf-8")
+                (made / "run.json").write_text(json.dumps({"status": "success", "seed": 7}), encoding="utf-8")
+                r = run([sys.executable, str(HERE / "comfy_submit.py"), str(flows / "h3_ref2va_refine.api.json"), "--server", "http://127.0.0.1:9",
+                         "--media", str(made / "media.json"), "--seed", "7", "--dry-run"], work)
+                if r.returncode != 0 or "prompt prompt.txt" not in r.stdout or "s03_refine_7" not in r.stdout \
+                        or f"output folder: {made.parent}" not in r.stdout:
+                    notes.append(f"--media from a take's own copy: {(r.stderr.strip() or r.stdout.strip())[-220:]}")
                 # stills: what the workflow still lacks is refused with the --set that supplies it; a complete job shows size and prompt
                 (work / "bust.txt").write_text("a studio portrait of a tall man in a grey coat, soft window light", encoding="utf-8")
                 t2i = [sys.executable, str(HERE / "comfy_submit.py"), str(flows / "qwen21_t2i.api.json"), "--server", "http://127.0.0.1:9", "--out", "qc/t2i", "--dry-run"]
@@ -320,6 +385,15 @@ def main():
                 r = run(edit + ["--set", "42.image=@bible/room.png"], work)
                 if r.returncode != 0 or "1344x768" not in r.stdout or "prompt (" not in r.stdout or "image2" not in r.stdout:
                     notes.append(f"stills, a complete edit job: {(r.stderr.strip() or r.stdout.strip())[-200:]}")
+                # the text-to-picture model for projects that earn money: its prompt input is called `text`, not `prompt`
+                zt = [sys.executable, str(HERE / "comfy_submit.py"), str(flows / "zimage_turbo_t2i.api.json"), "--server", "http://127.0.0.1:9",
+                      "--out", "qc/zt2i", "--dry-run"]
+                for what, r, need, code in (
+                        ("Z-Image, an empty prompt", run(zt, work), "--set 57:27.text=@", 2),
+                        ("Z-Image, a master", run(zt + ["--set", "57:27.text=@bust.txt", "--set", "57:13.width=2048", "--set", "57:13.height=1152"], work),
+                         "2048x1152", 0)):
+                    if r.returncode != code or need not in (r.stdout + r.stderr) or (code == 0 and "advice:" in r.stdout):
+                        notes.append(f"stills, {what}: {(r.stderr.strip() or r.stdout.strip())[-160:]}")
                 # slips the server would accept or answer with a bare HTTP 400: a prompt file named without @, a size typed as WxH,
                 # a size this pipeline has no use for (advice only)
                 for what, r, need, code in (
@@ -343,7 +417,7 @@ def main():
                     notes.append(f"smoke_test_prompt.txt does not lint: {r.stdout.strip()[-160:]}")
                 broken = [f.name for f in sorted(flows.glob("*.api.json"))
                           if not all(isinstance(v, dict) and "class_type" in v and "inputs" in v for v in json.loads(f.read_text(encoding="utf-8")).values())]
-                good = not notes and not broken and len(list(flows.glob("*.api.json"))) >= 17
+                good = not notes and not broken and len(list(flows.glob("*.api.json"))) >= 18
                 record("shipped workflows (draft, Sage, refine for both families, LoRA switch, kept latent; stills refuse what is missing or mistyped)", "PASS" if good else "FAIL",
                        f"{len(list(flows.glob('*.api.json')))} workflow files" if good else "; ".join(notes + broken)[:300])
             except Exception as e:  # noqa: BLE001
@@ -436,8 +510,39 @@ def main():
                 and "-> `first/s03.png`" in plan_text and "--set 459:456.width=2688 --set 459:456.height=1536" in plan_text \
                 and look in (work / "stills/prompts/hero_full.txt").read_text(encoding="utf-8") \
                 and "5 kept as they were" in r2.stdout
+            rz = run([sys.executable, str(HERE / "plan_stills.py"), "ep_stills.json", "--prompts", "stills/prompts", "--out", "stills/plan_z.md",
+                      "--t2i", "zimage"], work)
+            plan_z = (work / "stills/plan_z.md").read_text(encoding="utf-8") if (work / "stills/plan_z.md").exists() else ""
+            good = good and rz.returncode == 0 and "zimage_turbo_t2i.api.json" in plan_z and "57:27.text=@stills/prompts/hero_bust.txt" in plan_z \
+                and "--set 57:13.width=2048 --set 57:13.height=1152" in plan_z and "qwen21_t2i" not in plan_z \
+                and "qwen_edit2511_2ref.api.json" in plan_z           # the edit model stays the same
             record("plan_stills.py (prompt files and one command per picture, inputs read from the Picture N sentences)", "PASS" if good else "FAIL",
-                   "" if good else f"{files} | {(r.stderr.strip() or r.stdout.strip())[-260:]}")
+                   "" if good else f"{files} | {(r.stderr.strip() or r.stdout.strip())[-260:]} | {rz.stdout.strip()[-160:]}")
+            # pictures the storyboard names but nobody has made yet are a to-do list, not errors: the storyboard is checked before the stills exist
+            v = run([sys.executable, str(HERE / "validate_episode.py"), "ep_stills.json"], work)
+            listed = v.returncode == 0 and " + bible/chars/hero_face.png" in v.stdout and " + first/s03.png" in v.stdout \
+                and "still to make" in v.stdout and "ERROR" not in v.stdout
+            record("validate_episode.py lists the pictures still to make (not errors)", "PASS" if listed else "FAIL",
+                   "" if listed else (v.stderr.strip() or v.stdout.strip())[-260:])
+            # after a picture is made the storyboard changes: the prompt file follows, the picture is listed to make again;
+            # a prompt file edited by hand is left as it is
+            (work / "first").mkdir(exist_ok=True)
+            (work / "first/s03.png").write_bytes(b"selfcheck")
+            run(plan_cmd, work)                                   # sees the picture: made from the prompt of now
+            st["segments"][2]["first_frame_prompt"] = st["segments"][2]["first_frame_prompt"].replace("sits on the chair", "stands")
+            (work / "ep_stills.json").write_text(json.dumps(st, ensure_ascii=False, indent=1), encoding="utf-8")
+            r3 = run(plan_cmd, work)
+            (work / "stills/prompts/hero_bust.txt").write_text("my own portrait text\n", encoding="utf-8")
+            st["characters"][0]["sheet_phrase"] = look + ", a silver ring on the left hand"       # the storyboard moves on after the hand edit
+            (work / "ep_stills.json").write_text(json.dumps(st, ensure_ascii=False, indent=1), encoding="utf-8")
+            r4 = run(plan_cmd, work)
+            follows = "1 updated from the storyboard (first_s03.txt)" in r3.stdout and "MAKE AGAIN (1)" in r3.stdout \
+                and "stands at the window" in (work / "stills/prompts/first_s03.txt").read_text(encoding="utf-8") \
+                and (work / "stills/prompts/hero_bust.txt").read_text(encoding="utf-8") == "my own portrait text\n" \
+                and "hero_bust.txt differs from what the storyboard gives now and was kept as it is" in r4.stdout.replace("\\", "/") \
+                and "silver ring" in (work / "stills/prompts/hero_full.txt").read_text(encoding="utf-8") and "MAKE AGAIN (1)" in r4.stdout
+            record("plan_stills.py follows the storyboard (changed prompt rewritten, its picture listed to make again, hand edits kept)",
+                   "PASS" if follows else "FAIL", "" if follows else f"{r3.stdout.strip()[-260:]} | {r4.stdout.strip()[-200:]}")
         except Exception as e:  # noqa: BLE001
             record("plan_stills.py", "FAIL", f"{type(e).__name__}: {e}")
 
@@ -496,6 +601,29 @@ def main():
                    "PASS" if good else "FAIL",
                    "" if good else f"fresh {fresh}, lasting marker {lasting}, refused {refused}, --stale-ok {bool(knowingly)}, warned {warned}: "
                                    f"{(g3.stderr.strip() or g3.stdout.strip())[-200:]} | {b3.stdout.strip()[-200:]} | {v2.stdout.strip()[-200:]}")
+            # the edit list says so when a clip is not the accepted take nor a second pass of it; a copy in a selects folder
+            # is traced to the take it was copied from
+            seg_takes = work / "takes/guard" / s2["id"]
+            other, refine = seg_takes / f"{s2['id']}_1002", seg_takes / f"{s2['id']}_refine_1001"
+            for folder, seed, source, tagged in ((other, 1002, "selects/s03.mp4", "other"), (refine, 1001, "selects/s02.mp4", "refine")):
+                folder.mkdir(parents=True, exist_ok=True)
+                run(["ffmpeg", "-v", "error", "-y", "-i", source, "-c", "copy", "-metadata", f"comment={tagged}", str(folder / "clip.mp4")], work)
+                (folder / "run.json").write_text(json.dumps({"status": "success", "seed": seed, "segment": s2["id"], "inputs_sha": sha0}),
+                                                 encoding="utf-8")
+            (work / "picked").mkdir(exist_ok=True)
+            shutil.copyfile(refine / "clip.mp4", work / "picked/final_cut.mp4")                 # a copy without a record beside it
+            edl = [sys.executable, str(HERE / "make_edl.py"), "ep_guard.json", "--selects", "selects", "--overwrite"]
+            e1 = run(edl + ["--out", "edit/guard_a.edl.json", "--pick", f"{s2['id']}={other / 'clip.mp4'}"], work)
+            e2 = run(edl + ["--out", "edit/guard_b.edl.json", "--pick", f"{s2['id']}={refine / 'clip.mp4'}"], work)
+            e3 = run(edl + ["--out", "edit/guard_c.edl.json", "--pick", f"{s2['id']}={work / 'picked/final_cut.mp4'}"], work)
+            e4 = run(edl + ["--out", "edit/guard_d.edl.json", "--pick", f"{s2['id']}={draft / 'clip.mp4'}"], work)
+            e5 = run([sys.executable, str(HERE / "make_edl.py"), "ep_guard.json", "--selects", "selects", "--out", "edit/guard_a.edl.json"], work)
+            told = f"WARN {s2['id']}" in e1.stdout and "another seed" in e1.stdout and "CHECK: " in e1.stdout \
+                and all(f"WARN {s2['id']}" not in e.stdout and f"note {s2['id']}" not in e.stdout and e.returncode == e1.returncode
+                        for e in (e2, e3, e4)) \
+                and f"WARN {s2['id']} (entry kept from guard_a.edl.json" in e5.stdout    # a kept entry is checked again on every run
+            record("make_edl.py compares each clip with the accepted take (another seed warned; a refine, and a copy of it, pass)",
+                   "PASS" if told else "FAIL", "" if told else f"{e1.stdout.strip()[-200:]} | {e3.stdout.strip()[-200:]} | {e5.stdout.strip()[-160:]}")
         except Exception as e:  # noqa: BLE001
             record("takes are checked against what they were made from", "FAIL", f"{type(e).__name__}: {e}")
 

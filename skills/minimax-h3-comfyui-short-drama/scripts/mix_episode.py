@@ -173,6 +173,24 @@ def energy_mean(pairs: list[tuple[float, float]]) -> float:
     return 10 * math.log10(sum(d * 10 ** (l / 10) for l, d in pairs) / w)
 
 
+def heard(ln: dict) -> bool:
+    """The line's times are where it is spoken: found by retime_subtitles.py, or set by hand ("locked")."""
+    return bool(ln.get("locked")) or ln.get("needs_review") != "not_heard"
+
+
+def untimed_reason(lines: list) -> str:
+    """Why no speech window can be taken from these EDL lines - and what to do about it, which differs: lines that
+    were never timed need retime_subtitles.py; lines it ran on and did not hear need ears, not another run."""
+    timed = [ln for ln in lines if ln.get("start") is not None and ln.get("end") is not None]
+    if not timed:
+        return "no line times in the EDL: run retime_subtitles.py before mixing"
+    if not any(heard(ln) for ln in timed):
+        return ("retime_subtitles.py ran and did not hear the line(s) in the take (needs_review: not_heard; the times it "
+                "wrote are placeholders), so running it again changes nothing. Listen: if the line is spoken, set its "
+                "\"start\" / \"end\" in the EDL and add \"locked\": true; if it is not, the take needs a re-roll")
+    return "the timed line(s) are too short or too quiet to measure"
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("edl")
@@ -250,6 +268,9 @@ def main():
     with tempfile.TemporaryDirectory() as td:
         tmp = (keep or Path(td)).resolve()
         warnings: list[str] = []
+        for p in plan:                                       # what make_edl.py found out about the clip travels to the master
+            if p["seg"].get("take_check"):
+                warnings.append(f"{p['id']}: {p['seg']['take_check']} (found by make_edl.py; run it again after choosing the clip)")
 
         # ---- 1. picture ---------------------------------------------------------------------------
         if a.fit == "cover":
@@ -327,7 +348,7 @@ def main():
                     lines = s.get("lines") or []
                     timed = [(ln, p["src_in"] + float(ln["start"]), p["src_in"] + float(ln["end"])) for ln in lines
                              if ln.get("start") is not None and ln.get("end") is not None
-                             and float(ln["end"]) - float(ln["start"]) >= 0.3 and ln.get("needs_review") != "not_heard"]
+                             and float(ln["end"]) - float(ln["start"]) >= 0.3 and heard(ln)]
                     per = []
                     for ln, w0, w1 in timed:
                         w0, w1 = max(a0, w0), min(a1, w1)
@@ -348,8 +369,8 @@ def main():
                         raw = loud["dialogue_lufs"] - ref
                     elif lines:
                         ref, basis = whole_i, "whole take"
-                        warnings.append(f"{p['id']}: no line times in the EDL, level matched on the whole take (sound effects "
-                                        f"count as much as speech) - run retime_subtitles.py before mixing")
+                        warnings.append(f"{p['id']}: level matched on the whole take (sound effects count as much as speech) - "
+                                        f"{untimed_reason(lines)}")
                         raw = max(-6.0, min(6.0, loud["dialogue_lufs"] - ref))
                     else:                                               # no dialogue: leave it, unless it would bury the speech
                         ref, basis = whole_i, "no dialogue"
@@ -442,7 +463,7 @@ def main():
             spans = []                                               # where lines are known to be spoken (timeline seconds)
             for p in plan:
                 for ln in p["seg"].get("lines") or []:
-                    if ln.get("start") is not None and ln.get("end") is not None and ln.get("needs_review") != "not_heard":
+                    if ln.get("start") is not None and ln.get("end") is not None and heard(ln):
                         spans.append([p["start_s"] + float(ln["start"]), p["start_s"] + float(ln["end"])])
             spans.sort()
             windows: list[list[float]] = []                          # merged: music does not bob up between close lines
@@ -482,8 +503,9 @@ def main():
                      f"knee=4:makeup=1,{fit(N)}[out]", "-map", "[out]", *wav_out(music_bus)], "ducking the music (sidechain)")
                 duck_how = f"sidechain threshold {dk['threshold']} ratio {dk['ratio']}"
                 if not windows:
-                    warnings.append("no line times in the EDL: music is ducked by a sidechain keyed on the takes' own sound "
-                                    "(about 6 dB on speech, and sound effects duck it too) - run retime_subtitles.py first")
+                    every = [ln for p in plan for ln in p["seg"].get("lines") or []]
+                    warnings.append(f"music is ducked by a sidechain keyed on the takes' own sound (about 6 dB on speech, and "
+                                    f"sound effects duck it too) - {untimed_reason(every)}")
 
             def mean_db(path: Path, t0: float, t1: float) -> float | None:
                 r = run(["ffmpeg", "-hide_banner", "-nostats", "-i", str(path), "-af",

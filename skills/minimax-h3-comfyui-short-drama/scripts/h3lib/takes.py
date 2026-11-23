@@ -57,6 +57,47 @@ def media_inputs_sha(media_json: Path) -> Optional[str]:
     return inputs_sha([prompt], media)
 
 
+AUDIO_EXT = (".wav", ".mp3", ".flac", ".m4a", ".ogg", ".aac")
+
+
+def what_changed(rec: dict, media_json: Path, take_folder: Optional[Path] = None) -> list:
+    """What differs between the inputs a take was made from (its run.json: upload name -> sha256 of every file sent,
+    and the prompt.txt kept beside it) and what `--media media_json` would send now. Sentences for a message;
+    [] when nothing can be told apart (a record without the file list)."""
+    then = {k: v for k, v in (rec.get("media_sha256") or {}).items() if not k.lower().endswith(".latent")}
+    try:
+        spec = json.loads(Path(media_json).read_text(encoding="utf-8"))
+        now_prompt = (Path(media_json).parent / spec.get("prompt_file", f"{spec['segment']}.txt")).read_text(encoding="utf-8")
+        now = {}
+        for item in spec.get("media", []):
+            now[upload_name(Path(item["path"]))] = Path(item["path"])
+    except (OSError, KeyError, TypeError, json.JSONDecodeError):
+        return []
+    if not then and now:                                   # an old record without the file list
+        return []
+
+    def stem(name: str) -> str:                            # upload name = <stem>_<8 hex of the content><suffix>
+        return re.sub(r"_[0-9a-f]{8}(\.[A-Za-z0-9]+)$", r"\1", name)
+
+    old_stems = {stem(n) for n in then}
+    out = []
+    for name, path in now.items():
+        if name in then:
+            continue
+        kind = "voice sample" if path.suffix.lower() in AUDIO_EXT else "picture"
+        out.append(f"the {kind} {path.name} " + ("has other content now" if stem(name) in old_stems else "was added since"))
+    gone = [n for n in then if n not in now and stem(n) not in {stem(m) for m in now}]
+    if gone:
+        out.append(f"{len(gone)} file(s) it was given are no longer in the list ({', '.join(stem(n) for n in gone[:3])})")
+    kept = (Path(take_folder) / "prompt.txt") if take_folder else None
+    if kept is not None and kept.is_file():
+        if kept.read_text(encoding="utf-8") != now_prompt:
+            out.append("the prompt text is another one")
+    elif not out:
+        out.append("the prompt text is another one")       # same files, another fingerprint: only the text is left
+    return out
+
+
 def take_record(take: Path) -> Optional[dict]:
     """run.json of the take a clip belongs to (the clip, or its _trimmed copy, lies in the take's folder)."""
     try:

@@ -106,7 +106,10 @@ def main():
         target.write_text(text, encoding="utf-8")
         spec = {"segment": seg.id, "mode": bp.mode or seg.mode, "ratio": ep.ratio, "duration": seg.duration, "frames": frames,
                 "effective_seconds": round(frames / 24, 3),
-                "prompt_file": f"{seg.id}.txt", "labels": bp.labels, "media": media}
+                "prompt_file": f"{seg.id}.txt", "labels": bp.labels, "media": media,
+                # per shot: the words that come from that shot's own fields (framing, action, performance, camera, lines) -
+                # lint_prompt.py judges a shot's length on these, not on the set-up and end state the builder adds
+                "shot_words": {str(k): v for k, v in bp.own_words.items()}}
         if source != "authored":            # which state of the previous segment this prompt opens from (observe_take.py compares it later)
             kind, prev_id = source.split(":", 1)
             spec["opens_from"] = {"segment": prev_id, "source": kind, "sha": take_records.text_sha(handover_state(ep, seg, a.allow_planned))}
@@ -145,8 +148,9 @@ def main():
               f"made from. To rebuild one on purpose (its take then has to be made again): --only <segment>")
     if kept_stale:
         print(f"note: the accepted take of {', '.join(kept_stale)} was made from an earlier version of its prompt files (it was accepted "
-              f"with --stale-ok). Refine it from its kept latent (--from-latent); a --seed re-run would follow the files as they are now "
-              f"and give another take.")
+              f"with --stale-ok). Refine it with what it was made from - comfy_submit.py keeps that beside every take: "
+              f"--media <take folder>/media.json (plus --from-latent <take folder>, or --seed <its seed>). The files in {out} "
+              f"as they are now would steer the second pass with other text.")
     pending = [v for v in voice_plan(ep) if v["later"]]
     if pending and not only:
         who = "; ".join(f"{v['character']} first speaks in {v['first']}" for v in pending)
@@ -154,6 +158,13 @@ def main():
         print(f"ORDER - voice samples still to come ({who}): draft and accept the segment(s) a sample is cut from first, cut the sample "
               f"(references/audio-and-post.md §2), set voice_reference and build again - only then batch {', '.join(later)}. "
               f"Their prompts change when a sample is attached, and drafts made before that carry no voice anchor.")
+    status = {seg.id: seg.status for seg in ep.segments}
+    once = [v for v in voice_plan(ep) if not v["later"] and not status[v["first"]].startswith("accepted")] if not only else []
+    if once:
+        who = "; ".join(f"{v['character']} speaks only in {v['first']}" for v in once)
+        print(f"note - voice ({who}): no later segment needs a sample of that voice. If you cut one anyway (for the next episode), "
+              f"accept that take first and write voice_reference afterwards: attached before, it changes that segment's prompt and "
+              f"puts the drafts already made for it out of date.")
     if waiting:
         print("WAITING for a take to be accepted (expected at this stage, the other segments were written):")
         for w in waiting:

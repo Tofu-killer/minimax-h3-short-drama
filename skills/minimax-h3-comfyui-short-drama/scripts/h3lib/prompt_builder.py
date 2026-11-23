@@ -31,7 +31,7 @@ door, ..."); `identity_phrase` / `voice_phrase` are noun phrases of the form "a 
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from media import audio_item, image_item, text_item
 from storyboard import (Dialogue, Episode, Segment, Shot, blocking_sentence, effective_continuity,
@@ -244,6 +244,9 @@ class BuiltPrompt:
     content: list[dict]
     labels: dict[str, str]          # e.g. {"char_a": "<Subject 1>", "scene_cafe": "<Subject 3>"}
     mode: str = ""                  # the layout really built: a ref2va segment without any reference media becomes "t2va"
+    # shot index -> {"own": words that come from that shot's own storyboard fields (framing, action, performance,
+    # camera, lines), "all": words of the whole shot block with the set-up, the looks and the end state the builder adds}
+    own_words: dict = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------- shared shot body
@@ -593,11 +596,12 @@ def build_ref2va(ep: Episode, seg: Segment) -> BuiltPrompt:
         return f"{labels[d.speaker][0].upper() + labels[d.speaker][1:]} closes {possessive(ep.char(d.speaker))} lips."
 
     lead_line = style_sentence(seg.style)                   # official: only the style comes before [Shot 1]
-    heads, parts = [], []
+    heads, parts, own = [], [], {}
     for i, sh in enumerate(seg.shots):
         h, b = _shot_parts(seg, sh, i == 0, labels, speak, closure, speakers=speakers)
         heads.append(h)
         parts.append({"body": " ".join(b)})
+        own[sh.index] = len(f"{h} {parts[-1]['body']}".split()) - 2  # before the set-up, the looks and the end state are added
         if sh.index in frame_pics:                          # official wording for frame anchors inside a shot (ref guide 5.3)
             parts[-1]["anchor"] = (f"The shot begins from <Picture {frame_pics[sh.index]}>." if sh.index == 1
                                    else f"The shot's keyframe corresponds to <Picture {frame_pics[sh.index]}>.")
@@ -609,6 +613,7 @@ def build_ref2va(ep: Episode, seg: Segment) -> BuiltPrompt:
     parts[-1]["closing"] = _closing(ep, seg, labels)
     _introduce(heads, parts, subjects, [_framing_class(sh.framing) for sh in seg.shots])
     shot_lines = [_join_shot(h, p) for h, p in zip(heads, parts)]
+    words = {sh.index: {"own": own[sh.index], "all": len(line.split()) - 2} for sh, line in zip(seg.shots, shot_lines)}
 
     # "appears in" lists the shots that name the subject or declare it on screen - read off the finished text
     def appears(label: str) -> str:
@@ -643,7 +648,7 @@ def build_ref2va(ep: Episode, seg: Segment) -> BuiltPrompt:
         "non_diegetic_music:\n" + (seg.music.strip() or "N/A")
     )
     content.insert(0, text_item(text))
-    return BuiltPrompt(text=text, content=content, labels=labels, mode="ref2va")
+    return BuiltPrompt(text=text, content=content, labels=labels, mode="ref2va", own_words=words)
 
 
 # ---------------------------------------------------------------- three-part (T2VA / I2VA / FL2VA)
@@ -708,11 +713,12 @@ def build_three_part(ep: Episode, seg: Segment) -> BuiltPrompt:
     for pid in seg.prop_ids:
         subjects.append({"label": labels[pid], "look": ep.prop(pid).description.strip().rstrip(". ")})
     style = style_list(seg.style)
-    heads, parts = [], []
+    heads, parts, own = [], [], {}
     for i, sh in enumerate(seg.shots):
         h, b = _shot_parts(seg, sh, i == 0, labels, speak, closure, lead=f"{style}, " if i == 0 else "", speakers=speakers)
         heads.append(h)
         parts.append({"body": " ".join(b)})
+        own[sh.index] = len(f"{h} {parts[-1]['body']}".split()) - 2 - (len(style.split()) if i == 0 else 0)   # the style is the segment's
     parts[0].update(setting=setting, **_opening(ep, seg, labels))            # the set-up sits inside [Shot 1], after the framing
     if seg.mode == "fl2va":
         parts[-1]["closing"] = " ".join(x for x in (
@@ -721,7 +727,9 @@ def build_three_part(ep: Episode, seg: Segment) -> BuiltPrompt:
     else:
         parts[-1]["closing"] = _closing(ep, seg, labels)
     _introduce(heads, parts, subjects, [_framing_class(sh.framing) for sh in seg.shots])
-    body = " ".join(_join_shot(h, p) for h, p in zip(heads, parts))
+    shot_lines = [_join_shot(h, p) for h, p in zip(heads, parts)]
+    words = {sh.index: {"own": own[sh.index], "all": len(line.split()) - 2} for sh, line in zip(seg.shots, shot_lines)}
+    body = " ".join(shot_lines)
 
     text = (
         header +
@@ -730,7 +738,8 @@ def build_three_part(ep: Episode, seg: Segment) -> BuiltPrompt:
         "non_diegetic_music: " + (seg.music.strip() or "N/A")
     )
     content.insert(0, text_item(text))
-    return BuiltPrompt(text=text, content=content, labels=labels, mode=seg.mode if seg.mode in ("i2va", "fl2va", "t2va") else "t2va")
+    return BuiltPrompt(text=text, content=content, labels=labels, mode=seg.mode if seg.mode in ("i2va", "fl2va", "t2va") else "t2va",
+                       own_words=words)
 
 
 def build(ep: Episode, seg: Segment) -> BuiltPrompt:

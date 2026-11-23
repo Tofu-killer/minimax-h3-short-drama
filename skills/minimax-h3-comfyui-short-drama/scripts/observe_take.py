@@ -28,7 +28,9 @@ Before a take is accepted it is checked against the record comfy_submit.py left 
   * made from an EARLIER prompt or other references than the segment has now (the previous segment was observed
     to end differently, a voice sample was attached, a picture was replaced)  -> refused: re-make the drafts from
     the current prompt, or - when you have looked at this take and it joins the previous one - accept it knowingly
-    with --stale-ok (refine it from its kept latent then, not by a --seed re-run)
+    with --stale-ok (refine it with the prompt kept beside it then: --media <take folder>/media.json)
+  * smaller than a draft canvas (a quick look made at reduced width / height)  -> refused: previews are not what
+    the second pass is built for; --small-ok when that size is the one you work at
 What the take was made from is stored with it in the episode, so validate_episode.py keeps warning when an
 earlier segment is accepted again with another ending.
 
@@ -39,6 +41,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -106,7 +109,12 @@ def check_take(take: Path, raw: dict, i: int) -> tuple[list[str], list[str], dic
     if rec.get("inputs_sha") and media_json is not None and not wrong:
         now = take_records.media_inputs_sha(media_json)
         if now and now != rec["inputs_sha"]:
-            stale.append(f"the prompt or the references in {media_json} have changed since it was made")
+            detail = take_records.what_changed(rec, media_json, take.parent)
+            voice = any("voice sample" in d and "was added" in d for d in detail)
+            stale.append(f"the prompt or the references in {media_json} have changed since it was made"
+                         + (f" ({'; '.join(detail)})" if detail else "")
+                         + (" - a voice sample attached after a take was made changes that segment's prompt: accept the take first "
+                            "and write voice_reference afterwards, an accepted segment's prompt is left alone" if voice else ""))
     opened = (rec.get("opens_from") or {}).get("sha")
     state = handover(raw, i)
     if opened and state and take_records.text_sha(state) != opened and not wrong:
@@ -114,6 +122,30 @@ def check_take(take: Path, raw: dict, i: int) -> tuple[list[str], list[str], dic
         stale.append(f"it opens from another state than {prev} ends in now"
                      + ("" if stale else f" (the prompt files were not rebuilt after {prev} changed: run build_prompts.py)"))
     return wrong, stale, rec
+
+
+DRAFT_PIXELS = 750_000      # the draft canvases (1344x768, 768x1344, 1024x1024 ...) hold about a million pixels; quick looks about half
+
+
+def preview_size(take: Path) -> str:
+    """'WxH' when the clip is smaller than a draft canvas - a quick look made with a reduced --set width / height.
+    Such a take is not the one the second pass is built for (it enlarges 1344x768 by 1.43), and the same seed at
+    the full canvas is another take. '' for a draft-size or refined clip."""
+    info = signals.probe(take)
+    w, h = int(info.get("width") or 0), int(info.get("height") or 0)
+    return f"{w}x{h}" if 0 < w * h < DRAFT_PIXELS else ""
+
+
+def refine_hint(take: Path) -> str:
+    """How to refine a take that was accepted although its prompt has moved on: with what it was made from."""
+    folder = take.parent
+    if (folder / "media.json").is_file() and (folder / "prompt.txt").is_file():
+        return (f"Refine it with the prompt and references it was made from, which are kept beside it: comfy_submit.py <refine "
+                f"workflow> --media {folder / 'media.json'} --from-latent {folder} (without a kept latent: --seed <its seed> "
+                f"instead of --from-latent) - the segment's prompt files of now would steer the second pass with other text")
+    return ("Refine it from its kept latent (--from-latent); a --seed re-run would follow the prompt as it is now and give "
+            "another take. (This take was made before prompts were kept beside takes: the second pass will be steered by the "
+            "prompt of now - the preview says so.)")
 
 
 def main():
@@ -135,6 +167,8 @@ def main():
     ap.add_argument("--stale-ok", action="store_true",
                     help="accept a take that was made from an earlier prompt or other references than the segment has now: you looked "
                          "at it and it joins the previous segment's accepted take")
+    ap.add_argument("--small-ok", action="store_true",
+                    help="accept a take smaller than a draft canvas (a quick look at reduced size): this size is the one you work at")
     ap.add_argument("--force", action="store_true", help="record a clip that was made for another segment or has another length")
     a = ap.parse_args()
 
@@ -193,8 +227,14 @@ def main():
                      f"  either  re-make the drafts from the current prompt (comfy_submit.py <workflow> --media <{a.segment}.media.json> "
                      f"--batch N; build_prompts.py lists the takes in {folder} that are out of date)\n"
                      f"  or      look at this take next to the previous segment's accepted one: if it joins, accept it as it is by "
-                     f"adding --stale-ok. Refine it from its kept latent then (--from-latent) - a --seed re-run would follow the "
-                     f"prompt as it is now and give another take.")
+                     f"adding --stale-ok. {refine_hint(take)}")
+        small = "" if a.small_ok else preview_size(take)
+        if small and not wrong:
+            sys.exit(f"{take.name} is {small}: smaller than a draft canvas (1344x768 for 16:9), so it looks like a quick preview. "
+                     f"Nothing was written.\n"
+                     f"  A preview is not the take to accept: the second pass enlarges a 1344x768 first pass by 1.43, and the same seed "
+                     f"at the full canvas gives another take. Make the drafts at the draft size and choose among those;\n"
+                     f"  if this size is the one you work at on purpose, add --small-ok.")
         before = (seg.get("observed_end_state") or "").strip()
         seg["status"] = "accepted_with_deviation" if a.deviation else "accepted"
         seg["accepted_take"] = {"path": str(take), "sha256": sha256_file(take)}
@@ -218,6 +258,8 @@ def main():
         ep_path.write_text(json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"{a.segment}: {seg['status']}, observed end state written to {ep_path} (confidence {a.confidence})"
               + (" - accepted although it was made from an earlier prompt (--stale-ok)" if stale else ""))
+        if stale:
+            print("  " + refine_hint(take))
         if nxt:
             cont = (nxt.get("continuity") or "").strip()
             nxt_done = str(nxt.get("status") or "").startswith("accepted")
@@ -257,9 +299,12 @@ def main():
         sys.exit(f"{take}: no video stream")
     for why in wrong:
         print(f"NOT A TAKE OF {a.segment}: {why}")
-    for why in stale:
-        print(f"OUT OF DATE: this take was made from an earlier version of {a.segment} - {why}. Accepting it needs --stale-ok "
-              f"(see --help); the usual answer is to re-make the drafts from the current prompt.")
+    if stale:
+        print(f"OUT OF DATE: this take was made from an earlier version of {a.segment} - {'; '.join(stale)}. Accepting it needs "
+              f"--stale-ok (see --help); the usual answer is to re-make the drafts from the current prompt.")
+    if preview_size(take) and not wrong:
+        print(f"PREVIEW SIZE: this clip is {preview_size(take)}, smaller than a draft canvas - a quick look, not the take to accept "
+              f"(accepting it needs --small-ok; the usual answer is to make the drafts at the draft size).")
     dur = info["duration"]
     end = max(0.2, dur - a.freeze_tail)
     f = 1.0 / (info["fps"] or 24.0)
@@ -286,8 +331,12 @@ The next segment opens on another camera, so do not write places in the picture 
 foreground"). Any asset of the episode may be named; one the next segment does not bind is written in words there.
 Leave out what stills cannot show: whether an action finished, the phase of a camera move, anything about sound.
 If the frames differ from the plan and you keep the take, say how with --deviation.""")
-    print(f"\nthen:\n  python3 observe_take.py {take} --episode {ep_path} --segment {a.segment} --write \"<observed state>\" "
-          f"--confidence high|medium|low [--deviation \"<what differs>\"]")
+    def cli(path) -> str:                                # a path as it has to stand on a command line
+        text = Path(path).as_posix()
+        return f'"{text}"' if re.search(r"\s", text) else text
+
+    print(f"\nthen:\n  python {cli(Path(__file__).resolve())} {cli(take)} --episode {cli(ep_path)} --segment {a.segment} "
+          f"--write \"<observed state>\" --confidence high|medium|low [--deviation \"<what differs>\"]")
     if nxt and not (nxt.get("continuity") or "").strip().startswith("@observed") and nxt.get("scene_id") == seg.get("scene_id"):
         print(f"\nnote: {nxt['id']} follows in the same scene with a hand-written continuity; consider \"@observed\" there.")
 

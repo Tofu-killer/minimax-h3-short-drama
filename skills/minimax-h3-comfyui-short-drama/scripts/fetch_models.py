@@ -149,7 +149,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0], formatter_class=argparse.RawDescriptionHelpFormatter,
                                  epilog=__doc__[__doc__.index("The list is"):])
     ap.add_argument("--comfyui", required=True, help="the ComfyUI folder (the one that holds main.py and models/)")
-    ap.add_argument("--sets", nargs="+", default=["ref2va", "stills", "refine"], help="ref2va stills refine fl2va (default: the first three)")
+    ap.add_argument("--sets", nargs="+", default=["ref2va", "stills", "refine"], help="ref2va stills refine fl2va zimage (default: the first three; zimage = the Apache-2.0 text-to-image model for commercial projects)")
     ap.add_argument("--download", action="store_true", help="fetch what is missing or incomplete (default: only check)")
     ap.add_argument("--verify-hash", action="store_true", help="also compare the SHA-256 of files already on disk (slow)")
     a = ap.parse_args()

@@ -14,14 +14,21 @@ Reads the storyboard and nothing else. For every picture the storyboard names it
   * the workflow file, the pictures that go into image1..image3 (read from the "Picture N" sentences of the prompt),
     the size, how many candidates, the folder and the tag
   * the file the chosen candidate is copied to - the path the storyboard already uses.
-Pictures that are on disk already are listed as done and left out of the count. A prompt file that exists is kept as
-it is (edit it freely); --rewrite writes them again.
+Pictures that are on disk already are listed as done and left out of the count. A prompt file follows the storyboard: when the text the
+storyboard gives changes (a first_frame_prompt rewritten after a take ended differently), the file is written again and
+the picture made from the earlier text is listed as MAKE AGAIN. A prompt file you edited by hand is kept as it is;
+--rewrite replaces it. (What was written, and which prompt each picture belongs to, is remembered in
+<prompts>/.stills_plan.json.)
 
 The commands are printed for comfy_submit.py: run each one with --dry-run first, look at the preview, then run it
 again with --confirm <batch id>. Nothing is submitted by this script and no GPU is used.
 
-Order: everything Qwen-Image 2.1 makes (busts, scene masters, props) first, then - after you chose the busts -
-everything Qwen-Image-Edit-2511 makes (views, first frames, keyframes): each model is loaded once.
+Order: everything the text-to-picture model makes (busts, scene masters, props) first, then - after you chose the
+busts - everything Qwen-Image-Edit-2511 makes (views, first frames, keyframes): each model is loaded once.
+
+The text-to-picture model is Qwen-Image 2.1 by default. Its licence is for research: a project that earns money
+uses --t2i zimage instead (Z-Image-Turbo, Apache-2.0; workflow zimage_turbo_t2i.api.json, files: fetch_models.py
+--sets zimage). The edit model, Qwen-Image-Edit-2511, is Apache-2.0 either way.
 """
 from __future__ import annotations
 
@@ -96,24 +103,27 @@ def view_prompt(look: str, style: str, view: str) -> str:
 
 
 def master_prompt(desc: str, style: str, ratio: str) -> str:
+    place = desc.rstrip(". ")
     if is_anime(style):
-        return (f"An anime background painting of an empty place, wide establishing view at eye level along the main axis, {ratio}, painted "
-                f"style matching the character sheets, {style.rstrip('. ')}. The place: {desc.rstrip('. ')}. "
+        return (f"An anime background painting of {place}, with nobody in it. Wide establishing view at eye level along the main axis, "
+                f"{ratio}, painted style matching the character sheets, {style.rstrip('. ')}. "
                 f"The space holds only its architecture and furniture, deserted and still.")
-    return (f"A cinematic film still of an empty place, wide establishing view at eye level along the main axis, {ratio}. "
-            f"The place: {desc.rstrip('. ')}. One key light as the place describes it, soft falloff with detail kept in the shadows. "
-            f"Shot on a 35mm lens at f/4, deep focus, true-to-life colors, uncluttered. "
+    return (f"A cinematic film still of {place}, with nobody in it. Wide establishing view at eye level along the main axis, {ratio}. "
+            f"Soft falloff with detail kept in the shadows. Shot on a 35mm lens at f/4, deep focus, true-to-life colors, uncluttered. "
             f"The space holds only its architecture and furniture, deserted and still.")
 
 
 def grid_prompt(desc: str, style: str, ratio: str) -> str:
+    # the episode's style line describes people and acting; a board of empty rooms only takes the medium from it
+    look = style.rstrip(". ") if is_anime(style) else "Live-action photograph, true-to-life colors"
     return (f"One {ratio} location board divided into exactly nine equal panels in a 3x3 grid with thin white gutters. All nine panels show "
-            f"the same empty place with identical architecture, furniture positions, materials, colors, time of day and light direction; "
-            f"only the camera position changes. 1 view from the doorway into the room; 2 wide view of the main activity area; 3 the window "
-            f"side with the light falling in; 4 reverse view from inside toward the door; 5 high overhead view of the floor layout; 6 "
-            f"long-lens diagonal view from one corner to the opposite corner; 7 close view of the most distinctive piece of furniture; 8 "
-            f"close view of a wall detail; 9 the view out of the window. A small numeral 1-9 in each panel's top-left corner. Uniform 50mm "
-            f"lens, bright even exposure, one white balance. The place: {desc.rstrip('. ')}. {style.rstrip('. ')}. Every panel is a deserted space.")
+            f"the same place, empty of people, with identical architecture, furniture positions, materials, colors, time of day and light "
+            f"direction; only the camera position changes. 1 view from the doorway into the room; 2 wide view of the main activity area; "
+            f"3 the window side with the light falling in; 4 reverse view from inside toward the door; 5 high overhead view of the floor "
+            f"layout; 6 long-lens diagonal view from one corner to the opposite corner; 7 close view of the most distinctive piece of "
+            f"furniture; 8 close view of a wall detail; 9 the view out of the window. A small numeral 1-9 in each panel's top-left corner. "
+            f"Uniform 50mm lens, bright even exposure, one white balance. The place: {desc.rstrip('. ')}. {look}. "
+            f"Every panel is a deserted space.")
 
 
 def prop_prompt(desc: str, style: str) -> str:
@@ -131,6 +141,11 @@ def quoted(path) -> str:
     return f'"{text}"' if re.search(r"\s", text) else text
 
 
+def sha(text: str) -> str:
+    import hashlib
+    return hashlib.sha256(text.strip().encode("utf-8")).hexdigest()[:16]
+
+
 def norm(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", str(text).lower()).strip()
 
@@ -139,28 +154,76 @@ def pick(refs: list, word: str):
     return next((r for r in refs if word in Path(r).stem.lower()), None)
 
 
+# The text-to-picture model (busts, scene masters, props). qwen21 = Qwen-Image 2.1, the default: research licence, not
+# for projects that earn money. zimage = Z-Image-Turbo, Apache-2.0: its official template runs at 1024x1024, so its
+# masters are planned at about 2.4 megapixels and its props at 1024 - larger sizes have not been tried with it here.
+T2I = {"qwen21": {"file": "qwen21_t2i.api.json", "prompt": "459:452.prompt", "size": "459:456", "label": "Qwen-Image 2.1",
+                  "master": {"16:9": (2688, 1536), "9:16": (1536, 2688)}, "prop": (2048, 2048)},
+       "zimage": {"file": "zimage_turbo_t2i.api.json", "prompt": "57:27.text", "size": "57:13", "label": "Z-Image-Turbo",
+                  "master": {"16:9": (2048, 1152), "9:16": (1152, 2048)}, "prop": (1024, 1024)}}
+
+
 class Plan:
-    def __init__(self, raw: dict, prompts: Path, rewrite: bool, script: str):
+    def __init__(self, raw: dict, prompts: Path, rewrite: bool, script: str, t2i: str = "qwen21"):
         self.raw, self.prompts, self.rewrite, self.script = raw, prompts, rewrite, script
+        self.t2i = T2I[t2i]
         self.style = raw.get("style", "Live-action, cinematic")
         self.ratio = raw.get("ratio", "16:9")
         self.canvas = {"16:9": (1344, 768), "9:16": (768, 1344)}.get(self.ratio)
-        self.master = {"16:9": (2688, 1536), "9:16": (1536, 2688)}.get(self.ratio, (2688, 1536))
+        self.master = self.t2i["master"].get(self.ratio, self.t2i["master"]["16:9"])
         self.items: list[dict] = []           # one per picture
         self.notes: list[str] = []
         self.written: list[str] = []
+        self.updated: list[str] = []
         self.kept: list[str] = []
+        self.record_file = prompts / ".stills_plan.json"      # what this script wrote, and which prompt each picture was made from
+        try:
+            self.record = json.loads(self.record_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            self.record = {}
+        self.record.setdefault("prompts", {})
+        self.record.setdefault("pictures", {})
 
     # -- prompt files ------------------------------------------------------------------------------------
     def prompt_file(self, name: str, text: str) -> Path:
+        """Write <name>.txt. A file this script wrote follows the storyboard (it is written again when the text the
+        storyboard gives has changed); a file that was edited by hand is kept unless --rewrite."""
         path = self.prompts / f"{name}.txt"
-        if path.exists() and not self.rewrite:
+        text = text.strip() + "\n"
+        new, was = sha(text), self.record["prompts"].get(path.name)
+        now = sha(path.read_text(encoding="utf-8")) if path.exists() else None
+        if now is None:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+            self.written.append(path.name)
+        elif now == new:
             self.kept.append(path.name)
+        elif self.rewrite or (was is not None and now == was):
+            path.write_text(text, encoding="utf-8")
+            self.updated.append(path.name)
+        else:                                   # edited by hand (or written by an earlier version): the user's text stands
+            self.kept.append(path.name)
+            if was is None or was != new:
+                self.notes.append(f"{path} differs from what the storyboard gives now and was kept as it is (edited by hand?) - "
+                                  f"--rewrite replaces it with the storyboard's text")
+            self.record["prompts"][path.name] = was if was is not None else new
             return path
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text.strip() + "\n", encoding="utf-8")
-        self.written.append(path.name)
+        self.record["prompts"][path.name] = new
         return path
+
+    def picture_state(self, dest: str, prompt: Path | None) -> str:
+        """'missing' | 'have' | 'stale' (on disk, but made before its prompt last changed)."""
+        if not dest or not Path(dest).exists():
+            self.record["pictures"].pop(dest, None)
+            return "missing"
+        if prompt is None or not prompt.exists():
+            return "have"
+        now, mtime = sha(prompt.read_text(encoding="utf-8")), round(Path(dest).stat().st_mtime, 2)
+        rec = self.record["pictures"].get(dest)
+        if rec is None or rec.get("mtime") != mtime:          # first seen, or made again since: it belongs to the prompt of now
+            self.record["pictures"][dest] = {"prompt": now, "mtime": mtime}
+            return "have"
+        return "have" if rec.get("prompt") == now else "stale"
 
     # -- one picture -------------------------------------------------------------------------------------
     def add(self, phase: str, what: str, dest: str, workflow: str, prompt: Path | None, n: int, out: str, tag: str,
@@ -169,19 +232,21 @@ class Plan:
         sets = []
         for k, img in enumerate(images or []):
             sets.append("--set " + quoted(f"{41 + k}.image=@{img}"))
-        node = "459:452" if workflow.startswith("qwen21") else "170:151"
+        text_model = workflow == self.t2i["file"]
+        key = self.t2i["prompt"] if text_model else "170:151.prompt"
         if prompt is not None:
-            sets.append("--set " + quoted(f"{node}.prompt=@{prompt.as_posix()}"))
+            sets.append("--set " + quoted(f"{key}=@{prompt.as_posix()}"))
         if negative:
             sets.append("--set " + quoted(f"170:149.prompt={NEGATIVE}"))
         if size:
-            holder = "459:456" if workflow.startswith("qwen21") else "170:300"
-            default = (1024, 1024) if workflow.startswith("qwen21") else (1344, 768)
+            holder = self.t2i["size"] if text_model else "170:300"
+            default = (1024, 1024) if text_model else (1344, 768)
             if tuple(size) != default:
                 sets.append(f"--set {holder}.width={size[0]} --set {holder}.height={size[1]}")
         cmd = f"{self.script} {quoted(W / workflow)} {' '.join(sets)} --batch {n} --seed 1 --out {quoted(out)} --tag {tag}"
-        self.items.append({"phase": phase, "what": what, "dest": dest, "have": bool(dest) and Path(dest).exists(), "n": n, "cmd": cmd,
-                           "size": size, "problems": problems or [], "needs": needs or [], "out": out, "tag": tag})
+        state = self.picture_state(dest, prompt)
+        self.items.append({"phase": phase, "what": what, "dest": dest, "have": state == "have", "stale": state == "stale", "n": n,
+                           "cmd": cmd, "size": size, "problems": problems or [], "needs": needs or [], "out": out, "tag": tag})
 
     # -- characters, scenes, props -----------------------------------------------------------------------
     def characters(self, extra_views: dict):
@@ -199,7 +264,7 @@ class Plan:
                 self.notes.append(f"character {cid} has no sheet_phrase: its bust and views cannot be written - add the full look "
                                   f"(assets/agent-prompts/01-outline.md) and run this again")
                 continue
-            self.add("A", f"{cid}: bust (the anchor - choose one and freeze it)", paths["bust"], "qwen21_t2i.api.json",
+            self.add("A", f"{cid}: bust (the anchor - choose one and freeze it)", paths["bust"], self.t2i["file"],
                      self.prompt_file(f"{cid}_bust", bust_prompt(look, self.style)), 6, cand, "bust", size=(1024, 1024))
             views = ["full", "face"] + [v for v in ("side", "back") if v in extra_views.get(cid, set()) or pick(refs, v)]
             for v in views:
@@ -218,13 +283,13 @@ class Plan:
             base = Path(refs[0]).parent if refs else Path("bible/scenes")
             master = refs[0] if refs else (base / f"{sid}_master.png").as_posix()
             s["_master"], s["_dir"] = master, base
-            self.add("A", f"scene {sid}: master, no people", master, "qwen21_t2i.api.json",
+            self.add("A", f"scene {sid}: master, no people", master, self.t2i["file"],
                      self.prompt_file(f"{sid}_master", master_prompt(s.get("description", ""), self.style, self.ratio)), 3,
                      f"bible/candidates/{sid}", "master", size=self.master)
             grid = pick(refs[1:], "grid")
             if grid:
                 self.add("A", f"scene {sid}: nine-grid (for people to look at and to cut single views from - never a reference)", grid,
-                         "qwen21_t2i.api.json", self.prompt_file(f"{sid}_grid9", grid_prompt(s.get("description", ""), self.style, self.ratio)),
+                         self.t2i["file"], self.prompt_file(f"{sid}_grid9", grid_prompt(s.get("description", ""), self.style, self.ratio)),
                          2, f"bible/candidates/{sid}", "grid", size=self.master)
 
     def props(self):
@@ -233,9 +298,9 @@ class Plan:
             pid = p["id"]
             dest = refs[0] if refs else f"bible/props/{pid}.png"
             p["_pic"] = dest
-            self.add("A", f"prop {pid}: one object on white", dest, "qwen21_t2i.api.json",
+            self.add("A", f"prop {pid}: one object on white", dest, self.t2i["file"],
                      self.prompt_file(pid, prop_prompt(p.get("description", p.get("name", pid)), self.style)), 3,
-                     f"bible/candidates/{pid}", "prop", size=(2048, 2048))
+                     f"bible/candidates/{pid}", "prop", size=self.t2i["prop"])
 
     # -- first frames and keyframes ----------------------------------------------------------------------
     def frame_inputs(self, text: str, seg: dict, shot: dict, carried: str | None) -> tuple[list, list]:
@@ -254,6 +319,9 @@ class Plan:
             n, look = int(m.group(1)), norm(m.group(2) or "")
             hit = next((cid for cid, c in chars.items() if look and norm(c.get("sheet_phrase", "")) and
                         (look == norm(c["sheet_phrase"]) or look in norm(c["sheet_phrase"]) or norm(c["sheet_phrase"]) in look)), None)
+            if hit is not None and look != norm(chars[hit]["sheet_phrase"]):
+                problems.append(f"Picture {n}: the look quoted in brackets is not {hit}'s sheet_phrase as it is now (the look was "
+                                f"changed after this prompt was written?) - copy the current sheet_phrase into the prompt")
             if hit is None:
                 hit = next((cid for cid in on_screen if cid not in used), None)
                 if hit:
@@ -352,7 +420,7 @@ class Plan:
 
 
 def render(plan: Plan, episode: str) -> tuple[str, int, int]:
-    titles = {"A": "A. Qwen-Image 2.1 (text to picture): busts, scene masters, props",
+    titles = {"A": f"A. {plan.t2i['label']} (text to picture): busts, scene masters, props",
               "B1": "B. Qwen-Image-Edit-2511: views made from the chosen bust",
               "B2": "B. Qwen-Image-Edit-2511: views made from the chosen full-body picture",
               "C": "C. Qwen-Image-Edit-2511: first frames and keyframes (after the faces, props and scene crops exist)"}
@@ -385,6 +453,8 @@ def render(plan: Plan, episode: str) -> tuple[str, int, int]:
             lines.append(f"- **{i['what']}** -> `{i['dest']}`  ({state})")
             if i["have"]:
                 continue
+            if i.get("stale"):
+                lines.append("  - MAKE AGAIN: the file on disk was made from an earlier version of this prompt")
             for p in i["problems"]:
                 lines.append(f"  - CHECK: {p}")
             missing = [n for n in i["needs"] if not Path(n).exists()]
@@ -406,6 +476,9 @@ def main():
     ap.add_argument("--back", nargs="*", default=[], metavar="CHARACTER", help="also plan a back view of these characters")
     ap.add_argument("--side", nargs="*", default=[], metavar="CHARACTER", help="also plan a 90-degree side view of these characters")
     ap.add_argument("--rewrite", action="store_true", help="write prompt files again even when they exist (hand edits are lost)")
+    ap.add_argument("--t2i", choices=sorted(T2I), default="qwen21",
+                    help="the text-to-picture model for busts, masters and props: qwen21 (default; research licence, not for projects "
+                         "that earn money) or zimage (Z-Image-Turbo, Apache-2.0)")
     a = ap.parse_args()
     raw = json.loads(Path(a.episode).read_text(encoding="utf-8"))
     ids = {c["id"] for c in raw.get("characters", [])}
@@ -418,7 +491,7 @@ def main():
     for who in a.side:
         extra.setdefault(who, set()).add("side")
     script = f"python {quoted(HERE / 'comfy_submit.py')}"
-    plan = Plan(raw, Path(a.prompts), a.rewrite, script)
+    plan = Plan(raw, Path(a.prompts), a.rewrite, script, a.t2i)
     plan.characters(extra)
     plan.scenes()
     plan.props()
@@ -428,12 +501,20 @@ def main():
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text, encoding="utf-8")
     print(f"{len(plan.items)} picture(s) in the storyboard: {done} on disk, {len(plan.items) - done} to make = {todo} candidates to generate")
-    for phase, label in (("A", "Qwen-Image 2.1"), ("B1", "Edit-2511, from the bust"), ("B2", "Edit-2511, from the full body"), ("C", "Edit-2511, frames")):
+    for phase, label in (("A", plan.t2i["label"]), ("B1", "Edit-2511, from the bust"), ("B2", "Edit-2511, from the full body"), ("C", "Edit-2511, frames")):
         part = [i for i in plan.items if i["phase"] == phase and not i["have"]]
         if part:
             print(f"  {label}: {len(part)} picture(s), {sum(i['n'] for i in part)} candidates")
-    print(f"prompt files in {a.prompts}: {len(plan.written)} written" + (f", {len(plan.kept)} kept as they were (--rewrite replaces them)" if plan.kept else ""))
-    checks = [(i["what"], p) for i in plan.items if not i["have"] for p in i["problems"]]
+    plan.record_file.parent.mkdir(parents=True, exist_ok=True)
+    plan.record_file.write_text(json.dumps(plan.record, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(f"prompt files in {a.prompts}: {len(plan.written)} written"
+          + (f", {len(plan.updated)} updated from the storyboard ({', '.join(plan.updated)})" if plan.updated else "")
+          + (f", {len(plan.kept)} kept as they were" if plan.kept else ""))
+    again = [i["dest"] for i in plan.items if i.get("stale")]
+    if again:
+        print(f"MAKE AGAIN ({len(again)}): {', '.join(again)} - on disk, but made before the prompt changed; counted above as still to make")
+    # a picture that exists needs no command - but one whose prompt quotes an outdated look was made from that look
+    checks = [(i["what"], p) for i in plan.items for p in i["problems"] if not i["have"] or "sheet_phrase as it is now" in p]
     for what, p in checks:
         print(f"CHECK {what}: {p}")
     for n in plan.notes:

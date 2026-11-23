@@ -98,7 +98,7 @@
 2. LoRA 换成 `minimax_h3_ref2v_turbo_8step_v1.1_768p_comfyui_bf16.safetensors`，强度 1.0；步数设 8（模板用开关控制步数时，把开关拨到 Turbo 那一档并确认 `BasicScheduler` 实际拿到的是 8）。
 3. 在 LoRA 之后、采样之前依次接 KJNodes 的 `PathchSageAttentionKJ(auto)` → `MiniMaxH3MemoryEfficientSageAttentionPatch`（界面里搜到的名字是 `Patch Sage Attention KJ` 和 `MiniMax H3 Mem Eff Sage Attention Patch`；第一个的 `sage_attention` 选 `auto`），再接 `MiniMaxH3SigmaShift`（Ref2V：12 / 3）。
 4. 分辨率 1344×768；`MiniMaxH3ReferenceToVideo` 的 `vae` 和 `audio_vae` 两个输入都要接上（不接的话参考图只进文本编码器、音色参考完全不起作用），`ref_image_size` 用 `match`。
-5. 输出保持 `VAEDecode` + `VAEDecodeAudio` → `CreateVideo(24)` → `SaveVideo`。精修默认是在精修工作流里按同 seed 把一采重跑一遍再接放大，草稿工作流不用为它改什么；想把一采的 latent 存下来省掉重跑，不用改图：提交时加 `--keep-latent`，精修时加 `--from-latent`（脚本自己加拆分、保存、读回的节点，见 `quality-pipeline.md` §2）。
+5. 输出保持 `VAEDecode` + `VAEDecodeAudio` → `CreateVideo(24)` → `SaveVideo`。精修默认从草稿存下的一采 latent 开始：草稿提交时加 `--keep-latent`，精修时加 `--from-latent`，都不用改图（脚本自己加拆分、保存、读回的节点，见 `quality-pipeline.md` §2）；草稿当时没存 latent 的，精修工作流改给 `--seed`，按同 seed 把一采原样重跑一遍再接放大。草稿工作流不用为这两种做法改什么。
 6. 菜单「工作流 → 导出（API）」存到项目的 `workflows/` 下，例如 `workflows/draft_ref2va.api.json`（自己导出的放项目里，和 skill 附带的 `assets/workflows/h3_ref2va*.api.json` 分开；旧界面要先在设置里打开开发者模式才有这一项）。
 7. 需要 `i2va` / `fl2va` / `t2va` 的段再用模板 `video_minimax_h3_i2v` 同样改一份（FL2VA 权重、`minimax_h3_fl2v_turbo_8step_v1.0_768p_comfyui_bf16`，在 LoRA 后面加 `MiniMaxH3SigmaShift(6, 3)`，并把 `BasicScheduler` 的 `model` 从 `UNETLoader` 改接到它的输出，见 §1 表里那一行），导出成 `workflows/draft_fl2va.api.json`。`--media` 按段的模式找节点：`ref2va` 找 `MiniMaxH3ReferenceToVideo`，其余找 `MiniMaxH3ImageToVideo`，所以**每种权重各要一份工作流**。
 
@@ -120,7 +120,7 @@ RandomNoise(noise_seed) + KSamplerSelect(euler) + BasicScheduler(model, simple, 
 VAEDecode(video vae) + VAEDecodeAudio(audio vae) → CreateVideo(24) → SaveVideo
 ```
 
-出图也用同一个脚本排队，工作流用附带的 `qwen21_t2i.api.json` 和 `qwen_edit2511_{1,2,3}ref.api.json`：`comfy_submit.py <skill>/assets/workflows/qwen21_t2i.api.json --set 459:452.prompt=@bible/prompts/lin_lan_bust.txt --batch 6 --seed 1 --out bible/candidates/lin_lan --tag bust --dry-run`，预览确认后带 `--confirm` 提交——这样出图也有批次预览、不会重复提交（每类图的命令见 `image-stage.md` §4 和 `assets/workflows/README.md`）。
+出图也用同一个脚本排队，工作流用附带的 `qwen21_t2i.api.json`（营利项目换 `zimage_turbo_t2i.api.json`，提示词节点是 `57:27.text`、尺寸节点 `57:13`）和 `qwen_edit2511_{1,2,3}ref.api.json`：`comfy_submit.py <skill>/assets/workflows/qwen21_t2i.api.json --set 459:452.prompt=@bible/prompts/lin_lan_bust.txt --batch 6 --seed 1 --out bible/candidates/lin_lan --tag bust --dry-run`，预览确认后带 `--confirm` 提交——这样出图也有批次预览、不会重复提交（每类图的命令见 `image-stage.md` §4 和 `assets/workflows/README.md`）。
 
 草稿分两档（见 `local-stack-and-acceleration.md` §2）：默认直接在 1344×768 出，片段可以采纳并走 latent 二采；864×480 / 960×544 只作快速预览，选中后在 1344×768 重跑出来的是一条新片段，要重新选片。
 

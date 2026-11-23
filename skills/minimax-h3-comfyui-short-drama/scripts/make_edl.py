@@ -24,6 +24,10 @@ mix_episode.py (cuts, mixes, masters), export_capcut_draft.py / export_otio.py (
 Hand edits belong here too: nudge a cut, add "music" / "ambience", set an L-cut.
 Re-running keeps your manual edits for segments that already exist in --out unless --overwrite is given.
 
+Each clip is compared with the take the storyboard records as accepted (observe_take.py): the accepted file itself and
+a second pass of it (same prompt, references and seed) pass in silence; anything else - another seed, a draft made from
+an earlier prompt, a segment without an accepted take - gets a WARN line. The edit list is written either way.
+
 Needs ffprobe on PATH. Standard library only.
 """
 from __future__ import annotations
@@ -38,6 +42,7 @@ from pathlib import Path
 sys.dont_write_bytecode = True      # keep the skill folder free of __pycache__
 sys.path.insert(0, str(Path(__file__).parent / "h3lib"))
 import edl as edl_lib  # noqa: E402
+import takes as take_records  # noqa: E402
 
 
 def _utf8_console() -> None:
@@ -87,6 +92,59 @@ def find_clip(selects: Path, seg_id: str) -> Path | None:
     return None
 
 
+def source_take(clip: Path, acc: dict, episode: Path) -> Path | None:
+    """The file below the segment's takes folder that `clip` is a copy of (same bytes) - a clip copied into
+    selects/ has no run.json beside it, the take it was copied from has."""
+    rel = Path(str(acc.get("path") or ""))
+    if not rel.name:
+        return None
+    try:
+        size, digest = clip.stat().st_size, None
+        for base in ([Path()] if rel.is_absolute() else [Path.cwd(), episode.resolve().parent.parent]):
+            folder = (base / rel).parent.parent              # takes/<episode>/<segment>
+            if not folder.is_dir():
+                continue
+            for cand in sorted(folder.glob("*/*")):
+                if cand.suffix.lower() in VIDEO_EXT and cand.is_file() and cand.stat().st_size == size:
+                    digest = digest or take_records.sha256_file(clip)
+                    if take_records.sha256_file(cand) == digest:
+                        return cand
+            break
+    except OSError:
+        pass
+    return None
+
+
+def provenance(seg: dict, clip: Path, episode: Path) -> tuple[str, str]:
+    """Is this clip the take the storyboard records as accepted, or a second pass of it (same prompt, references
+    and seed)? ('', '') when it is; ('WARN', why) when its record says it is something else or the segment has no
+    accepted take; ('note', why) when nothing says what the file was made from. The edit is built either way."""
+    acc = seg.get("accepted_take") or {}
+    if not str(seg.get("status") or "").startswith("accepted") or not acc:
+        return "WARN", ("the storyboard records no accepted take for this segment (observe_take.py writes it) - "
+                        "nothing says this clip is the one that was chosen")
+    try:
+        if take_records.sha256_file(clip) == acc.get("sha256"):
+            return "", ""
+    except OSError:
+        pass
+    rec, made_in = take_records.take_record(clip), clip.parent.name
+    if rec is None:                                          # a copy in selects/: find the take it was copied from
+        src = source_take(clip, acc, episode)
+        if src is not None:
+            rec, made_in = take_records.take_record(src), src.parent.name
+    was = Path(str(acc.get("path") or "?")).parent.name
+    if rec and rec.get("inputs_sha") and acc.get("inputs_sha"):
+        if rec["inputs_sha"] == acc["inputs_sha"] and (acc.get("seed") is None or rec.get("seed") == acc.get("seed")):
+            return "", ""                                    # a second pass of the accepted take
+        why = ("another seed" if rec["inputs_sha"] == acc["inputs_sha"] else "another prompt or other references")
+        return "WARN", (f"this is not the accepted take ({was}) nor a refine of it: {made_in} was made with {why} "
+                        f"(seed {rec.get('seed', '?')}; accepted: seed {acc.get('seed', '?')})")
+    return "note", (f"cannot tell what this file was made from: it is not the accepted take ({was}) byte for byte, has no "
+                    f"run.json beside it and is not a copy of a take in that segment's folder. Expected for a clip finished in "
+                    f"another tool (upscaled, interpolated); otherwise pick the file with --pick")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("episode")
@@ -120,11 +178,28 @@ def main():
         if not Path(v).exists():
             sys.exit(f"--pick {k}: clip not found: {v}")
         picks[k.strip()] = Path(v)
-    segments, missing = [], []
+    segments, missing, doubts, untraced = [], [], [], []
+    any_accepted = any(seg.get("accepted_take") for seg in ep["segments"])
+
+    def check(seg: dict, clip: Path, entry: dict, kept: bool = False) -> None:
+        level, doubt = provenance(seg, clip, ep_path)
+        if level == "WARN" and not any_accepted:
+            level = ""                                       # an episode made without observe_take.py: said once, below
+        entry.pop("take_check", None)
+        if level:
+            (doubts if level == "WARN" else untraced).append(seg["id"])
+            where = f" (entry kept from {out_path.name}: {clip})" if kept else ""
+            print(f"  {level} {seg['id']}{where}: {doubt}")
+        if level == "WARN":
+            entry["take_check"] = doubt                      # mix_episode.py repeats it: the master should not pass in silence
+
     for seg in ep["segments"]:
         sid = seg["id"]
         if sid in old and sid not in picks:
             segments.append(old[sid])
+            kept_clip = Path(str(old[sid].get("video") or ""))
+            if kept_clip.is_file():                          # the accepted take may have changed since this entry was made
+                check(seg, kept_clip, old[sid], kept=True)
             continue
         clip = picks.get(sid) or find_clip(selects, sid)
         if clip is None:
@@ -149,6 +224,7 @@ def main():
                          "l_cut": a.l_cut if lines else 0.0, "j_cut": 0.0, "scene": seg.get("scene_id"), "lines": lines})
         print(f"{sid}: {clip.name} {info['frames']} frames -> use [{in_f}, {out_f}) = {(out_f - in_f) / info['fps']:.3f}s"
               f"{' (end freeze cut)' if cut else ''}, {len(lines)} line(s)")
+        check(seg, clip, segments[-1])
 
     edl = {"name": prev.get("name") or ep_path.stem, "title": ep.get("title", ""), "fps": a.fps, "width": w, "height": h,
            "segments": segments,
@@ -161,6 +237,11 @@ def main():
     out_path.write_text(json.dumps(edl, ensure_ascii=False, indent=1), encoding="utf-8")
     _fps, _plan, total = edl_lib.timeline(edl)
     print(f"wrote {out_path}: {len(segments)} segment(s), {total} frames = {total / a.fps:.3f}s")
+    if doubts:
+        print(f"CHECK: {', '.join(doubts)} - the clip in the edit is not the take that was accepted, nor a second pass of it "
+              f"(WARN lines above). To use another clip: --pick <segment>=<clip> (rebuilds that segment's entry only)")
+    if not any_accepted:
+        print("note: the storyboard records no accepted takes (observe_take.py was not used), so the clips are taken as given")
     if missing:
         print(f"MISSING selected clips for: {', '.join(missing)} (looked under {selects})")
         sys.exit(2)

@@ -822,9 +822,19 @@ def advice(wf: dict, ratio: str | None) -> list[str]:
             out.append(f"MMH3SplitUpscale [{k}] gets {n} second-pass step(s) ({text}) but no Turbo LoRA is in the model chain: "
                        f"two steps are for the Turbo model - without it use the tail H3 Hires Fix takes from the 20-step schedule: "
                        f"--set {link[0]}.sigmas=\"0.45, 0.3095, 0.1719, 0.0569, 0.0\"")
+    canvas = next((literals(wf, v.get("inputs", {})) for v in wf.values() if v.get("class_type") in (H3_REF, H3_I2V, H3_EMPTY)), {})
     for k, v in wf.items():
         if v.get("class_type") != H3_HIRES:
             continue
+        lit = literals(wf, v.get("inputs", {}))
+        if all(isinstance(x, int) and x > 0 for x in (lit.get("width"), lit.get("height"), canvas.get("width"), canvas.get("height"))):
+            grow = max(lit["width"] / canvas["width"], lit["height"] / canvas["height"])
+            if grow > 1.75:                                      # the pipeline's own step is 1344x768 -> 1920x1088 = 1.43
+                out.append(f"{H3_HIRES} [{k}] enlarges the first pass {grow:.2f}x ({canvas['width']}x{canvas['height']} -> "
+                           f"{lit['width']}x{lit['height']}); this pipeline's step is 1.43x (1344x768 -> 1920x1088) and a larger one "
+                           f"is untested here - a second pass at sigma {lit.get('sigma_start', '?')} keeps the first pass's structure, "
+                           f"so expect a softer picture from a preview-size first pass. Make the draft at the draft canvas and "
+                           f"refine that, or lower the second-pass size")
         over = literal(wf, v.get("inputs", {}).get("steps_override", 0))
         if distilled and over == 0:
             out.append(f"{H3_HIRES} [{k}] has steps_override 0 with {distilled[0]} in the model chain: its native 4-step tail is "
@@ -845,6 +855,7 @@ def advice(wf: dict, ratio: str | None) -> list[str]:
 STILL_SIZES = {(1024, 1024): "bust / face", (1024, 1536): "full body", (2688, 1536): "scene master / nine-grid", (2048, 2048): "prop",
                (1344, 768): "first frame / keyframe on the default canvas", (1536, 864): "first frame on the true 16:9 canvas",
                (864, 480): "first frame of a preview",
+               (2048, 1152): "scene master / nine-grid made with Z-Image-Turbo", (1152, 2048): "the same for a 9:16 project",
                (768, 1344): "first frame / keyframe of a 9:16 project", (1536, 2688): "scene master of a 9:16 project"}
 
 
@@ -969,7 +980,7 @@ def same_seed_note(out: Path, dest: Path, seed, inputs_sha: str, first_pass: str
             r = json.loads(rj.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        if r.get("status") != "success":
+        if r.get("status") != "success" or r.get("from_latent"):     # a take continued from a kept latent sampled no first pass
             continue
         if not r.get("inputs_sha"):
             return f"; {rj.parent.name} has the same seed (made by an earlier version of this script: prompt and references cannot be compared)"
@@ -988,20 +999,77 @@ def same_seed_note(out: Path, dest: Path, seed, inputs_sha: str, first_pass: str
                        else ": with the same first-pass settings this repeats that take"))
         return (f"; WARNING: {rj.parent.name} has this seed but was made from a different prompt or reference set - this run will "
                 f"NOT repeat that take. If {rj.parent.name} is the accepted draft, submit with the prompt files it was made from "
-                f"(build_prompts.py leaves accepted segments alone unless --only names them)")
+                f"(build_prompts.py leaves accepted segments alone unless --only names them)" + made_from_hint(rj.parent))
     return ""
 
 
-def kept_latent_note(folder: Path, inputs_sha: str) -> str:
-    """--from-latent: the latent already is that take; say so, and say when the prompt has changed since."""
+def made_from_hint(folder: Path) -> str:
+    """Where the prompt and reference list of a finished take are kept (takes made before they were kept: '')."""
+    if (folder / "media.json").is_file() and (folder / "prompt.txt").is_file():
+        return f" (what it was made from is kept beside it: --media {folder / 'media.json'} submits with that text and those references)"
+    if (folder / "prompt.txt").is_file():
+        return f" (the text it was made from is kept in {folder / 'prompt.txt'})"
+    return ""
+
+
+def canvas_of(first_pass: str) -> str:
+    """'WxH' of the H3 node in a first-pass signature line ("MiniMaxH3ReferenceToVideo [136]: 1344x768, 124 frames ..."), '' if unreadable."""
+    m = re.search(r"(?:^|; )(?:%s) \[[^\]]+\]: (\d+x\d+)," % "|".join(map(re.escape, (H3_REF, H3_I2V, H3_EMPTY))), first_pass or "")
+    return m.group(1) if m else ""
+
+
+def kept_latent_note(folder: Path, inputs_sha: str, frames: int = 0, first_pass: str = "", h3_node: str = "") -> str:
+    """--from-latent: the latent already is that take. Say so - and say when the job around it is not the one the
+    take was made with: other prompt or references (the second pass is steered by them), another canvas on the H3
+    node (references and pinned frames are prepared for that size), another length (the latent has the old one)."""
     try:
         r = json.loads((folder / "run.json").read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return f"; continues the take in {folder.name}"
+    wrong = []
     if r.get("inputs_sha") and r["inputs_sha"] != inputs_sha:
-        return (f"; WARNING: continues the take in {folder.name}, but the prompt or references given now differ from the ones "
-                f"it was made with - the second pass would be steered by other text or pictures than the first")
-    return f"; continues the take in {folder.name} (same prompt and references)"
+        wrong.append("the prompt or references given now differ from the ones it was made with - the second pass would be steered "
+                     "by other text or pictures than the first" + made_from_hint(folder))
+    then, now = canvas_of(str(r.get("first_pass") or "")), canvas_of(first_pass)
+    if then and now and then != now:
+        w, h = then.split("x")
+        wrong.append(f"it was sampled on a {then} canvas and the H3 node is now set to {now} - the references (and a pinned frame) "
+                     f"are prepared for the size on that node, so the second pass gets them at another size than the first"
+                     + (f" (--set {h3_node}.width={w} --set {h3_node}.height={h})" if h3_node else ""))
+    if frames and r.get("frames") and int(r["frames"]) != int(frames):
+        wrong.append(f"it is {r['frames']} frames long and the H3 node is now set to {frames} - the latent keeps its own length, "
+                     f"the conditioning would be built for the other")
+    if wrong:
+        return f"; WARNING: continues the take in {folder.name}, but " + "; ".join(wrong)
+    same = (["same prompt and references"] if r.get("inputs_sha") else []) + (["same canvas"] if then and now else []) \
+        + (["same length"] if frames and r.get("frames") else [])           # only what the take's record lets us compare
+    return f"; continues the take in {folder.name}" + (f" ({', '.join(same)})" if same else "")
+
+
+def keep_inputs(dest: Path, wf: dict, spec: dict | None, media_json: str | None, h3_node: str = "") -> None:
+    """Leave in the take's folder what the take is made from: the prompt exactly as it is sent (prompt.txt; when a
+    second H3 node carries other text, prompt_2.txt ...) and a copy of the --media file (media.json, pointing at that
+    prompt.txt). prompts/<episode>/<segment>.txt is written again whenever the storyboard changes; these copies stay
+    what this take saw: `--media <take folder>/media.json` submits a job with exactly the text and the reference list
+    of that take (the reference files themselves are not copied - run.json holds their hashes)."""
+    nodes = [k for k, v in wf.items() if v.get("class_type") in (H3_REF, H3_I2V)]
+    nodes.sort(key=lambda k: k != h3_node)                           # the node --media fills comes first
+    texts = []
+    for k in nodes:
+        t = wf[k].get("inputs", {}).get("prompt")
+        if isinstance(t, str) and t and t not in texts:
+            texts.append(t)
+    try:
+        for i, t in enumerate(texts):
+            with open(dest / ("prompt.txt" if i == 0 else f"prompt_{i + 1}.txt"), "w", encoding="utf-8", newline="") as fh:
+                fh.write(t)                                          # byte for byte: no CRLF translation
+        if spec and texts:
+            kept = dict(spec)
+            kept.setdefault("copied_from", str(media_json))          # the file the stale checks keep comparing with
+            kept["prompt_file"] = "prompt.txt"
+            (dest / "media.json").write_text(json.dumps(kept, ensure_ascii=False, indent=1), encoding="utf-8")
+    except OSError as e:
+        print(f"  note: could not keep a copy of the prompt in {dest}: {e}")
 
 
 def fingerprint(wf: dict, media: dict) -> str:
@@ -1420,7 +1488,8 @@ def main():
     ap.add_argument("--batch", type=int, default=1, help="number of seeds to queue (抽卡)")
     ap.add_argument("--seed", type=int, help="first seed; default keeps the workflow's seed")
     ap.add_argument("--out", help="folder for the takes; default with --media: takes/<name of the prompts folder>/<segment>")
-    ap.add_argument("--tag", help="prefix of each take's folder; default: the segment id with --media, else `take`")
+    ap.add_argument("--tag", help="prefix of each take's folder; default with --media: the segment id (plus `_refine` when the "
+                                  "workflow has a second pass, so a refine never lands in the draft's folder), else `take`")
     ap.add_argument("--poll", type=float, default=20.0,
                     help="seconds between status polls (polling mid-sample stalls the sampler 18-43 s, keep >= 20)")
     ap.add_argument("--timeout", type=float, default=7200.0, help="seconds to wait for one take")
@@ -1447,8 +1516,14 @@ def main():
             die(f"cannot read {a.media}: {e}")
         ratio = meta_in.get("ratio")
         if not a.out:
-            a.out = str(Path("takes") / Path(a.media).resolve().parent.name / str(meta_in.get("segment", "segment")))
-        a.tag = a.tag or str(meta_in.get("segment", "take"))
+            beside = Path(a.media).parent
+            if (beside / "run.json").exists() or (beside / "handle.json").exists():      # a take's own copy: file next to that take
+                a.out = str(beside.parent)
+            else:
+                a.out = str(Path("takes") / Path(a.media).resolve().parent.name / str(meta_in.get("segment", "segment")))
+        if not a.tag:                    # a second-pass workflow files its takes beside the drafts, never over them
+            refine = any(str(v.get("class_type", "")).startswith(SECOND_PASS[:4]) for v in wf.values() if isinstance(v, dict))
+            a.tag = str(meta_in.get("segment", "take")) + ("_refine" if refine else "")
     if not a.out:
         die("--out is required when there is no --media to derive it from")
     a.tag = a.tag or "take"
@@ -1520,6 +1595,7 @@ def main():
         plan.append({"seed": seed, "fp": fp, "dest": dest, "state": state})
     batch_id = hashlib.sha256("|".join(p["fp"] for p in plan).encode()).hexdigest()[:12]
     view = effective(wf)                 # what will really run: switches followed, unused branches left out
+    h3_id = a.h3_node or next((k for k, v in view.items() if v.get("class_type") in (H3_REF, H3_I2V)), "")
     frames, pixels = job_size(view)
     steps = job_steps(view)
     past = []
@@ -1579,9 +1655,9 @@ def main():
             else:
                 note += ("; this folder already holds an earlier run (another workflow or other inputs) - its files will be "
                          "moved into _prev_... inside it. To keep both side by side, give this run its own --tag "
-                         f"(e.g. --tag {a.tag}_refine)")
+                         f"(e.g. --tag {a.tag + '_b' if a.tag.endswith('_refine') else a.tag + '_refine'})")
         if p["state"] != "done" and a.from_latent:
-            note += kept_latent_note(Path(a.from_latent), inputs_sha)
+            note += kept_latent_note(Path(a.from_latent), inputs_sha, frames, first_pass_signature(view), h3_id)
         elif p["state"] != "done":
             note += same_seed_note(out, p["dest"], p["seed"], inputs_sha, first_pass_signature(view))
         print(f"  seed {p['seed']:<12} {p['dest']}  [{p['state']}] {note}")
@@ -1623,6 +1699,7 @@ def main():
                 pid = queue(a.server, wf, client)
                 (dest / "handle.json").write_text(json.dumps({"prompt_id": pid, "fingerprint": fp, "seed": seed, "queued_at": t0,
                                                               "server": a.server}, indent=1), encoding="utf-8")
+                keep_inputs(dest, wf, meta_in if a.media else None, a.media, h3_id)
                 print(f"[{i + 1}/{len(plan)}] queued {pid} seed={seed}", flush=True)
             if entry is None:
                 entry = wait(a.server, pid, a.poll, a.timeout)
@@ -1637,9 +1714,13 @@ def main():
                     "files": [str(f) for f in files], "workflow": str(a.workflow), "comfyui_version": version,
                     "overrides": a.set + a.set_title, "media_sha256": media, "inputs_sha": inputs_sha, "frames": frames, "pixels": pixels,
                     "first_pass": first_pass_signature(view)}
+            if (dest / "prompt.txt").is_file():
+                meta["prompt_file"] = "prompt.txt"          # the text this take was made from, kept beside it
+            if a.from_latent:
+                meta["from_latent"] = str(a.from_latent)    # no first pass of its own: it continues that take
             if a.media:                 # which segment and which prompt build this take belongs to (observe_take.py checks them)
                 meta["segment"] = meta_in.get("segment")
-                meta["media_json"] = str(a.media)
+                meta["media_json"] = str(meta_in.get("copied_from") or a.media)
                 if meta_in.get("opens_from"):
                     meta["opens_from"] = meta_in["opens_from"]
             if not ok:

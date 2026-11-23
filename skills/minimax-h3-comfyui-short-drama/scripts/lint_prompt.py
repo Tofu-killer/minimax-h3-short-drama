@@ -11,8 +11,9 @@ paired and starting with [Language], (S1..) numbering, labels defined before
 use / no phantom media / no unused media, retention keywords (audio lines must use the audio
 markers), unresolved {placeholders}, negation words, "completely still", curly quotes / full-width
 brackets, markdown fences, and length - all warnings: under 350 words the model improvises; over 700 words, or
-240 words in one shot (300 in the first and the last shot, which carry the set-up and the end state), it follows
-less closely; over 7000 characters
+240 words in one shot, it follows less closely (in a prompt from build_prompts.py the 240 count what the storyboard
+wrote for that shot - the set-up, looks and end state the builder adds are left out; a hand-written prompt gets 300
+in the first and the last shot, which carry the set-up and the end state); over 7000 characters
 the cloud API refuses the text (the local ComfyUI node has no limit).
 ERRORs exit 1.
 
@@ -71,11 +72,15 @@ def main():
     ap.add_argument("--mode", default=None, help="ref2va | i2va | fl2va | l2va | t2va")
     a = ap.parse_args()
     media_path = Path(a.media) if a.media else Path(a.prompt).with_suffix(".media.json")
+    if not a.media and not media_path.exists() and Path(a.prompt).name == "prompt.txt":
+        media_path = Path(a.prompt).with_name("media.json")          # the copy comfy_submit.py keeps in a take's folder
     if a.media and not media_path.exists():
         sys.exit(f"media file not found: {media_path}")
+    shot_words = {}
     if media_path.exists():
         import json
         meta = json.loads(media_path.read_text(encoding="utf-8"))
+        shot_words = meta.get("shot_words") or {}
         kinds = [m.get("type") for m in meta.get("media", [])]
         if a.seconds is None: a.seconds = float(meta["duration"])
         if a.images is None: a.images = kinds.count("image")
@@ -175,9 +180,21 @@ def main():
     if words > 700: warns.append(f"{body_field} {words} words (>700): long descriptions get followed less closely - split the segment or trim the shots")
     for sm in re.finditer(r"\[Shot (\d+)\](.*?)(?=\[Shot \d+\]|\Z)", body, re.S):
         n_words = len(sm.group(2).split())
+        built = shot_words.get(sm.group(1))
+        if isinstance(built, dict) and isinstance(built.get("own"), int) and isinstance(built.get("all"), int):
+            # a prompt from build_prompts.py: what the storyboard wrote for this shot (framing, action, performance, camera,
+            # lines) plus whatever was typed into the file afterwards. The set-up, the looks after a first mention and the
+            # end state are added by the builder and are not this shot's to shorten - the 700-word total covers them.
+            own = built["own"] + max(0, n_words - built["all"])
+            if own > 240:
+                warns.append(f"[Shot {sm.group(1)}] carries {own} words of its own - framing, action, performance, camera and lines "
+                             f"(over 240; {n_words} with the set-up and end state the builder adds): one shot holds one action and "
+                             f"one camera move. Shorten this shot's action / performance in the storyboard, or split it in two")
+            continue
         edge = sm.group(1) == "1" or int(sm.group(1)) == nshots     # the first shot carries the set-up, the last one the end state
         cap = 300 if edge else 240
-        if fields is THREE and sm.group(1) == "1": cap = 380          # ... and, without pictures, every look and the whole place
+        if edge and nshots == 1: cap = 360                          # a single shot carries both
+        if fields is THREE and sm.group(1) == "1": cap = max(cap, 380)   # ... and, without pictures, every look and the whole place
         if n_words > cap: warns.append(f"[Shot {sm.group(1)}] runs to {n_words} words (over {cap}): one shot holds one action and one camera move. "
                                           f"What can be shortened sits in the storyboard - this shot's action and performance, the segment's "
                                           f"continuity, the characters' identity_phrase; the sentences the builder adds are counted too")

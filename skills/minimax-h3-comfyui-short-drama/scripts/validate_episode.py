@@ -9,6 +9,10 @@ end_state/continuity, action sentences shorter than 8 words, consecutive static
 dialogue segments, hand-off state ("@observed" continuity, accepted takes that were never observed),
 and (with --catalog) items mentioned in text but not bound. --rhythm adds a pacing audit done by
 arithmetic. Warnings are printed with "~" and do not fail the run; exit code 1 only on errors.
+
+Pictures and sounds the storyboard names but that are not on disk yet are listed with "+" - they are work still to
+do (plan_stills.py lists the commands), not errors of the storyboard, and do not change the exit code. Prompts for
+a segment are built only once its files exist.
 """
 import argparse, sys
 from pathlib import Path
@@ -40,23 +44,36 @@ def main():
     a = ap.parse_args()
     ep = load_episode(a.episode)
     problems = validate_episode(ep)
-    # reference media must exist on disk — a missing prop/character image is exactly how hallucinated props happen
+    # Pictures and sounds the storyboard names but that are not on disk yet. Not a fault of the storyboard: at this
+    # stage the first frames (often every picture) are still to be made - but prompts cannot be built without them,
+    # and a prop or a face without its picture is exactly how hallucinated props and drifting faces happen.
     from pathlib import Path as _P
+    base = _P(a.episode).resolve().parent
+    todo: list[tuple[str, str]] = []
+
+    def need(owner: str, f) -> None:
+        if f and not str(f).startswith(("http://", "https://", "mm_file://", "data:")) and not _P(f).exists():
+            try:
+                shown = _P(f).resolve().relative_to(base).as_posix()      # as it is written in the storyboard
+            except ValueError:
+                shown = str(f)
+            todo.append((shown, owner))
+
     for c in ep.characters:
         for f in c.reference_images:
-            if not _P(f).exists(): problems.append(f"character {c.id}: reference image missing: {f}")
-        if c.voice_reference and not _P(c.voice_reference).exists(): problems.append(f"character {c.id}: voice reference missing: {c.voice_reference}")
+            need(f"character {c.id}: reference image", f)
+        need(f"character {c.id}: voice sample", c.voice_reference)
     for sc in ep.scenes:
         for f in sc.reference_images:
-            if not _P(f).exists(): problems.append(f"scene {sc.id}: reference image missing: {f}")
+            need(f"scene {sc.id}: reference image", f)
     for pr in ep.props:
         for f in pr.reference_images:
-            if not _P(f).exists(): problems.append(f"prop {pr.id}: reference image missing: {f}")
+            need(f"prop {pr.id}: reference image", f)
     for seg in ep.segments:                                # frame pictures named by a segment or a shot
-        for what, f in (("first_frame", seg.first_frame), ("last_frame", seg.last_frame)):
-            if f and not _P(f).exists(): problems.append(f"segment {seg.id}: {what} missing: {f}")
+        need(f"segment {seg.id}: first_frame", seg.first_frame)
+        need(f"segment {seg.id}: last_frame", seg.last_frame)
         for sh in seg.shots:
-            if sh.keyframe and not _P(sh.keyframe).exists(): problems.append(f"segment {seg.id} shot {sh.index}: keyframe missing: {sh.keyframe}")
+            need(f"segment {seg.id} shot {sh.index}: keyframe", sh.keyframe)
     if a.catalog:
         from catalog import check as check_catalog  # type: ignore
         problems += check_catalog(Path(a.episode), Path(a.catalog))
@@ -83,13 +100,20 @@ def main():
     cut = gen - holds * 1.0 - len(ep.segments) * 2 / 24.0
     totals = (f"{ep.title} — {len(ep.segments)} segments, {sum(s.duration for s in ep.segments)} s requested = {gen:.1f} s generated "
               f"(17k+5 frame grid); about {cut:.1f} s in the cut after trimming {holds} declared end hold(s) and the lead frames")
+    if todo:
+        print(f"{len(todo)} file(s) named in the storyboard are not on disk yet (looked for beside the storyboard and in the folder "
+              f"this runs from):")
+        for shown, owner in todo:
+            print(f" + {shown}   ({owner})")
+        print("   Make them before the prompts are built - plan_stills.py <this storyboard> writes each picture's prompt and "
+              "command; build_prompts.py leaves out a segment whose files are missing.")
     if errors:
         print(f"{len(errors)} problem(s):")
         for p in errors:
             print(" -", p)
         print("NOT OK: " + totals)
         sys.exit(1)
-    print("OK: " + totals)
+    print(("OK (the storyboard itself; the files listed above are still to make): " if todo else "OK: ") + totals)
 
 
 if __name__ == "__main__":
