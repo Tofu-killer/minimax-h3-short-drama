@@ -14,6 +14,7 @@
 | `h3_ref2va_sage.api.json` | 同上，模型链上多 KJNodes 的两个 Sage 节点 | 同上 | KJNodes（+ `sageattention` 包） |
 | `h3_ref2va_refine.api.json` | 精修：一采按同 seed 原样重跑，再接 `H3 Hires Fix` 到 1920×1088 | 同上 | ResCascade、LBH 放大节点 |
 | `h3_ref2va_sage_refine.api.json` | 草稿用的是 `_sage` 版时的精修（一采要和草稿走同一条注意力路径才是同一条片段） | 同上 | 以上三个 |
+| `h3_ref2va_refine_split.api.json` / `h3_ref2va_sage_refine_split.api.json` | **精修的备用方案**——上面两份在二采时显存不够才用：先用 LBH 放大 latent，再用 LBH 节点包的 `MMH3 Split Upscale` 把二采按时间切成 73 帧一块（重叠 22 帧）分块做，音频同样钉死；二采的 sigma 是 `0.45, 0.225, 0`，和 `H3 Hires Fix` 的 `steps_override 2` 相同 | 同上 | ResCascade、LBH 放大节点（带 Sage 的再加 KJNodes） |
 | `h3_fl2va.api.json` | `i2va` / `fl2va` / `t2va` 段：FL2VA 权重，1344×768，Turbo 8 步（v1.0 的 768p 版 LoRA + shift 6 / 3；shift 节点只在 LoRA 那条分支上，关掉 Turbo 就回到模型默认的 12 / 3） | `video_minimax_h3_i2v` | 无 |
 | `h3_fl2va_sage.api.json` | 同上 + Sage | 同上 | KJNodes |
 | `qwen21_t2i.api.json` | 文生图（定妆照、场景母版、道具）：Qwen-Image 2.1，25 步 CFG 1 | `image_qwen_image_2_1_t2i` | 无 |
@@ -79,6 +80,8 @@ python <skill>/scripts/comfy_submit.py $W/qwen_edit2511_2ref.api.json --set 41.i
 | | 参考图按原图大小进模型（20 步定稿时） | `--set 136.ref_image_size=max`（默认 `match`：每张约 1,000 token；`max` 多几倍、更慢） |
 | `h3_ref2va*_refine` | 二采强度 / 尺寸 | `--set 300.sigma_start=0.31`、`--set 300.width=… --set 300.height=…` |
 | | 关了 Turbo 之后 | 同时 `--set 300.steps_override=0`（不关时保持 2；预览的 advice 会提醒配错的情况） |
+| `h3_ref2va*_refine_split` | 每块多少帧 / 重叠 | `--set 312.chunk_frames=73 --set 312.temporal_overlap_frames=22`（显存还不够就把每块改小，如 56） |
+| | 关了 Turbo 之后的二采 sigma | `--set 311.sigmas="0.45, 0.3095, 0.1719, 0.0569, 0.0"`（`H3 Hires Fix` 不挂 Turbo 时用的那 4 步，由 0.37.2 的调度器算出） |
 | `h3_fl2va*` | 关 Turbo / 采样器 / 画布 / shift | `--set 105:126.value=false`、`--set 105:17.sampler_name=…`、`--set 105:104.width=…`、`--set 105:200.shift_video=…` |
 | `qwen21_t2i` | 提示词 / 尺寸 / 步数 | `--set 459:452.prompt=@文件`、`--set 459:456.width=… .height=…`、`--set 459:458.steps=50` |
 | `qwen_edit2511_*` | 输入图 | `--set 41.image=@…`（`image1`）、`--set 42.image=@…`（`image2`）、`--set 43.image=@…`（`image3`）；也可以按标题：`--set-title image1.image=@…` |
@@ -98,7 +101,7 @@ python <skill>/scripts/comfy_submit.py $W/qwen_edit2511_2ref.api.json --set 41.i
 
 ## 已知的边界
 
-- `H3 Hires Fix` 的二采、`MiniMaxH3AddGuide`（`--anchor`）、Sage 两个节点在这些工作流里的接法都只通过了校验，没有出过片；第一次用时照 `../first-run-checklist.md` 各验一次。
+- `H3 Hires Fix` 的二采、分块二采（`MMH3 Split Upscale`）、`MiniMaxH3AddGuide`（`--anchor`）、Sage 两个节点在这些工作流里的接法都只通过了校验，没有出过片；第一次用时照 `../first-run-checklist.md` 各验一次。
 - 用真实权重实际跑过的只有不需要 33B 底模的那几段（真实的 0.37.2，CPU，小尺寸）：H3 的音画 latent 解码成 24 fps 视频 + 32 kHz 立体声；一采 latent 的拆分、保存、取回、传回、读入、拼回（`--keep-latent` / `--from-latent`）；LBH 放大器；音色样本过音频 VAE；1344×768 的空潜空间过 Qwen-Image VAE 解码出来就是 1344×768。
 - Sage 版需要 `sageattention` 包装在 ComfyUI 自己的 Python 里（`references/local-stack-and-acceleration.md` §0b）；没装时节点能加载、运行时才报错——先用不带 `_sage` 的版本确认其余都通。
 - 这些文件对应 ComfyUI 0.37.2 的节点定义。升级 ComfyUI 之后如果预检报输入缺失或多余，按上一节从新模板重新导出一份。

@@ -278,7 +278,8 @@ def main():
                 for name, media_file, want in (("h3_ref2va.api.json", "prompts/s03.media.json", ("1344x768", "8 steps", "ref2v_turbo_8step_v1.1_768p")),
                                                ("h3_ref2va_sage.api.json", "prompts/s02.media.json", ("1344x768", "8 steps", "sage_attention auto")),
                                                ("h3_ref2va_refine.api.json", "prompts/s01.media.json", ("second pass to 1920x1088", "steps_override 2")),
-                                               ("h3_ref2va_sage_refine.api.json", "prompts/s01.media.json", ("second pass to 1920x1088", "sage_attention auto"))):
+                                               ("h3_ref2va_sage_refine.api.json", "prompts/s01.media.json", ("second pass to 1920x1088", "sage_attention auto")),
+                                               ("h3_ref2va_refine_split.api.json", "prompts/s01.media.json", ("second pass in chunks", "0.45, 0.225, 0.0", "73 frames"))):
                     r = run([sys.executable, str(HERE / "comfy_submit.py"), str(flows / name), "--server", "http://127.0.0.1:9",
                              "--media", media_file, "--dry-run"], work)
                     if r.returncode != 0 or not all(w in r.stdout for w in want) or "advice:" in r.stdout:
@@ -323,7 +324,7 @@ def main():
                     notes.append(f"smoke_test_prompt.txt does not lint: {r.stdout.strip()[-160:]}")
                 broken = [f.name for f in sorted(flows.glob("*.api.json"))
                           if not all(isinstance(v, dict) and "class_type" in v and "inputs" in v for v in json.loads(f.read_text(encoding="utf-8")).values())]
-                good = not notes and not broken and len(list(flows.glob("*.api.json"))) >= 11
+                good = not notes and not broken and len(list(flows.glob("*.api.json"))) >= 13
                 record("shipped workflows (draft, Sage, refine, LoRA switch, kept latent; stills refuse what is still missing)", "PASS" if good else "FAIL",
                        f"{len(list(flows.glob('*.api.json')))} workflow files" if good else "; ".join(notes + broken)[:300])
             except Exception as e:  # noqa: BLE001

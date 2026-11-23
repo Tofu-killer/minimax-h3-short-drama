@@ -415,7 +415,8 @@ def apply_media(wf: dict, media_json: Path, server: str, media: dict, do_upload:
 
 def first_pass_latent(wf: dict):
     """(holder id, input name, link) of the first pass's latent: what a refine node works on, else what is decoded."""
-    for want, name in ((H3_HIRES, "latent"), ("VAEDecode", "samples")):
+    for want, name in ((H3_HIRES, "latent"), ("H3LatentUpscaleLBH", "samples"), ("MinimaxH3LatentUpscaler3D", "latent"),
+                       ("MinimaxH3LatentUpscalerNode2D", "latent"), ("VAEDecode", "samples")):
         for k, v in wf.items():
             link = v.get("inputs", {}).get(name)
             if v.get("class_type") == want and isinstance(link, list) and len(link) == 2:
@@ -636,6 +637,15 @@ def settings_summary(wf: dict) -> list[str]:
         elif cls == H3_GUIDE:
             out.append(f"{cls} [{k}]: pins " + ("a picture" if isinstance(inp.get("image"), list) else "audio only")
                        + f" at frame {lit.get('frame_idx', '?')}")
+        elif cls == "MMH3SplitUpscale":
+            sig = literal(wf, wf.get(str(inp.get("sigmas", ["", 0])[0]), {}).get("inputs", {}).get("sigmas")) if isinstance(inp.get("sigmas"), list) else None
+            tp = wf.get(str(inp["temporal_split_param"][0]), {}).get("inputs", {}) if isinstance(inp.get("temporal_split_param"), list) else None
+            sp = wf.get(str(inp["spatial_split_param"][0]), {}).get("inputs", {}) if isinstance(inp.get("spatial_split_param"), list) else None
+            out.append(f"{cls} [{k}]: second pass in chunks" + (f", sigmas {sig}" if sig else "")
+                       + (f", time chunks of {tp.get('chunk_frames')} frames overlapping {tp.get('temporal_overlap_frames')}" if tp else ", whole clip at once")
+                       + (f", tiles {sp.get('tile_width')}x{sp.get('tile_height')}" if sp else ", whole frame"))
+        elif cls == "H3LatentUpscaleLBH" and "width" in lit:
+            out.append(f"{cls} [{k}]: latent upscaled to {lit['width']}x{lit.get('height')}")
         elif cls == H3_HIRES:
             src = inp.get("latent")
             kept = isinstance(src, list) and wf.get(str(src[0]), {}).get("class_type") in ("LTXVConcatAVLatent", "LoadLatent")
@@ -699,7 +709,7 @@ def advice(wf: dict, ratio: str | None) -> list[str]:
                 out.append("voice references are wired but the H3 reference node has no `audio_vae` input: the samples are then "
                            "not heard by the model at all (only their labels reach the text encoder) - connect the audio VAE")
         if cls in (H3_REF, H3_I2V, H3_EMPTY) and ratio in RATIOS and isinstance(inp.get("width"), int) and isinstance(inp.get("height"), int) \
-                and not any(x.get("class_type") == H3_HIRES for x in wf.values()):
+                and not any(x.get("class_type") in (H3_HIRES, "MMH3SplitUpscale") for x in wf.values()):
             w, h = inp["width"], inp["height"]
             got = w / h
             if abs(got / RATIOS[ratio] - 1) > 0.03:              # the grid sizes (1344x768, 960x544 ...) are within 2%: the mix crops them
@@ -784,6 +794,16 @@ def advice(wf: dict, ratio: str | None) -> list[str]:
             want = 4 if "4step" in low else 8 if "8step" in low else None
             if want and steps is not None and steps != want:
                 out.append(f"{name} is a {want}-step LoRA but the workflow runs {steps} steps")
+    for k, v in wf.items():                                      # the chunked refine: its sigmas against the model chain
+        link = v.get("inputs", {}).get("sigmas")
+        if v.get("class_type") != "MMH3SplitUpscale" or not isinstance(link, list):
+            continue
+        text = wf.get(str(link[0]), {}).get("inputs", {}).get("sigmas")
+        n = len([x for x in str(text).split(",") if x.strip()]) - 1 if isinstance(text, str) else 0
+        if n and n <= 2 and not distilled:
+            out.append(f"MMH3SplitUpscale [{k}] gets {n} second-pass step(s) ({text}) but no Turbo LoRA is in the model chain: "
+                       f"two steps are for the Turbo model - without it use the tail H3 Hires Fix takes from the 20-step schedule: "
+                       f"--set {link[0]}.sigmas=\"0.45, 0.3095, 0.1719, 0.0569, 0.0\"")
     for k, v in wf.items():
         if v.get("class_type") != H3_HIRES:
             continue
@@ -1097,6 +1117,10 @@ def preflight(server: str, wf: dict, media: dict) -> list[str]:
                 near = difflib.get_close_matches(val, pool, n=1, cutoff=0.4)
                 errors.append(f"{where}: {name} = {val!r} is not offered by the server"
                               + (f" (closest: {near[0]!r})" if near else f" ({len(choices)} choice(s) available)"))
+            elif choices and isinstance(val, (int, float)) and not isinstance(val, bool) and val not in choices:
+                same = [c for c in choices if str(c) == str(val)]        # e.g. 22 where the node lists "22"
+                errors.append(f"{where}: {name} = {val!r} is not one of the node's choices {list(choices)[:8]}"
+                              + (f" - it has to be written as the text {same[0]!r} (in JSON: \"{same[0]}\")" if same else ""))
         errors += h3_node_problems(where, cls, inputs)
     for nid, inp, _existed in SET_TARGETS:
         cls = wf.get(nid, {}).get("class_type")
