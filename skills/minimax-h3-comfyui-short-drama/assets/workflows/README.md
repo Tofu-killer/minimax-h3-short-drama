@@ -24,6 +24,8 @@
 
 ## 要下载的文件（HuggingFace；括号里是放进 `ComfyUI/models/` 的哪个子目录）
 
+不用照着表手抄：`python <skill>/scripts/fetch_models.py --comfyui <ComfyUI 目录>` 会逐个告诉你哪个在、哪个缺、哪个没下全、哪个放错了目录（只检查，不改东西）；加 `--download` 就把缺的下到正确的目录里，断了重跑会接着下，下完校验 SHA-256。默认查 `ref2va`、`stills`、`refine` 三组，要 FL2VA 加 `--sets ref2va stills refine fl2va`。清单本身是同目录的 `models.json`。
+
 | 用途 | 文件 | 大小 |
 |------|------|------|
 | H3 共用 | `Comfy-Org/MiniMax-H3`：`text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors`（`text_encoders/`） | 15.7 GB |

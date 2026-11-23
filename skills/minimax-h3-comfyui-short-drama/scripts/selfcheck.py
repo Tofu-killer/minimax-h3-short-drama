@@ -357,6 +357,19 @@ def main():
         except Exception as e:  # noqa: BLE001
             record("build_prompts.py leaves an accepted segment's prompt alone", "FAIL", f"{type(e).__name__}: {e}")
 
+        # the model checker tells a missing file from one that did not finish downloading, without touching anything
+        try:
+            (work / "cf/models/vae").mkdir(parents=True, exist_ok=True)
+            (work / "cf/models/vae/minimax_h3_audio_vae_fp32.safetensors").write_bytes(b"x" * 1000)
+            r = run([sys.executable, str(HERE / "fetch_models.py"), "--comfyui", "cf", "--sets", "ref2va"], work)
+            told = r.returncode == 1 and "INCOMPLETE models/vae/minimax_h3_audio_vae_fp32.safetensors" in r.stdout \
+                and "MISSING    models/diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors" in r.stdout \
+                and (work / "cf/models/vae/minimax_h3_audio_vae_fp32.safetensors").stat().st_size == 1000
+            record("fetch_models.py (check only: missing and unfinished files told apart)", "PASS" if told else "FAIL",
+                   "" if told else (r.stderr.strip() or r.stdout.strip())[-240:])
+        except Exception as e:  # noqa: BLE001
+            record("fetch_models.py", "FAIL", f"{type(e).__name__}: {e}")
+
         # plan first, reconcile after: a take confirmed with --as-planned leaves the next segment's prompt (and its drafts) valid
         try:
             flow = json.loads(json.dumps(ep))
