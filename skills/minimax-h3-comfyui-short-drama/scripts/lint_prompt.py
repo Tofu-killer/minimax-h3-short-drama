@@ -21,6 +21,8 @@ ERRORs exit 1.
 import argparse, re, sys
 from pathlib import Path
 
+sys.dont_write_bytecode = True      # keep the skill folder free of __pycache__
+
 
 def _utf8_console() -> None:
     """Agents read this output through a pipe; on Windows a pipe defaults to the system code page, where
