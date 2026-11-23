@@ -258,8 +258,8 @@ def main():
         print(f"  {p['id']:>6}  t={p['start_s']:8.3f}s  {p['frames']:4d}f  clip[{s['in_frame']},{s['out_frame']})  "
               f"audio={s.get('audio') or '-'}  l_cut={s.get('l_cut', 0) or 0}  scene={s.get('scene') or '-'}{conform}")
     if a.dry_run:
-        if edl_lib.subtitles_stale(edl):
-            print("WARN  the cuts changed after the subtitles were timed: run retime_subtitles.py before mixing with --ass")
+        if edl_lib.subtitles_stale(edl, edl_path):
+            print("WARN  the cuts or the clips changed after the subtitles were timed: run retime_subtitles.py before mixing with --ass")
         return
 
     keep = Path(a.keep_temp) if a.keep_temp else None
@@ -588,15 +588,16 @@ def main():
                                "true_peak_dbfs": peak, "pre_master_lufs": pre_meas[0] if pre_meas else None,
                                "normalization": norm},
                   "music_duck_db": duck_db, "music_duck_method": duck_how, "subtitles_burned": bool(a.ass),
-                  "cut_signature": edl_lib.cut_signature(edl),
+                  "cut_signature": edl_lib.cut_signature(edl), "clips_signature": edl_lib.clips_signature(edl, edl_path),
                   "checks": checks, "warnings": warnings}
         out.with_suffix(".mix.report.json").write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
         for e in seg_report:
             if e.get("gain_db") is not None:
                 print(f"  {e['id']:>6}  {e.get('basis', '-'):11s} {e.get('measured_lufs', '-')} LUFS -> {e['gain_db']:+.2f} dB")
-        if a.ass and edl_lib.subtitles_stale(edl):
-            warnings.append("the cuts changed after the subtitles were timed (in / out frames differ from when "
-                            "retime_subtitles.py ran): the burned subtitles may be off - run retime_subtitles.py and mix again")
+        if edl_lib.subtitles_stale(edl, edl_path):
+            warnings.append("the cut changed after the lines were timed (an in / out frame moved, or a clip was replaced since "
+                            "retime_subtitles.py ran): line times - and with them level matching, music ducking and burned "
+                            "subtitles - belong to the old cut. Run retime_subtitles.py and mix again")
         if a.ass:                                   # will the renderer find the font the subtitles ask for?
             try:
                 ass_text = Path(a.ass).read_text(encoding="utf-8", errors="replace")

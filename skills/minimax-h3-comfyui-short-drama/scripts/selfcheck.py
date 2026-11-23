@@ -772,6 +772,24 @@ def main():
                        "PASS" if ok and (work / "drafts/ep/draft_content.json").exists() else "FAIL", note)
             else:
                 record("export_capcut_draft.py", "SKIP", "pyJianYingDraft not installed")
+            # a new take copied over a selected clip under the same name: names and frame numbers stay, the content does not -
+            # the line times, the mix and the edit-list entry all belong to the old clip and each tool has to say so
+            if r.returncode == 0:
+                fresh = run([sys.executable, str(HERE / "mix_episode.py"), "edit/ep.edl.json", "--out", "final/ep_b.mp4", "--dry-run"], work)
+                shutil.copyfile(work / "selects/s02.mp4", work / "selects/s02_first_version.mp4")
+                run(["ffmpeg", "-v", "error", "-y", "-i", "selects/s02_first_version.mp4", "-c", "copy", "-metadata", "comment=another take",
+                     "-f", "mp4", "selects/s02_new.tmp"], work)
+                shutil.move(str(work / "selects/s02_new.tmp"), str(work / "selects/s02.mp4"))
+                after = run([sys.executable, str(HERE / "mix_episode.py"), "edit/ep.edl.json", "--out", "final/ep_b.mp4", "--dry-run"], work)
+                again = run([sys.executable, str(HERE / "make_edl.py"), "ep.json", "--selects", "selects", "--out", "edit/ep.edl.json"], work)
+                import edl as _edl
+                edl_now = json.loads((work / "edit/ep.edl.json").read_text(encoding="utf-8"))
+                old_mix = _edl.mix_is_stale(edl_now, report_path=work / "final/ep.mix.report.json", edl_path=work / "edit/ep.edl.json")
+                (work / "selects/s02_first_version.mp4").unlink()
+                seen = "clips changed" not in fresh.stdout and "clips changed after the subtitles were timed" in after.stdout \
+                    and "has other content than when this entry was made" in again.stdout and bool(old_mix) and "other clips" in old_mix
+                record("a clip replaced under the same name is noticed (line times, mix report, edit-list entry)", "PASS" if seen else "FAIL",
+                       "" if seen else f"{after.stdout.strip()[-200:]} | {again.stdout.strip()[-200:]} | {old_mix}")
         if a.keep:
             print(f"files kept in {work}")
 

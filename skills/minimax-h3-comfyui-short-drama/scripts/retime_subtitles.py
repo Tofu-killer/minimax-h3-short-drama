@@ -252,7 +252,8 @@ def main():
         for seg in edl["segments"]:
             if seg.get("lines"):
                 seg["subtitles_in_frame"] = seg.get("in_frame")          # so the next run can tell "moved" from "re-cut"
-        edl["subtitles"] = {"cut_signature": edl_lib.cut_signature(edl), "files": [str(out) + ".srt", str(out) + ".ass"],
+        edl["subtitles"] = {"cut_signature": edl_lib.cut_signature(edl), "clips_signature": edl_lib.clips_signature(edl, edl_path),
+                            "files": [str(out) + ".srt", str(out) + ".ass"],
                             "aligner": a.aligner if a.aligner != "faster-whisper" else f"faster-whisper {a.model}"}
         edl_path.write_text(json.dumps(edl, ensure_ascii=False, indent=1), encoding="utf-8")
     for c in cues:

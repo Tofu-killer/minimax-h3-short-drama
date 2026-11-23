@@ -178,7 +178,7 @@ def main():
         if not Path(v).exists():
             sys.exit(f"--pick {k}: clip not found: {v}")
         picks[k.strip()] = Path(v)
-    segments, missing, doubts, untraced = [], [], [], []
+    segments, missing, doubts, untraced, replaced = [], [], [], [], []
     any_accepted = any(seg.get("accepted_take") for seg in ep["segments"])
 
     def check(seg: dict, clip: Path, entry: dict, kept: bool = False) -> None:
@@ -200,6 +200,11 @@ def main():
             kept_clip = Path(str(old[sid].get("video") or ""))
             if kept_clip.is_file():                          # the accepted take may have changed since this entry was made
                 check(seg, kept_clip, old[sid], kept=True)
+                was = old[sid].get("clip_sha")
+                if was and was != edl_lib.clip_sha(kept_clip):
+                    replaced.append(sid)
+                    print(f"  WARN {sid} (entry kept from {out_path.name}): {kept_clip} has other content than when this entry was made - "
+                          f"its in / out frames and line times were measured on the old clip. Rebuild the entry: --pick {sid}={kept_clip}")
             continue
         clip = picks.get(sid) or find_clip(selects, sid)
         if clip is None:
@@ -218,7 +223,8 @@ def main():
             for d in sh.get("dialogue", []):
                 lines.append({"speaker": d["speaker"], "name": "旁白" if d["speaker"] == "narrator" else names.get(d["speaker"], d["speaker"]),
                               "text": d["text"], "shot": sh["index"], **({"en": d["en"]} if d.get("en") else {})})
-        segments.append({"id": sid, "video": str(clip), "frames_total": info["frames"], "src_fps": round(info["fps"], 4),
+        segments.append({"id": sid, "video": str(clip), "clip_sha": edl_lib.clip_sha(clip), "frames_total": info["frames"],
+                         "src_fps": round(info["fps"], 4),
                          "in_frame": in_f, "out_frame": out_f,
                          "audio": "native" if info["has_audio"] else None, "nondialogue": None,
                          "l_cut": a.l_cut if lines else 0.0, "j_cut": 0.0, "scene": seg.get("scene_id"), "lines": lines})

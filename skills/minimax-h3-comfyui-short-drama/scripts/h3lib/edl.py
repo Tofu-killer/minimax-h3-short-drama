@@ -41,7 +41,7 @@ def resolve(edl_path: Path, p: str | Path) -> Path:
     return alt if alt.exists() else q
 
 
-def mix_is_stale(edl: dict, report_path=None, mix_path=None) -> str | None:
+def mix_is_stale(edl: dict, report_path=None, mix_path=None, edl_path=None) -> str | None:
     """A sentence when the mix report / mix wav was made from another cut than the one in this edit list, else None.
     The report carries the cut signature; a wav on its own is judged by its length."""
     import json as _json
@@ -57,6 +57,10 @@ def mix_is_stale(edl: dict, report_path=None, mix_path=None) -> str | None:
         if made and made != cut_signature(edl):
             return (f"{report_path} was made from another cut (in / out frames changed since): run mix_episode.py again, "
                     f"then export once more")
+        clips = rep.get("clips_signature")
+        if clips and edl_path is not None and clips != clips_signature(edl, edl_path):
+            return (f"{report_path} was made from other clips than the edit list points at now (a clip was replaced under the "
+                    f"same name): run mix_episode.py again, then export once more")
         if not made and rep.get("total_frames") not in (None, total_frames):
             return f"{report_path} describes a {rep.get('total_frames')}-frame programme, this edit list has {total_frames} frames: mix again"
     if mix_path and _P(mix_path).exists():
@@ -81,7 +85,34 @@ def cut_signature(edl: dict) -> str:
     return hashlib.sha1(key.encode("utf-8")).hexdigest()[:12]
 
 
-def subtitles_stale(edl: dict) -> bool:
-    """True when retime_subtitles.py recorded a cut signature and the cuts no longer match it."""
-    made = (edl.get("subtitles") or {}).get("cut_signature")
-    return bool(made) and made != cut_signature(edl)
+def clip_sha(path) -> str:
+    """First 12 hex digits of a file's SHA-256, '' when it cannot be read."""
+    import hashlib
+    h = hashlib.sha256()
+    try:
+        with open(path, "rb") as fh:
+            for chunk in iter(lambda: fh.read(1 << 20), b""):
+                h.update(chunk)
+    except OSError:
+        return ""
+    return h.hexdigest()[:12]
+
+
+def clips_signature(edl: dict, edl_path) -> str:
+    """Changes whenever a clip's CONTENT changes. cut_signature() only sees names and frame numbers: a new take copied
+    over selects/s03.mp4 keeps both, and the line times measured on the old take would pass as current."""
+    import hashlib
+    key = ";".join(f"{s['id']}:{clip_sha(resolve(edl_path, s.get('video', '')))}" for s in edl.get("segments", []))
+    return hashlib.sha1(key.encode("utf-8")).hexdigest()[:12]
+
+
+def subtitles_stale(edl: dict, edl_path=None) -> bool:
+    """True when retime_subtitles.py recorded the cut it timed and the edit list is no longer that cut: an in or
+    out frame moved, a clip was exchanged, or - when `edl_path` is given, so the files can be read - a clip was
+    replaced under the same name."""
+    sub = edl.get("subtitles") or {}
+    made = sub.get("cut_signature")
+    if made and made != cut_signature(edl):
+        return True
+    clips = sub.get("clips_signature")                      # absent in edit lists timed by an earlier version
+    return bool(clips) and edl_path is not None and clips != clips_signature(edl, edl_path)
