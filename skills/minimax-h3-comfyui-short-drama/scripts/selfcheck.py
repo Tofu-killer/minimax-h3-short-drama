@@ -287,10 +287,28 @@ def main():
                          "--media", "prompts/s03.media.json", "--set", "146.value=false", "--dry-run"], work)
                 if r.returncode != 0 or "20 steps" not in r.stdout or "LoraLoaderModelOnly" in r.stdout:
                     notes.append(f"h3_ref2va with the LoRA switched off: {(r.stderr.strip() or r.stdout.strip())[-200:]}")
+                # --keep-latent adds the split and the two SaveLatent nodes; --from-latent feeds the refine node from kept files
+                r = run([sys.executable, str(HERE / "comfy_submit.py"), str(flows / "h3_ref2va.api.json"), "--server", "http://127.0.0.1:9",
+                         "--media", "prompts/s03.media.json", "--keep-latent", "--dry-run", "--write-workflow", "qc/keep.api.json"], work)
+                kept_wf = json.loads((work / "qc/keep.api.json").read_text(encoding="utf-8"))
+                saves = [v for v in kept_wf.values() if v["class_type"] == "SaveLatent"]
+                split = [v for v in kept_wf.values() if v["class_type"] == "LTXVSeparateAVLatent"]
+                if r.returncode != 0 or len(saves) != 2 or len(split) != 1 or split[0]["inputs"]["av_latent"] != ["125", 0]:
+                    notes.append(f"--keep-latent: {(r.stderr.strip() or r.stdout.strip())[-200:]}")
+                (work / "kept_take").mkdir(exist_ok=True)
+                for n in ("h3_video_00001_.latent", "h3_audio_00001_.latent"):
+                    (work / "kept_take" / n).write_bytes(b"selfcheck")
+                r = run([sys.executable, str(HERE / "comfy_submit.py"), str(flows / "h3_ref2va_refine.api.json"), "--server", "http://127.0.0.1:9",
+                         "--media", "prompts/s03.media.json", "--from-latent", "kept_take", "--dry-run", "--write-workflow", "qc/from.api.json"], work)
+                from_wf = json.loads((work / "qc/from.api.json").read_text(encoding="utf-8"))
+                src = from_wf["300"]["inputs"]["latent"]
+                if r.returncode != 0 or from_wf[src[0]]["class_type"] != "LTXVConcatAVLatent" or "kept first-pass latent" not in r.stdout \
+                        or "BasicScheduler" in r.stdout:
+                    notes.append(f"--from-latent: {(r.stderr.strip() or r.stdout.strip())[-200:]}")
                 broken = [f.name for f in sorted(flows.glob("*.api.json"))
                           if not all(isinstance(v, dict) and "class_type" in v and "inputs" in v for v in json.loads(f.read_text(encoding="utf-8")).values())]
                 good = not notes and not broken and len(list(flows.glob("*.api.json"))) >= 11
-                record("shipped workflows take the segments (draft, Sage, refine; LoRA switch read correctly)", "PASS" if good else "FAIL",
+                record("shipped workflows take the segments (draft, Sage, refine; LoRA switch; keeping and reusing the latent)", "PASS" if good else "FAIL",
                        f"{len(list(flows.glob('*.api.json')))} workflow files" if good else "; ".join(notes + broken)[:300])
             except Exception as e:  # noqa: BLE001
                 record("shipped workflows", "FAIL", f"{type(e).__name__}: {e}")

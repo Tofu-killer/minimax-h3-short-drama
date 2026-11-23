@@ -48,13 +48,14 @@
 python <skill>/scripts/comfy_submit.py $W/selftest_no_model.api.json --set 1.image=@任意一张图.png --out takes/selftest --poll 2
 
 # 1. 一段 ref2va 草稿，3 个 seed
-python <skill>/scripts/comfy_submit.py $W/h3_ref2va_sage.api.json --media prompts/ep01/s01.media.json --batch 3 --seed 1001 --log logs/takes.csv --dry-run
+python <skill>/scripts/comfy_submit.py $W/h3_ref2va_sage.api.json --media prompts/ep01/s01.media.json --batch 3 --seed 1001 --keep-latent --log logs/takes.csv --dry-run
 
 # 2. 同一段，20 步、不挂 Turbo（运镜是主体的镜头，铁律 16）
 python <skill>/scripts/comfy_submit.py $W/h3_ref2va_sage.api.json --media prompts/ep01/s01.media.json --seed 1001 --tag s01_full --set 146.value=false --set 123.sampler_name=res_multistep --dry-run
 
-# 3. 精修中选的那条（seed 用中选那条的；草稿是 _sage 版就用 _sage_refine）
-python <skill>/scripts/comfy_submit.py $W/h3_ref2va_sage_refine.api.json --media prompts/ep01/s01.media.json --seed 1002 --tag s01_refine --dry-run
+# 3. 精修中选的那条（草稿是 _sage 版就用 _sage_refine）：从草稿存下的 latent 开始，一采不重跑
+python <skill>/scripts/comfy_submit.py $W/h3_ref2va_sage_refine.api.json --media prompts/ep01/s01.media.json --from-latent takes/ep01/s01/s01_1002 --tag s01_refine --dry-run
+#    草稿当时没加 --keep-latent：去掉 --from-latent，改给 --seed 1002（一采按同 seed 重跑一遍）
 
 # 4. 定妆照：6 个 seed，1024×1024（改尺寸：--set 459:456.width=1024 --set 459:456.height=1536）
 python <skill>/scripts/comfy_submit.py $W/qwen21_t2i.api.json --set 459:452.prompt=@bible/prompts/lin_lan_bust.txt --batch 6 --seed 1 --out bible/candidates/lin_lan --tag bust --dry-run

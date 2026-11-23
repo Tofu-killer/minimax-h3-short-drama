@@ -39,6 +39,13 @@
 - 0.37.2 上没有 `MiniMaxH3LatentUpscaleWithModel` 时用社区节点 `LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler`；FunControl 在 0.37.2 已是原生，不必装社区版。
 - **要不要升级**：升到 ≥ 0.45 能拿到官方滑窗、原生 latent 放大、两个出图节点和 RelayVSR；升级前逐个核对已装节点的版本窗口（Spark-H3 跳过 0.41、只支持 0.38.x–0.40.x 与 0.42.x–0.44.x；Motion-Context 启动时会自检并拒绝不匹配的核心；FeiHou 流式块不与 kitchen 同用），并先整目录备份或另装一份便携版做 A/B，不要在唯一能出片的环境上直接升。
 
+**latent 的实际形状**（2026-11-23，在真实的 0.37.2 上用真实的 H3 视频 / 音频 VAE 实测）：
+
+- 视频 latent 是 `[1, 24, T, 高/16, 宽/16]`：24 个通道，空间 16 倍压缩；时间上每 17 帧对 5 个 latent 帧，所以帧数 `17k + 5` 对应 `T = 5k + 2`——124 帧 → 37，243 帧 → 72，22 帧 → 7。模型再按 2×2 打包：每个 latent 帧的 token 数 = (宽/32) × (高/32)。
+- 所以一条片段的视频 token 数 = (宽/32) × (高/32) × (5k + 2)：1344×768 × 10 s = 42 × 24 × 72 = **72,576**；864×480 × 10 s = 27 × 15 × 72 = 29,160（前者的 0.40）；二采的 1920×1088 × 10 s = 60 × 34 × 72 = 146,880（一采的 2.02 倍）。耗时和显存跟着这个数走，比单看像素更准。
+- 音频 latent 是 `[1, 32, 2, 40 × 秒数]`：32 个通道、双声道、每秒 40 步；解码出来是 32 kHz 立体声，时长和视频一致。
+- `VAEDecode` 和 `VAEDecodeAudio` 都直接吃采样器输出的那个音画合并 latent，各取自己那一路；`CreateVideo(fps 24)` 合成后帧数就是 H3 节点上的 `length`。
+
 **LoRA 和底模对不对得上**（2026-11-23：不下载整个文件，只读 HuggingFace 上各文件头部的张量名和形状，再对照 0.37.2 的加载代码）：
 
 - 文件名里的 `pruned` 指去掉了时间嵌入器、把每层的时间调制（AdaLN）改存成 8 维曲线基的版本：`blocks.N.adaln_proj.linear.weight` 在 `pruned` 底模里是 `[96768, 8]`，在不带 `pruned` 的底模里是 `[96768, 2688]`。Ref2VA 和 FL2VA 的结构完全一样（各 932 个张量）。
@@ -78,7 +85,7 @@
 2. LoRA 换成 `minimax_h3_ref2v_turbo_8step_v1.1_768p_comfyui_bf16.safetensors`，强度 1.0；步数设 8（模板用开关控制步数时，把开关拨到 Turbo 那一档并确认 `BasicScheduler` 实际拿到的是 8）。
 3. 在 LoRA 之后、采样之前依次接 KJNodes 的 `PathchSageAttentionKJ(auto)` → `MiniMaxH3MemoryEfficientSageAttentionPatch`（界面里搜到的名字是 `Patch Sage Attention KJ` 和 `MiniMax H3 Mem Eff Sage Attention Patch`；第一个的 `sage_attention` 选 `auto`），再接 `MiniMaxH3SigmaShift`（Ref2V：12 / 3）。
 4. 分辨率 1344×768；`MiniMaxH3ReferenceToVideo` 的 `vae` 和 `audio_vae` 两个输入都要接上（不接的话参考图只进文本编码器、音色参考完全不起作用），`ref_image_size` 用 `match`。
-5. 输出保持 `VAEDecode` + `VAEDecodeAudio` → `CreateVideo(24)` → `SaveVideo`。精修默认是在精修工作流里按同 seed 把一采重跑一遍再接放大，草稿工作流不用为它改什么；想把一采的 latent 存下来省掉重跑，要先用 `LTXVSeparateAVLatent` 拆开再各接一个 `SaveLatent`（自带的 `SaveLatent` 直接接 H3 的合并 latent 会报错，做法见 `quality-pipeline.md` §2；`comfy_submit.py` 只下载图片 / 视频 / 音频，latent 留在 ComfyUI 的 `output/latents/` 里）。
+5. 输出保持 `VAEDecode` + `VAEDecodeAudio` → `CreateVideo(24)` → `SaveVideo`。精修默认是在精修工作流里按同 seed 把一采重跑一遍再接放大，草稿工作流不用为它改什么；想把一采的 latent 存下来省掉重跑，不用改图：提交时加 `--keep-latent`，精修时加 `--from-latent`（脚本自己加拆分、保存、读回的节点，见 `quality-pipeline.md` §2）。
 6. 菜单「工作流 → 导出（API）」存到项目的 `workflows/` 下，例如 `workflows/draft_ref2va.api.json`（自己导出的放项目里，和 skill 附带的 `assets/workflows/h3_ref2va*.api.json` 分开；旧界面要先在设置里打开开发者模式才有这一项）。
 7. 需要 `i2va` / `fl2va` / `t2va` 的段再用模板 `video_minimax_h3_i2v` 同样改一份（FL2VA 权重、`minimax_h3_fl2v_turbo_8step_v1.0_768p_comfyui_bf16`，在 LoRA 后面加 `MiniMaxH3SigmaShift(6, 3)`，并把 `BasicScheduler` 的 `model` 从 `UNETLoader` 改接到它的输出，见 §1 表里那一行），导出成 `workflows/draft_fl2va.api.json`。`--media` 按段的模式找节点：`ref2va` 找 `MiniMaxH3ReferenceToVideo`，其余找 `MiniMaxH3ImageToVideo`，所以**每种权重各要一份工作流**。
 

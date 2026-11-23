@@ -93,7 +93,8 @@ def _utf8_console() -> None:
 _utf8_console()
 
 MEDIA_INPUTS = {"image", "audio", "video", "image_path", "audio_path", "video_path"}
-MEDIA_EXT = {".png", ".jpg", ".jpeg", ".webp", ".wav", ".mp3", ".flac", ".mp4", ".mov", ".webm"}
+MEDIA_EXT = {".png", ".jpg", ".jpeg", ".webp", ".wav", ".mp3", ".flac", ".mp4", ".mov", ".webm",
+             ".latent"}        # a latent saved by SaveLatent: uploaded to input/, where LoadLatent looks
 
 
 _DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -388,6 +389,61 @@ def apply_media(wf: dict, media_json: Path, server: str, media: dict, do_upload:
     return lines
 
 
+def first_pass_latent(wf: dict):
+    """(holder id, input name, link) of the first pass's latent: what a refine node works on, else what is decoded."""
+    for want, name in ((H3_HIRES, "latent"), ("VAEDecode", "samples")):
+        for k, v in wf.items():
+            link = v.get("inputs", {}).get(name)
+            if v.get("class_type") == want and isinstance(link, list) and len(link) == 2:
+                return k, name, link
+    return None
+
+
+def new_ids(wf: dict, n: int) -> list[str]:
+    start = max([int(k) for k in wf if str(k).isdigit()] + [0]) + 2000          # clear of exported ids and of --media's
+    return [str(start + i) for i in range(n)]
+
+
+def keep_latent(wf: dict) -> str:
+    """--keep-latent: also write the first pass's latent to disk. SaveLatent cannot store the joint audio-video
+    latent of H3 (it is two tensors), so it is split first and saved as two files."""
+    found = first_pass_latent(wf)
+    if not found:
+        die("--keep-latent: no VAEDecode / H3 Hires Fix node takes a latent in this workflow, so there is no first pass to keep")
+    sep, sv, sa = new_ids(wf, 3)
+    wf[sep] = {"class_type": "LTXVSeparateAVLatent", "_meta": {"title": "split the first-pass latent"}, "inputs": {"av_latent": found[2]}}
+    wf[sv] = {"class_type": "SaveLatent", "_meta": {"title": "keep: video latent"}, "inputs": {"samples": [sep, 0], "filename_prefix": "latents/h3_video"}}
+    wf[sa] = {"class_type": "SaveLatent", "_meta": {"title": "keep: audio latent"}, "inputs": {"samples": [sep, 1], "filename_prefix": "latents/h3_audio"}}
+    return f"first-pass latent of node {found[2][0]} is kept: two .latent files per take (video, audio), fetched into the take folder"
+
+
+def from_latent(wf: dict, folder: Path, server: str, media: dict, do_upload: bool) -> str:
+    """--from-latent <take folder>: start from the latent files kept by an earlier take instead of sampling the
+    first pass again - the refine then works on exactly that take."""
+    found = first_pass_latent(wf)
+    if not found:
+        die("--from-latent: no VAEDecode / H3 Hires Fix node takes a latent in this workflow")
+    files = {}
+    for kind in ("video", "audio"):
+        hits = sorted(folder.glob(f"*{kind}*.latent"))
+        if len(hits) != 1:
+            die(f"--from-latent: expected one *{kind}*.latent file in {folder}, found {len(hits)} - "
+                f"it must be the folder of a take made with --keep-latent")
+        files[kind] = hits[0]
+    lv, la, cat = new_ids(wf, 3)
+    for nid, kind in ((lv, "video"), (la, "audio")):
+        name = upload(server, files[kind]) if do_upload else upload_name(files[kind])
+        media[name] = sha256_file(files[kind])
+        wf[nid] = {"class_type": "LoadLatent", "_meta": {"title": f"kept {kind} latent"}, "inputs": {"latent": name}}
+    wf[cat] = {"class_type": "LTXVConcatAVLatent", "_meta": {"title": "kept first-pass latent"}, "inputs": {"video_latent": [lv, 0], "audio_latent": [la, 0]}}
+    old = found[2]
+    for v in wf.values():                                    # everything that read the first pass now reads the kept latent
+        for name, link in list(v.get("inputs", {}).items()):
+            if link == old and v.get("class_type") != "LTXVSeparateAVLatent":
+                v["inputs"][name] = [cat, 0]
+    return f"first pass is not sampled again: the latent comes from {folder} ({files['video'].name}, {files['audio'].name})"
+
+
 def literal(wf: dict, value, depth: int = 0):
     """A value as the server will see it, where that can be told without running the graph: a literal stays as it
     is; a link is followed through the nodes the official templates use to feed settings - Primitive* (its `value`),
@@ -442,17 +498,22 @@ def effective(wf: dict) -> dict:
         for x in v["inputs"].values():
             if isinstance(x, list) and len(x) == 2 and str(x[0]) in eff:
                 users.setdefault(str(x[0]), set()).add(k)
-    start = [k for k, v in eff.items()
-             if {"sigmas", "guider"} <= set(v["inputs"])
-             or ("Sampler" in str(v.get("class_type", "")) and ({"latent_image", "latent"} & set(v["inputs"])))]
-    if not start:
-        return eff
-    down: set[str] = set()
-    while start:
-        k = start.pop()
-        if k not in down:
-            down.add(k)
-            start.extend(users.get(k, ()))
+    sinks = [k for k, v in eff.items() if k not in users and v["inputs"]
+             and any(w in str(v.get("class_type", "")) for w in ("Save", "Preview", "Combine", "Export"))]
+    if sinks:                                    # the nodes that write results, and whatever feeds them
+        down = set(sinks)
+    else:                                        # no recognisable output node: everything from the samplers on
+        start = [k for k, v in eff.items()
+                 if {"sigmas", "guider"} <= set(v["inputs"])
+                 or ("Sampler" in str(v.get("class_type", "")) and ({"latent_image", "latent"} & set(v["inputs"])))]
+        if not start:
+            return eff
+        down = set()
+        while start:
+            k = start.pop()
+            if k not in down:
+                down.add(k)
+                start.extend(users.get(k, ()))
     live: set[str] = set()
     for k in down:
         live |= upstream(eff, [k, 0])
@@ -544,9 +605,12 @@ def settings_summary(wf: dict) -> list[str]:
             out.append(f"{cls} [{k}]: pins " + ("a picture" if isinstance(inp.get("image"), list) else "audio only")
                        + f" at frame {lit.get('frame_idx', '?')}")
         elif cls == H3_HIRES:
+            src = inp.get("latent")
+            kept = isinstance(src, list) and wf.get(str(src[0]), {}).get("class_type") in ("LTXVConcatAVLatent", "LoadLatent")
             out.append(f"{cls} [{k}]: second pass to {lit.get('width', '?')}x{lit.get('height', '?')}, sigma_start {lit.get('sigma_start', '?')}"
                        + (f", steps_override {lit['steps_override']}" if "steps_override" in lit else "")
-                       + " - the first pass above runs again with this seed, then this node refines it")
+                       + (" - works on the kept first-pass latent" if kept else
+                          " - the first pass above runs again with this seed, then this node refines it"))
     return out
 
 
@@ -788,6 +852,18 @@ def same_seed_note(out: Path, dest: Path, seed, inputs_sha: str) -> str:
                 f"NOT repeat that take. If {rj.parent.name} is the accepted draft, submit with the prompt files it was made from "
                 f"(build_prompts.py leaves accepted segments alone unless --only names them)")
     return ""
+
+
+def kept_latent_note(folder: Path, inputs_sha: str) -> str:
+    """--from-latent: the latent already is that take; say so, and say when the prompt has changed since."""
+    try:
+        r = json.loads((folder / "run.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return f"; continues the take in {folder.name}"
+    if r.get("inputs_sha") and r["inputs_sha"] != inputs_sha:
+        return (f"; WARNING: continues the take in {folder.name}, but the prompt or references given now differ from the ones "
+                f"it was made with - the second pass would be steered by other text or pictures than the first")
+    return f"; continues the take in {folder.name} (same prompt and references)"
 
 
 def fingerprint(wf: dict, media: dict) -> str:
@@ -1035,7 +1111,7 @@ def download(server, entry, out: Path):
     out.mkdir(parents=True, exist_ok=True)
     saved = []
     for node_out in entry.get("outputs", {}).values():
-        for key in ("videos", "gifs", "images", "audio"):
+        for key in ("videos", "gifs", "images", "audio", "latents"):     # SaveVideo reports under "images"; SaveLatent under "latents"
             for f in node_out.get(key, []):
                 if f.get("type") != "output":
                     continue
@@ -1133,6 +1209,11 @@ def main():
                          "<Picture N>, pin each on the timeline with a MiniMaxH3AddGuide node - the first frame at frame 0 (an exact "
                          "opening, e.g. when continuing from the previous take's last frame), a keyframe at its shot's cut. "
                          "Default: references only")
+    ap.add_argument("--keep-latent", action="store_true",
+                    help="also save the first pass's latent (two .latent files per take, fetched into the take folder), so that a "
+                         "refine run can start from it with --from-latent instead of sampling the first pass again")
+    ap.add_argument("--from-latent", metavar="TAKE_FOLDER",
+                    help="refine workflows: use the latent kept by that take (made with --keep-latent) as the first pass")
     ap.add_argument("--server", default="http://127.0.0.1:8188")
     ap.add_argument("--set", action="append", default=[], help="node_id.input=value (value may be @file)")
     ap.add_argument("--set-title", action="append", default=[], help='"Node title".input=value')
@@ -1176,9 +1257,13 @@ def main():
             wiring = apply_media(wf, Path(a.media), a.server, media, do_upload=not offline, node_id=a.h3_node, anchor=a.anchor)
         apply_sets(wf, a.set, a.server, media, do_upload=not offline)
         apply_sets(wf, a.set_title, a.server, media, do_upload=not offline, by_title=True)
+        inputs_sha = segment_inputs(wf, media)       # prompt and references - before a kept latent joins the uploads
+        if a.from_latent:
+            wiring.append(from_latent(wf, Path(a.from_latent), a.server, media, do_upload=not offline))
+        if a.keep_latent:
+            wiring.append(keep_latent(wf))
     except urllib.error.URLError as e:
         die(f"cannot reach ComfyUI at {a.server}: {e.reason}")
-    inputs_sha = segment_inputs(wf, media)
     snodes = seed_nodes(wf)
     if (a.batch > 1 or a.seed is not None) and not snodes:
         die("--batch / --seed need a `seed` or `noise_seed` input the script can set (a number on KSampler, RandomNoise, "
@@ -1269,7 +1354,9 @@ def main():
                 note += ("; this folder already holds an earlier run (another workflow or other inputs) - its files will be "
                          "moved into _prev_... inside it. To keep both side by side, give this run its own --tag "
                          f"(e.g. --tag {a.tag}_refine)")
-        if p["state"] != "done":
+        if p["state"] != "done" and a.from_latent:
+            note += kept_latent_note(Path(a.from_latent), inputs_sha)
+        elif p["state"] != "done":
             note += same_seed_note(out, p["dest"], p["seed"], inputs_sha)
         print(f"  seed {p['seed']:<12} {p['dest']}  [{p['state']}] {note}")
     if not snodes:
