@@ -309,8 +309,11 @@ def apply_media(wf: dict, media_json: Path, server: str, media: dict, do_upload:
             die(f"--h3-node {node_id} is not in the workflow")
         hits = [node_id]
     if len(hits) != 1:
+        family = "h3_ref2va*.api.json" if want == H3_REF else "h3_fl2va*.api.json"
         die(f"--media: the segment is {mode}, which needs exactly one {want} node in the workflow; found {len(hits)}"
-            + (f" ({', '.join(hits)}) - pick one with --h3-node" if hits else " - export a workflow built on that node"))
+            + (f" ({', '.join(hits)}) - pick one with --h3-node" if hits else
+               f" - this workflow is for the other family of segments. Use the one shipped for {mode}: {family} in the skill's "
+               f"assets/workflows (ref2va segments take h3_ref2va*, i2va / fl2va / t2va segments take h3_fl2va*), or export one built on that node"))
     nid = hits[0]
     inputs = wf[nid]["inputs"]
     prompt_file = media_json.parent / spec.get("prompt_file", f"{spec['segment']}.txt")

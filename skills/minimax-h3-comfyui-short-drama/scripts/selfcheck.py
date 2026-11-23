@@ -584,6 +584,24 @@ def main():
             follows = follows and "first/s03.png" in r5.stdout.split("MAKE AGAIN")[-1] \
                 and "made from an earlier version of bible/chars/hero_face.png" in plan5 \
                 and "For other candidates of the same prompt" in plan5      # a picture on disk keeps its command
+            # the person an over-the-shoulder frame looks past gets the back view once one is planned, never the face
+            ots = json.loads(json.dumps(st))
+            ots["characters"].append({"id": "guest", "name": "Guest", "sheet_phrase": "a woman in her thirties with a short bob and a red scarf",
+                                      "reference_images": ["bible/chars/guest_face.png"]})
+            ots["segments"][2]["character_ids"] = ["hero", "guest"]
+            ots["segments"][2]["shots"][0]["framing"] = "a medium shot of {hero} over the shoulder of {guest}"
+            ots["segments"][2]["shots"][0]["on_screen_characters"] = ["hero", "guest"]
+            ots["segments"][2]["first_frame_prompt"] = (
+                f"Keep exactly the same person as Picture 1 ({ots['characters'][0]['sheet_phrase']}). Keep the same person as Picture 2 "
+                "(a woman in her thirties with a short bob and a red scarf). New photo: a medium shot of the man over her shoulder.")
+            (work / "ep_ots.json").write_text(json.dumps(ots, ensure_ascii=False, indent=1), encoding="utf-8")
+            ots_cmd = [sys.executable, str(HERE / "plan_stills.py"), "ep_ots.json", "--prompts", "stills/prompts_ots", "--out", "stills/plan_ots.md"]
+            o1 = run(ots_cmd, work)
+            p1 = (work / "stills/plan_ots.md").read_text(encoding="utf-8")
+            o2 = run(ots_cmd + ["--back", "guest"], work)
+            p2 = (work / "stills/plan_ots.md").read_text(encoding="utf-8")
+            follows = follows and "over the shoulder of guest" in o1.stdout and "42.image=@bible/chars/guest_face.png" in p1 \
+                and "over the shoulder of guest" not in o2.stdout and "42.image=@bible/chars/guest_back.png" in p2
             record("plan_stills.py follows the storyboard (changed prompt rewritten, its picture listed to make again, hand edits kept)",
                    "PASS" if follows else "FAIL", "" if follows else f"{r3.stdout.strip()[-260:]} | {r4.stdout.strip()[-200:]} | {r5.stdout.strip()[-200:]}")
         except Exception as e:  # noqa: BLE001

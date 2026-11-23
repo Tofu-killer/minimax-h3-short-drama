@@ -290,7 +290,9 @@ class Plan:
                 continue
             self.add("A", f"{cid}: bust (the anchor - choose one and freeze it)", paths["bust"], self.t2i["file"],
                      self.prompt_file(f"{cid}_bust", bust_prompt(look, self.style)), 6, cand, "bust", size=(1024, 1024))
-            views = ["full", "face"] + [v for v in ("side", "back") if v in extra_views.get(cid, set()) or pick(refs, v)]
+            # a side / back view asked for once stays planned: named in the storyboard, asked for now, or already on disk
+            views = ["full", "face"] + [v for v in ("side", "back") if v in extra_views.get(cid, set()) or pick(refs, v)
+                                        or (base / f"{cid}_{v}.png").exists()]
             for v in views:
                 src = VIEWS[v][0]
                 dest = paths.get(v) or pick(refs, v) or (base / f"{cid}_{v}.png").as_posix()
@@ -355,7 +357,13 @@ class Plan:
                 problems.append(f"Picture {n}: cannot tell which character it is - set image{n} by hand")
                 continue
             used.add(hit)
-            got[n] = chars[hit].get("_face") or f"<{hit} face>"
+            # the person the shot looks past: a face picture gets painted onto the back of the head, so the back view goes in
+            # when there is one (in the storyboard's reference_images, or planned with --back)
+            turned = set(re.findall(r"shoulder of \{([A-Za-z0-9_-]+)\}", shot.get("framing", "") or ""))
+            if hit in turned and chars[hit].get("_back"):
+                got[n] = chars[hit]["_back"]
+            else:
+                got[n] = chars[hit].get("_face") or f"<{hit} face>"
         for m in re.finditer(r"(?:exact item|exact object|same object|item) shown in Picture (\d)", text):
             n = int(m.group(1))
             if n in got:
