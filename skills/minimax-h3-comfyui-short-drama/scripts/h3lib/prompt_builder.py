@@ -450,7 +450,7 @@ def build_ref2va(ep: Episode, seg: Segment) -> BuiltPrompt:
     # optional opening-frame anchor (a generated first frame, or the previous segment's tail frame) takes <Picture 1>
     if seg.first_frame:
         pic += 1
-        content.append({**image_item(seg.first_frame, "reference_image"), "anchor": "first_frame"})   # also pinned at frame 0 by comfy_submit.py
+        content.append({**image_item(seg.first_frame, "reference_image"), "anchor": "first_frame"})   # comfy_submit.py --anchor can also pin it at frame 0
         defs.append(f"<Picture {pic}> is the first frame of [Shot 1], showing the opening composition, positions and lighting.")
         retention.append(f"<Picture {pic}> ([Shot 1] first frame): fully_preserved - the composition, character positions "
                          f"and lighting of the opening frame are retained and the action develops from it.")

@@ -22,10 +22,11 @@ inside any agent sandbox or on Windows with the ComfyUI-embedded python.
 --media replaces whatever references the exported workflow carried: it adds one LoadImage / LoadAudio node per
 reference and links them as "ref_images.ref_image_0", "ref_audios.ref_audio_0", ... on the single
 MiniMaxH3ReferenceToVideo node (I2VA / FL2VA: first_frame / last_frame on MiniMaxH3ImageToVideo). A Ref2VA
-segment that has a first frame gets it as <Picture 1> and, in addition, pinned at frame 0: the script adds one
-MiniMaxH3AddGuide node behind the reference node (the wiring of ComfyUI's multiframe reference template;
---no-anchor keeps it a reference only). Everything else in the workflow - models, LoRA, sampler, resolution -
-stays as you exported it; --set still works on top.
+segment that has a first frame gets it as <Picture 1> - a reference the prompt names as the first frame, which is
+how ComfyUI's multiframe reference template treats its first picture. With --anchor the script also pins that
+picture at frame 0 by adding one MiniMaxH3AddGuide node behind the reference node (the template uses that node
+for the keyframes of later shots). Everything else in the workflow - models, LoRA, sampler, resolution - stays as
+you exported it; --set still works on top.
 
 Overrides
   --set <node_id>.<input>=<value> / --set-title "<title>".<input>=<value>
@@ -243,13 +244,13 @@ def frame_fit(role: str, path: Path, canvas: dict) -> str | None:
 
 
 def apply_media(wf: dict, media_json: Path, server: str, media: dict, do_upload: bool, node_id: str | None,
-                anchor: bool = True) -> list[str]:
+                anchor: bool = False) -> list[str]:
     """Put a segment into the workflow exactly as build_prompts.py numbered it: prompt text, frame count, and one
     Load node per reference wired to ref_images.ref_image_0.. / ref_audios.ref_audio_0.. (Ref2VA) or to
     first_frame / last_frame (I2VA / FL2VA). Whatever references the workflow carried before are replaced.
-    A Ref2VA segment's first frame is <Picture 1> and, unless `anchor` is off, is also pinned at frame 0 with a
-    MiniMaxH3AddGuide node placed between the reference node and whatever read its conditioning - the wiring of
-    ComfyUI's multiframe reference template. Returns the lines of the wiring table."""
+    A Ref2VA segment's first frame is <Picture 1>, a reference (as in ComfyUI's multiframe reference template);
+    with `anchor` it is also pinned at frame 0 by a MiniMaxH3AddGuide node placed between the reference node and
+    whatever read its conditioning. Returns the lines of the wiring table."""
     spec = json.loads(media_json.read_text(encoding="utf-8"))
     mode = spec.get("mode", "ref2va")
     want = H3_REF if mode == "ref2va" else H3_I2V
@@ -317,7 +318,8 @@ def apply_media(wf: dict, media_json: Path, server: str, media: dict, do_upload:
                 continue
             has_first = True
             if not anchor:
-                lines.append(f"<Picture {n_img}>  <- {path.name}   (the first frame, as a reference only: --no-anchor)")
+                lines.append(f"<Picture {n_img}>  <- {path.name}   (the first frame: a reference the prompt names as the opening; "
+                             "--anchor would also pin it at frame 0)")
             elif guides:
                 lines.append(f"<Picture {n_img}>  <- {path.name}   (the first frame, as a reference only)")
             elif not isinstance(inputs.get("vae"), list):
@@ -346,7 +348,7 @@ def apply_media(wf: dict, media_json: Path, server: str, media: dict, do_upload:
         lines.append(f"advice: the exported workflow already has {H3_GUIDE} node(s) [{ids}]; they are left as exported, so whatever "
                      "picture they load is pinned into this take"
                      + (" and this segment's first frame is not pinned by the script" if has_first and anchor else "")
-                     + " - export the draft workflow without guide nodes and let --media add the first-frame anchor")
+                     + " - export the draft workflow without guide nodes")
     return lines
 
 
@@ -800,9 +802,10 @@ def main():
     ap.add_argument("--write-workflow", metavar="PATH",
                     help="also write the workflow exactly as it will be queued (after --media / --set, before the seed is set) "
                          "to this file - to see the wiring the script made, or to open it in ComfyUI")
-    ap.add_argument("--no-anchor", action="store_true",
-                    help="Ref2VA segments with a first frame: use it as <Picture 1> only; by default it is also pinned at frame 0 "
-                         "with a MiniMaxH3AddGuide node, as ComfyUI's multiframe reference template does")
+    ap.add_argument("--anchor", action="store_true",
+                    help="Ref2VA segments with a first frame: besides wiring it as <Picture 1>, pin it at frame 0 with a "
+                         "MiniMaxH3AddGuide node (an exact opening frame, e.g. when continuing from the previous take's last frame). "
+                         "Default: reference only, as ComfyUI's multiframe reference template treats its first picture")
     ap.add_argument("--server", default="http://127.0.0.1:8188")
     ap.add_argument("--set", action="append", default=[], help="node_id.input=value (value may be @file)")
     ap.add_argument("--set-title", action="append", default=[], help='"Node title".input=value')
@@ -843,7 +846,7 @@ def main():
     a.tag = a.tag or "take"
     try:
         if a.media:
-            wiring = apply_media(wf, Path(a.media), a.server, media, do_upload=not offline, node_id=a.h3_node, anchor=not a.no_anchor)
+            wiring = apply_media(wf, Path(a.media), a.server, media, do_upload=not offline, node_id=a.h3_node, anchor=a.anchor)
         apply_sets(wf, a.set, a.server, media, do_upload=not offline)
         apply_sets(wf, a.set_title, a.server, media, do_upload=not offline, by_title=True)
     except urllib.error.URLError as e:

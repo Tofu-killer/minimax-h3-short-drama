@@ -207,19 +207,24 @@ def main():
               "14": {"class_type": "SamplerCustomAdvanced", "inputs": {"noise": ["10", 0], "guider": ["13", 0], "sampler": ["11", 0],
                                                                       "sigmas": ["12", 0], "latent_image": ["3", 1]}}}
         (work / "wf.api.json").write_text(json.dumps(wf), encoding="utf-8")
-        r = run([sys.executable, str(HERE / "comfy_submit.py"), "wf.api.json", "--server", "http://127.0.0.1:9", "--media", "prompts/s03.media.json",
-                 "--batch", "2", "--dry-run", "--write-workflow", "qc/wired.api.json"], work)
+        base = [sys.executable, str(HERE / "comfy_submit.py"), "wf.api.json", "--server", "http://127.0.0.1:9", "--media", "prompts/s03.media.json",
+                "--batch", "2", "--dry-run"]
+        r = run(base + ["--write-workflow", "qc/wired.api.json"], work)
+        r2 = run(base + ["--anchor", "--write-workflow", "qc/wired_anchor.api.json"], work)
         try:
             wired = json.loads((work / "qc/wired.api.json").read_text(encoding="utf-8"))
             h3 = wired["3"]["inputs"]
             pics = [wired[h3[k][0]]["inputs"]["image"] for k in sorted(k for k in h3 if k.startswith("ref_images."))]
-            guide = [k for k, v in wired.items() if v["class_type"] == "MiniMaxH3AddGuide"]
-            pinned = bool(guide) and wired["13"]["inputs"]["conditioning"] == [guide[0], 0] \
-                and wired[wired[guide[0]]["inputs"]["image"][0]]["inputs"]["image"] == pics[0]
-            good = r.returncode == 0 and pics[:1] == ["first_s03.png"] and len(pics) == 3 and pinned and h3["length"] == 124 \
-                and "2 take(s)" in r.stdout
-            record("comfy_submit.py --dry-run (references wired in order, first frame pinned at frame 0)", "PASS" if good else "FAIL",
-                   f"pictures {pics}, guide node {guide}" if good else (r.stderr.strip() or r.stdout.strip())[-300:])
+            plain = not any(v["class_type"] == "MiniMaxH3AddGuide" for v in wired.values()) and wired["13"]["inputs"]["conditioning"] == ["3", 0]
+            pinned_wf = json.loads((work / "qc/wired_anchor.api.json").read_text(encoding="utf-8"))
+            guide = [k for k, v in pinned_wf.items() if v["class_type"] == "MiniMaxH3AddGuide"]
+            pinned = len(guide) == 1 and pinned_wf["13"]["inputs"]["conditioning"] == [guide[0], 0] \
+                and pinned_wf[pinned_wf[guide[0]]["inputs"]["image"][0]]["inputs"]["image"] == pics[0] \
+                and pinned_wf[guide[0]]["inputs"]["frame_idx"] == 0
+            good = r.returncode == 0 and r2.returncode == 0 and pics[:1] == ["first_s03.png"] and len(pics) == 3 and plain and pinned \
+                and h3["length"] == 124 and "2 take(s)" in r.stdout
+            record("comfy_submit.py --dry-run (references wired in order; --anchor pins the first frame)", "PASS" if good else "FAIL",
+                   f"pictures {pics}; with --anchor: guide node {guide}" if good else (r.stderr.strip() or r2.stderr.strip() or r.stdout.strip())[-300:])
         except Exception as e:  # noqa: BLE001
             record("comfy_submit.py --dry-run", "FAIL", f"{type(e).__name__}: {e}; {(r.stderr.strip() or r.stdout.strip())[-200:]}")
 
