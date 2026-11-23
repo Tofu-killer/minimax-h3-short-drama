@@ -103,6 +103,10 @@ def main():
         frames = frames_for_seconds(seg.duration)
         target = out / f"{seg.id}.txt"
         before = target.read_text(encoding="utf-8") if target.exists() else None
+        try:                                # the state the earlier build opened from: only a change of THAT makes the first frame stale
+            opened_before = (json.loads((out / f"{seg.id}.media.json").read_text(encoding="utf-8")).get("opens_from") or {}).get("sha")
+        except (OSError, json.JSONDecodeError):
+            opened_before = None
         target.write_text(text, encoding="utf-8")
         spec = {"segment": seg.id, "mode": bp.mode or seg.mode, "ratio": ep.ratio, "duration": seg.duration, "frames": frames,
                 "effective_seconds": round(frames / 24, 3),
@@ -122,7 +126,8 @@ def main():
             note += f"  [built as {built_as}: nothing bound to this segment has a reference picture or voice sample]"
         if before is not None:              # takes made from the earlier text stay valid only when nothing changed
             note += "  [unchanged]" if before == text else "  [CHANGED since the last build - takes made from the earlier prompt no longer match it]"
-            if before != text and seg.first_frame and source != "authored":
+            opened_now = (spec.get("opens_from") or {}).get("sha")
+            if before != text and seg.first_frame and source != "authored" and opened_now != opened_before:
                 note += (f"  [its first frame {seg.first_frame} was made for the earlier opening: re-make it too if the pose or the "
                          f"positions differ, and re-read this segment's first shot - its action was written for the planned state]")
         # said on every build, not only on the one that changed the prompt: takes that belong to an earlier version of it
