@@ -32,6 +32,8 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 
 生态里每类任务该选哪个仓库、为什么，见 `references/ecosystem-map.md`；所有已知禁忌集中在 `references/pitfalls.md`。
 
+**接着做一个已经开工的项目**（换了对话、重启过、隔了几天）：先在项目根目录跑 `scripts/project_status.py episodes/ep01.json`——它只读，一屏列出每一段的提示词出没出、有几条草稿（几条是按旧提示词抽的）、采纳的是哪条、有没有它的精修、剪辑单里用的是哪个片段，以及每段的下一步命令；段落之后是剪辑单、字幕对时、混音各自还对不对得上当前的剪辑。照它说的下一步接着做，不用自己翻文件夹推断。
+
 **只做质检和后期**（片段已经生成好了）：直接看 `references/qc-and-assembly.md` §0——只需要一份带段 id、镜头起点和锁定台词的精简分镜，不必先让 `validate_episode.py` 通过。
 
 **命令约定**：所有脚本都在项目根目录下运行，写作 `python <本 skill 目录>/scripts/xxx.py …`（下文与各 reference 里简写成 `scripts/xxx.py`）；通配符放进引号由脚本自己展开；每个脚本都有 `--help`。references 里引用的 `docs/…`、`workflows/…`、`templates/…`，以及只写了文件名的 `NN-xxx.md`（如 `04-prompting-tools.md`、`12-fresh-followup.md`），都在仓库里、不随 skill 安装：<https://github.com/Tofu-killer/minimax-h3-short-drama/tree/main/docs>。
@@ -99,6 +101,7 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 | `scripts/lint_prompt.py prompts/ep01/s03.txt`（自动读同名 `.media.json`；手写的提示词给 `--seconds 10 --images 4 --audios 1`） | 提示词机检：字段顺序、时码递增与 1.2 s 下限、17k+5 有效时长、`<d>` 配对、标签先定义后引用、retention 关键词、否定句、静止句、全角符号、字数 |
 | `scripts/make_character_board.py --face face.png --views full.png side.png back.png --out sheet.png` | 把单人单视图拼成 16:9 角色审阅板——只给人看，不当参考图 |
 | `scripts/fetch_models.py --comfyui <ComfyUI 目录> [--sets ref2va stills refine fl2va zimage] [--download] [--verify-hash]`（`stills` = `t2i` + `edit`；营利项目用 `--sets ref2va edit zimage refine`） | 按清单（`assets/workflows/models.json`：HuggingFace 仓库、该放的目录、大小、SHA-256）核对附带工作流要用的模型文件：在不在、下没下全、是不是放错了目录；默认只检查、不改任何东西，加 `--download` 才下载缺的（断了重跑会接着下，边下边校验哈希；只用标准库、不需要 token） |
+| `scripts/project_status.py <ep.json> [--json logs/status.json]` | 项目进度总览（只读）：逐段列出缺的图 / 音色、提示词状态（没出 / 已出 / 分镜改过之后过期）、草稿和二采、采纳的片段及它的精修、剪辑单里用的片段是什么，并给出下一步的命令；最后是剪辑单、字幕对时、混音是否仍属于当前的剪辑。文件夹按其它脚本的默认名找（`prompts/<集>`、`takes/<集>`、`selects/<集>`、`edit/<集>.edl.json`、`final/<集>.mp4`），不在默认位置用 `--prompts` / `--takes` / `--selects` / `--edl` / `--final` 指 |
 | `scripts/check_setup.py [--server http://127.0.0.1:8188] [--json logs/setup.json]` | 只读地问正在运行的 ComfyUI：版本、PyTorch 构建（低于 CUDA 13 会提醒 int8 没有快速核）、启动参数（改变模型加载方式的会指出）、显存和内存、ComfyUI 要求而没装对版本的包；附带的 18 个工作流逐个标 READY / MISSING——缺节点就说装哪个节点包，缺模型文件就说放哪个目录、用 `fetch_models.py` 的哪一组，文件放深了一层也认得出。看不到的三样它会列出来：`sageattention` 包、启动日志、没下全的文件。Ref2VA 草稿工作流就绪时退出码 0 |
 | `scripts/selfcheck.py [--keep work]` | 装完 skill 先跑一次（约 1 分钟、不用 GPU、不用模型）：用合成素材把校验 → 提示词 → 技术 QC → 联络表 → 剪辑单 → 字幕 → 台词质检流程 → 音色检查 → 混音母带 → 两种工程导出整条链走一遍，逐步报 PASS / FAIL / SKIP，并列出缺哪些可选依赖。它不测语音识别本身和 ComfyUI |
 | `scripts/fetch_official_guides.py [目录]` | 拉取 MiniMax 官方提示词指南原文作对照 |

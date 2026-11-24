@@ -715,6 +715,18 @@ def main():
                 and "lines are not the ones" not in e4.stdout
             record("make_edl.py compares each clip with the accepted take (another seed warned; a refine, and a copy of it, pass)",
                    "PASS" if told else "FAIL", "" if told else f"{e1.stdout.strip()[-200:]} | {e3.stdout.strip()[-200:]} | {e5.stdout.strip()[-160:]}")
+            # the overview of a project reads all of this back: what is accepted, which second pass belongs to it, what the
+            # edit uses, and - for a storyboard nothing has been made from yet - the first step
+            st_a = run([sys.executable, str(HERE / "project_status.py"), "ep_guard.json", "--prompts", "prompts/guard", "--takes", "takes/guard",
+                        "--selects", "selects", "--edl", "edit/guard_b.edl.json", "--json", "qc/status.json"], work)
+            st_b = run([sys.executable, str(HERE / "project_status.py"), "ep.json", "--prompts", "prompts_none", "--takes", "takes/none",
+                        "--edl", "edit/none.edl.json"], work)
+            status = json.loads((work / "qc/status.json").read_text(encoding="utf-8")) if (work / "qc/status.json").exists() else {}
+            seen = st_a.returncode == 0 and f"second pass {s2['id']}_refine_1001" in st_a.stdout and "of the accepted take" in st_a.stdout \
+                and "the accepted take or a second pass of it" in st_a.stdout and len(status.get("segments", [])) == len(flow["segments"]) \
+                and st_b.returncode == 0 and "not built yet" in st_b.stdout and "build_prompts.py" in st_b.stdout and "no edit list yet" in st_b.stdout
+            record("project_status.py (what is accepted, refined and in the edit; the next step for a new storyboard)", "PASS" if seen else "FAIL",
+                   "" if seen else f"{(st_a.stderr.strip() or st_a.stdout.strip())[-260:]} | {(st_b.stderr.strip() or st_b.stdout.strip())[-200:]}")
         except Exception as e:  # noqa: BLE001
             record("takes are checked against what they were made from", "FAIL", f"{type(e).__name__}: {e}")
 

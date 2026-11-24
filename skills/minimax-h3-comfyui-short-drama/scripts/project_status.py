@@ -1,0 +1,347 @@
+#!/usr/bin/env python3
+"""Where an episode stands: for every segment what exists and what comes next. Reads only; nothing is changed.
+
+    python project_status.py episodes/ep01.json
+    python project_status.py episodes/ep01.json --json logs/status.json
+
+Made for the moment work is picked up again - after a break, a restart, a new conversation: one screen instead of
+re-reading folders. For each segment it says
+  * whether the pictures and sound files the storyboard names are on disk
+  * whether its prompt is built, and whether the storyboard has changed since
+  * which takes exist: drafts (how many belong to the prompt of now), second passes
+  * which take is accepted, and whether a second pass of exactly that take exists
+  * which clip the edit list uses for it, and what that clip is
+  * the next step, as a command
+and after the segments: the edit list, the subtitle timing, the mix - each with whether it still belongs to the cut.
+
+Folders are found by the names the other scripts use: prompts/<episode>, takes/<episode>, selects/<episode>,
+edit/<episode>.edl.json, final/<episode>.mp4 (<episode> = the storyboard's file name without .json). Give another
+place with --prompts / --takes / --selects / --edl / --final. Run it from the project root.
+
+It reports what the files say. Whether a picture is good or a take is the right one is not something it can see.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from pathlib import Path
+
+sys.dont_write_bytecode = True      # keep the skill folder free of __pycache__
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE / "h3lib"))
+import edl as edl_lib  # noqa: E402
+import prompt_builder  # noqa: E402
+import signals  # noqa: E402
+import takes as take_records  # noqa: E402
+from storyboard import NotObservedYet, load_episode, voice_plan  # noqa: E402
+
+FLOWS = HERE.parent / "assets" / "workflows"
+
+
+def _utf8_console() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
+
+def cli(path) -> str:
+    text = Path(path).as_posix() if not isinstance(path, str) else path
+    return f'"{text}"' if re.search(r"\s", text) else text
+
+
+def py(script: str) -> str:
+    return f"python {cli(HERE / script)}"
+
+
+def is_url(f: str) -> bool:
+    return str(f).startswith(("http://", "https://", "mm_file://", "data:"))
+
+
+def missing_files(ep, seg, base: Path) -> list[str]:
+    """Pictures and sound files this segment needs that are not on disk, named as the storyboard writes them."""
+    need = [seg.first_frame, seg.last_frame] + [sh.keyframe for sh in seg.shots]
+    for cid in seg.character_ids:
+        c = ep.char(cid)
+        need += list(c.reference_images) + [c.voice_reference]
+    need += list(ep.scene(seg.scene_id).reference_images)
+    for pid in seg.prop_ids:
+        need += list(ep.prop(pid).reference_images)
+    out = []
+    for f in need:
+        if not f or is_url(f) or Path(f).exists():
+            continue
+        try:
+            shown = Path(f).resolve().relative_to(base).as_posix()     # the loader made it absolute: back to what was written
+        except ValueError:
+            shown = str(f)
+        if shown not in out:
+            out.append(shown)
+    return out
+
+
+def prompt_state(ep, seg, prompts: Path) -> tuple[str, str]:
+    """(state, sentence): missing | kept | waits | blocked | built | changed."""
+    txt, media = prompts / f"{seg.id}.txt", prompts / f"{seg.id}.media.json"
+    if not txt.exists() or not media.exists():
+        return "missing", "not built yet"
+    if seg.status.startswith("accepted"):
+        return "kept", "kept as it was built (the segment is accepted)"
+    try:
+        spec = json.loads(media.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return "changed", f"{media} cannot be read - build it again"
+    planned = ((spec.get("opens_from") or {}).get("source") == "planned")
+    prompt_builder.ALLOW_PLANNED = planned        # compare with a build of the same kind as the one on disk
+    try:
+        now = next(c["text"] for c in prompt_builder.build(ep, seg).content if c["type"] == "text")
+    except NotObservedYet:
+        return "waits", "built from the plan; the segment before it is not accepted yet"
+    except FileNotFoundError as e:
+        return "blocked", f"cannot be built now: {e}"
+    except ValueError as e:
+        return "blocked", f"cannot be built now: {str(e)[:160]}"
+    finally:
+        prompt_builder.ALLOW_PLANNED = False
+    if now != txt.read_text(encoding="utf-8"):
+        return "changed", "out of date: the storyboard (or the end of the segment before it) changed after it was built"
+    return "built", "built" + (" from the planned end of the segment before it" if planned else "")
+
+
+def clip_size(clip: Path) -> str:
+    try:
+        info = signals.probe(clip)
+        return f"{info['width']}x{info['height']}" if info.get("width") else ""
+    except Exception:  # noqa: BLE001 - ffprobe missing or a broken file: the size is a convenience
+        return ""
+
+
+def main_clip(folder: Path, rec: dict) -> Path | None:
+    """The video file of a take: the one its record names, else the first video in the folder."""
+    for f in rec.get("files") or []:
+        p = Path(f)
+        if p.suffix.lower() in take_records.VIDEO_EXT and "_trimmed" not in p.stem:
+            return p if p.exists() else folder / p.name
+    hits = sorted(p for p in folder.glob("*") if p.suffix.lower() in take_records.VIDEO_EXT and "_trimmed" not in p.stem)
+    return hits[0] if hits else None
+
+
+def segment_report(ep, seg, raw_seg: dict, ep_path: Path, prompts: Path, takes: Path, entry: dict | None) -> dict:
+    rep: dict = {"id": seg.id, "seconds": seg.duration, "mode": seg.mode, "status": seg.status}
+    rep["missing_files"] = missing_files(ep, seg, ep_path.resolve().parent)
+    rep["prompt"], rep["prompt_note"] = prompt_state(ep, seg, prompts)
+    folder = takes / seg.id
+    current = take_records.media_inputs_sha(prompts / f"{seg.id}.media.json")
+    drafts, passes = [], []
+    for name, rec in take_records.finished_takes(folder):
+        # a second pass says so in its record; takes made before that was written are told by their workflow or folder name
+        second = bool(rec.get("second_pass") or rec.get("from_latent")) or "refine" in Path(str(rec.get("workflow") or "")).name \
+            or "_refine" in name
+        (passes if second else drafts).append((name, rec))
+    rep["drafts"] = [n for n, _r in drafts]
+    rep["drafts_out_of_date"] = [n for n, r in drafts if current and r.get("inputs_sha") and r["inputs_sha"] != current]
+    acc = raw_seg.get("accepted_take") or {}
+    accepted = seg.status.startswith("accepted") and bool(acc.get("path"))
+    rep["accepted"] = None
+    if accepted:
+        p = Path(str(acc["path"]))
+        in_take = (p.parent / "run.json").exists()            # else a file accepted from somewhere else: name the file itself
+        rep["accepted"] = {"take": p.parent.name if in_take else str(p), "file": str(p), "seed": acc.get("seed"), "on_disk": p.exists(),
+                           "deviation": seg.status == "accepted_with_deviation"}
+    rep["second_passes"] = []
+    for name, rec in passes:
+        of_accepted = bool(accepted and acc.get("inputs_sha") and rec.get("inputs_sha") == acc["inputs_sha"]
+                           and (acc.get("seed") is None or rec.get("seed") == acc.get("seed")))
+        clip = main_clip(folder / name, rec)
+        rep["second_passes"].append({"take": name, "of_accepted": of_accepted, "size": clip_size(clip) if clip else "",
+                                     "file": str(clip) if clip else "", "warnings": rec.get("warnings") or []})
+    rep["edit"] = None
+    if entry:
+        clip = Path(str(entry.get("video") or ""))
+        level, why = take_records.provenance(raw_seg, clip, ep_path) if clip.is_file() else ("WARN", "the clip is not on disk")
+        rep["edit"] = {"clip": str(clip), "size": entry.get("src_size") or "", "level": level, "note": why}
+    rep["script_drift"] = take_records.script_drift(raw_seg, ep_path) if accepted else ""
+    return rep
+
+
+def next_step(rep: dict, ep_path: Path, prompts: Path, takes: Path, selects: Path, edl_path: Path, prev: dict | None,
+              from_plan: bool = False) -> str:
+    sid, media = rep["id"], prompts / f"{rep['id']}.media.json"
+    family = "h3_ref2va" if rep["mode"] == "ref2va" else "h3_fl2va"
+    draft_wf, refine_wf = FLOWS / f"{family}.api.json", FLOWS / f"{family}_refine.api.json"
+    if rep["missing_files"]:
+        return (f"make the missing file(s) first - pictures: {py('plan_stills.py')} {cli(ep_path)} lists each with its command; "
+                f"a voice sample is recorded, or cut from an accepted take (references/audio-and-post.md)")
+    if rep["prompt"] in ("missing", "changed"):
+        return f"build the prompts: {py('build_prompts.py')} {cli(ep_path)} --out {cli(prompts)}" + (" --allow-planned" if from_plan else "")
+    if rep["prompt"] == "blocked":
+        return "fix what stops the build (see the prompt line), then build the prompts again"
+    if not rep["accepted"]:
+        good = [d for d in rep["drafts"] if d not in rep["drafts_out_of_date"]]
+        if not good:
+            return (f"make drafts: {py('comfy_submit.py')} {cli(draft_wf)} --media {cli(media)} --batch 3 --keep-latent --dry-run "
+                    f"(with Sage installed: the _sage file), then the same command with --confirm <batch id>")
+        if prev and not str(prev["status"]).startswith("accepted"):
+            return f"{len(good)} draft(s) wait - choose one after {prev['id']} is accepted (its real ending decides whether they still fit)"
+        return (f"choose one of the {len(good)} draft(s) and write it back: {py('observe_take.py')} <the clip> --episode {cli(ep_path)} "
+                f"--segment {sid} (look), then --as-planned or --write \"...\" --confidence ...")
+    if not rep["accepted"]["on_disk"]:
+        return f"the accepted take is not on disk - see {py('validate_episode.py')} {cli(ep_path)}"
+    mine = [p for p in rep["second_passes"] if p["of_accepted"]]
+    if not mine:
+        folder = Path(rep["accepted"]["file"]).parent
+        has_latent = any(folder.glob("*video*.latent"))
+        own = folder / "media.json"
+        refine = (f"{py('comfy_submit.py')} {cli(refine_wf)} --media {cli(own if own.exists() else media)} "
+                  + (f"--from-latent {cli(folder)}" if has_latent else f"--seed {rep['accepted']['seed']}") + " --dry-run")
+        if rep["edit"] and rep["edit"]["level"] != "WARN":      # the draft is in the edit: a decision, not an open step
+            rep["optional"] = f"no second pass: the draft is in the edit as it is. To refine it after all: {refine}"
+            return ""
+        return f"refine the accepted take: {refine} (or put the draft into the edit as it is: make_edl.py)"
+    if not rep["edit"]:
+        return (f"put it into the edit: {py('make_edl.py')} {cli(ep_path)} --selects {cli(selects)} --out {cli(edl_path)} "
+                f"--pick {sid}={cli(mine[-1]['file'])}")
+    if rep["edit"]["level"] == "WARN" or (mine and Path(rep["edit"]["clip"]).resolve() == Path(rep["accepted"]["file"]).resolve()):
+        return (f"the edit list does not use the second pass yet: {py('make_edl.py')} {cli(ep_path)} --selects {cli(selects)} "
+                f"--out {cli(edl_path)} --pick {sid}={cli(mine[-1]['file'])}")
+    return ""
+
+
+def main():
+    _utf8_console()
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap.add_argument("episode")
+    ap.add_argument("--prompts", help="default: prompts/<episode>")
+    ap.add_argument("--takes", help="default: takes/<name of the prompts folder>")
+    ap.add_argument("--selects", help="default: selects/<episode>")
+    ap.add_argument("--edl", help="default: edit/<episode>.edl.json")
+    ap.add_argument("--final", help="default: final/<episode>.mp4")
+    ap.add_argument("--json", help="also write the findings to this file")
+    a = ap.parse_args()
+
+    ep_path = Path(a.episode)
+    ep = load_episode(ep_path)
+    raw = json.loads(ep_path.read_text(encoding="utf-8"))
+    name = ep_path.stem
+    prompts = Path(a.prompts) if a.prompts else Path("prompts") / name
+    takes = Path(a.takes) if a.takes else Path("takes") / prompts.resolve().name
+    selects = Path(a.selects) if a.selects else Path("selects") / name
+    edl_path = Path(a.edl) if a.edl else Path("edit") / f"{name}.edl.json"
+    final = Path(a.final) if a.final else Path("final") / f"{name}.mp4"
+    edl = {}
+    if edl_path.exists():
+        try:
+            edl = json.loads(edl_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            edl = {}
+    entries = {s["id"]: s for s in edl.get("segments", [])}
+
+    total = sum(s.duration for s in ep.segments)
+    print(f"{ep.title} - {len(ep.segments)} segment(s), {total} s  ({ep_path})")
+    print(f"  prompts {prompts} | takes {takes} | selects {selects} | edit list {edl_path}"
+          + ("" if edl_path.exists() else " (not made yet)"))
+    reports, prev = [], None
+    # one build command for the whole episode: drafts made in one go open from the PLANNED end of a segment that is not accepted yet
+    from_plan = any((b.continuity or "").strip().startswith("@observed") and not a_.status.startswith("accepted")
+                    for a_, b in zip(ep.segments, ep.segments[1:]))
+    for seg, raw_seg in zip(ep.segments, raw["segments"]):
+        rep = segment_report(ep, seg, raw_seg, ep_path, prompts, takes, entries.get(seg.id))
+        rep["next"] = next_step(rep, ep_path, prompts, takes, selects, edl_path, prev, from_plan)
+        reports.append(rep)
+        acc = rep["accepted"]
+        head = (f"accepted{' with a deviation' if acc['deviation'] else ''}: {acc['take']}"
+                + (f", seed {acc['seed']}" if acc.get("seed") is not None else "")
+                + ("" if acc["on_disk"] else "  !! NOT ON DISK")) if acc else ("rejected" if seg.status == "rejected" else "not accepted")
+        print(f"\n{seg.id}  {seg.duration} s {seg.mode}  -  {head}")
+        if rep["missing_files"]:
+            print(f"     files      {len(rep['missing_files'])} missing: {', '.join(rep['missing_files'][:4])}"
+                  + (" ..." if len(rep["missing_files"]) > 4 else ""))
+        print(f"     prompt     {rep['prompt_note']}")
+        if rep["script_drift"]:
+            print(f"     !!         {rep['script_drift']}")
+        stale = [] if acc else rep["drafts_out_of_date"]         # once a take is accepted the other drafts no longer matter
+        line = f"{len(rep['drafts'])} draft(s)" + (f", {len(stale)} of them made from an earlier prompt ({', '.join(stale[:3])})" if stale else "")
+        if acc and acc["take"] in rep["drafts_out_of_date"]:
+            line += " (the accepted one was made from an earlier prompt: a second pass takes the media.json kept in its folder)"
+        for p in rep["second_passes"]:
+            line += (f"; second pass {p['take']}" + (f" {p['size']}" if p["size"] else "")
+                     + (" of the accepted take" if p["of_accepted"] else " (not of the accepted take)")
+                     + (" - made in spite of a warning" if p["warnings"] else ""))
+        print(f"     takes      {line}")
+        if rep["edit"]:
+            e = rep["edit"]
+            what = {"": "the accepted take or a second pass of it", "note": "a file that cannot be traced to a take"}.get(e["level"], "!! " + e["note"][:200])
+            print(f"     edit       {e['clip']}" + (f" {e['size']}" if e["size"] else "") + f" - {what}")
+        elif edl:
+            print("     edit       not in the edit list")
+        if rep["next"]:
+            print(f"     next       {rep['next']}")
+        elif rep.get("optional"):
+            print(f"     optional   {rep['optional']}")
+        prev = rep
+
+    # ---- the episode as a whole ---------------------------------------------------------------------------
+    print("\nafter the segments")
+    waiting = [v for v in voice_plan(ep) if v["later"]]
+    if waiting:
+        print("     voices     " + "; ".join(f"{v['character']} has no sample yet (first speaks in {v['first']}; later: {', '.join(v['later'])})"
+                                            for v in waiting) + " - accept that first segment, cut the sample, then batch the later ones")
+    post = {"edit_list": edl_path.exists(), "segments_in_edit": len(entries), "subtitles": None, "mix": None}
+    todo = ""
+    if not edl:
+        print("     edit       no edit list yet")
+        if all(r["accepted"] for r in reports):
+            todo = f"{py('make_edl.py')} {cli(ep_path)} --selects {cli(selects)} --out {cli(edl_path)}"
+    else:
+        absent = [r["id"] for r in reports if not r["edit"]]
+        print(f"     edit       {len(entries)} of {len(reports)} segment(s) in {edl_path}" + (f"; missing: {', '.join(absent)}" if absent else ""))
+        sub = edl.get("subtitles")
+        lines = [ln for s in edl.get("segments", []) for ln in s.get("lines") or []]
+        if not lines:
+            post["subtitles"] = "no lines"
+            print("     subtitles  the episode has no lines")
+        elif not sub:
+            post["subtitles"] = "not timed"
+            print("     subtitles  not timed yet")
+            todo = todo or f"{py('retime_subtitles.py')} {cli(edl_path)} --out {cli(Path('subs') / name)}"
+        elif edl_lib.subtitles_stale(edl, edl_path):
+            post["subtitles"] = "stale"
+            print("     subtitles  timed on another cut (a clip or an in / out frame changed since)")
+            todo = todo or f"{py('retime_subtitles.py')} {cli(edl_path)} --out {cli(Path('subs') / name)}"
+        else:
+            review = [ln for ln in lines if ln.get("needs_review")]
+            post["subtitles"] = "timed"
+            print("     subtitles  timed for this cut" + (f"; {len(review)} line(s) marked for review" if review else ""))
+        report = final.with_suffix(".mix.report.json")
+        if not final.exists():
+            post["mix"] = "not made"
+            print(f"     mix        not made yet ({final})")
+            if not absent and post["subtitles"] in ("timed", "no lines"):
+                todo = todo or f"{py('mix_episode.py')} {cli(edl_path)} --out {cli(final)}" \
+                               + (f" --ass {cli(Path('subs') / (name + '.ass'))}" if post["subtitles"] == "timed" else "")
+        else:
+            stale = edl_lib.mix_is_stale(edl, report_path=report if report.exists() else None, edl_path=edl_path)
+            post["mix"] = "stale" if stale else "made"
+            print(f"     mix        {final}" + (f" - !! {stale}" if stale else " belongs to this cut"))
+            if stale:
+                todo = todo or f"{py('mix_episode.py')} {cli(edl_path)} --out {cli(final)}"
+    if todo and not any(r["next"] for r in reports):
+        print(f"     next       {todo}")
+    open_segments = [r["id"] for r in reports if r["next"]]
+    print(f"\n{len(reports) - len(open_segments)} of {len(reports)} segment(s) need nothing more"
+          + (f"; open: {', '.join(open_segments)}" if open_segments else ""))
+    if a.json:
+        out = Path(a.json)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps({"episode": str(ep_path), "segments": reports, "post": post, "next": todo}, ensure_ascii=False, indent=1),
+                       encoding="utf-8")
+        print(f"written: {out}")
+
+
+if __name__ == "__main__":
+    from guard import run as _guarded   # a wrong path or a broken JSON file ends in one line, not in a traceback
+    _guarded(main)

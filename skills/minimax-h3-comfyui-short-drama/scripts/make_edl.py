@@ -60,7 +60,7 @@ def _utf8_console() -> None:
 
 _utf8_console()
 
-VIDEO_EXT = {".mp4", ".mov", ".mkv", ".webm"}
+VIDEO_EXT = take_records.VIDEO_EXT
 
 
 def probe(path: Path) -> dict:
@@ -116,104 +116,8 @@ def keep_locked_lines(new: dict, before: dict | None) -> str:
     return ""
 
 
-def source_take(clip: Path, acc: dict, episode: Path) -> Path | None:
-    """The file below the segment's takes folder that `clip` is a copy of (same bytes) - a clip copied into
-    selects/ has no run.json beside it, the take it was copied from has."""
-    rel = Path(str(acc.get("path") or ""))
-    if not rel.name:
-        return None
-    try:
-        size, digest = clip.stat().st_size, None
-        for base in ([Path()] if rel.is_absolute() else [Path.cwd(), episode.resolve().parent.parent]):
-            folder = (base / rel).parent.parent              # takes/<episode>/<segment>
-            if not folder.is_dir():
-                continue
-            for cand in sorted(folder.glob("*/*")):
-                if cand.suffix.lower() in VIDEO_EXT and cand.is_file() and cand.stat().st_size == size:
-                    digest = digest or take_records.sha256_file(clip)
-                    if take_records.sha256_file(cand) == digest:
-                        return cand
-            break
-    except OSError:
-        pass
-    return None
-
-
-def lines_of_take(seg: dict, episode: Path) -> list[str] | None:
-    """The dialogue lines the accepted take was made with, read from the prompt kept beside it (prompt.txt in the take's
-    folder) or, for takes made before prompts were kept, from the prompt file its run.json names. None when neither
-    can be read."""
-    acc = seg.get("accepted_take") or {}
-    rel = Path(str(acc.get("path") or ""))
-    if not rel.name:
-        return None
-    for base in ([Path()] if rel.is_absolute() else [Path.cwd(), episode.resolve().parent.parent]):
-        take = base / rel
-        places = [take.parent / "prompt.txt"]
-        rec = take_records.take_record(take) or {}
-        if rec.get("media_json"):
-            media = Path(rec["media_json"]) if Path(rec["media_json"]).is_absolute() else base / rec["media_json"]
-            try:
-                spec = json.loads(media.read_text(encoding="utf-8"))
-                places.append(media.parent / spec.get("prompt_file", f"{spec.get('segment', seg['id'])}.txt"))
-            except (OSError, json.JSONDecodeError):
-                pass
-        for f in places:
-            try:
-                return [" ".join(t.split()) for t in re.findall(r"<d>\[[^\]]*\]\s*(.*?)</d>", f.read_text(encoding="utf-8"), re.S)]
-            except OSError:
-                continue
-    return None
-
-
-def script_drift(seg: dict, episode: Path) -> str:
-    """The storyboard's lines against the lines the accepted take was made with. Subtitles are written from the
-    storyboard: when a line was edited after the take was accepted, they would show words nobody says."""
-    made = lines_of_take(seg, episode)
-    if made is None:
-        return ""
-    now = [" ".join(str(d.get("text", "")).split()) for sh in seg.get("shots", []) for d in sh.get("dialogue", [])]
-    if sorted(made) == sorted(now):
-        return ""
-    gone = [t for t in made if t not in now]
-    new = [t for t in now if t not in made]
-    return ("the storyboard's lines are not the ones the accepted take was made with"
-            + (f" - in the take: {' / '.join(gone)[:120]}" if gone else "") + (f" - in the storyboard now: {' / '.join(new)[:120]}" if new else "")
-            + ". Subtitles come from the storyboard: put the line back as it is spoken, or rebuild the segment "
-              "(build_prompts.py --only) and make its take again")
-
-
-def provenance(seg: dict, clip: Path, episode: Path) -> tuple[str, str]:
-    """Is this clip the take the storyboard records as accepted, or a second pass of it (same prompt, references
-    and seed)? ('', '') when it is; ('WARN', why) when its record says it is something else or the segment has no
-    accepted take; ('note', why) when nothing says what the file was made from. The edit is built either way."""
-    acc = seg.get("accepted_take") or {}
-    if not str(seg.get("status") or "").startswith("accepted") or not acc:
-        return "WARN", ("the storyboard records no accepted take for this segment (observe_take.py writes it) - "
-                        "nothing says this clip is the one that was chosen")
-    try:
-        if take_records.sha256_file(clip) == acc.get("sha256"):
-            return "", ""
-    except OSError:
-        pass
-    rec, made_in = take_records.take_record(clip), clip.parent.name
-    if rec is None:                                          # a copy in selects/: find the take it was copied from
-        src = source_take(clip, acc, episode)
-        if src is not None:
-            rec, made_in = take_records.take_record(src), src.parent.name
-    was = Path(str(acc.get("path") or "?")).parent.name
-    if rec and rec.get("inputs_sha") and acc.get("inputs_sha"):
-        if rec["inputs_sha"] == acc["inputs_sha"] and (acc.get("seed") is None or rec.get("seed") == acc.get("seed")):
-            if rec.get("warnings"):                          # submitted although the preview warned (another canvas, length ...)
-                return "WARN", (f"{made_in} is a second pass of the accepted take ({was}), but it was submitted in spite of a warning: "
-                                f"{str(rec['warnings'][0])[:300]}")
-            return "", ""                                    # a second pass of the accepted take
-        why = ("another seed" if rec["inputs_sha"] == acc["inputs_sha"] else "another prompt or other references")
-        return "WARN", (f"this is not the accepted take ({was}) nor a refine of it: {made_in} was made with {why} "
-                        f"(seed {rec.get('seed', '?')}; accepted: seed {acc.get('seed', '?')})")
-    return "note", (f"cannot tell what this file was made from: it is not the accepted take ({was}) byte for byte, has no "
-                    f"run.json beside it and is not a copy of a take in that segment's folder. Expected for a clip finished in "
-                    f"another tool (upscaled, interpolated); otherwise pick the file with --pick")
+source_take, lines_of_take, script_drift, provenance = (take_records.source_take, take_records.lines_of_take,
+                                                         take_records.script_drift, take_records.provenance)
 
 
 def main():

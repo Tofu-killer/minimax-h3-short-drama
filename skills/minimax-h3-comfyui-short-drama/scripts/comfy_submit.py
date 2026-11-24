@@ -1792,6 +1792,8 @@ def main():
                     "first_pass": first_pass_signature(view)}
             if (dest / "prompt.txt").is_file():
                 meta["prompt_file"] = "prompt.txt"          # the text this take was made from, kept beside it
+            if any(str(v.get("class_type", "")).startswith(SECOND_PASS[:4]) for v in view.values()):
+                meta["second_pass"] = True                  # a refine: enlarged and sampled again after the first pass
             if a.from_latent:
                 meta["from_latent"] = str(a.from_latent)    # no first pass of its own: it continues that take
             if p.get("warning"):
