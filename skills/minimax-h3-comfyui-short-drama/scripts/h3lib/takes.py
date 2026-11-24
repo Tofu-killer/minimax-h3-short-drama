@@ -238,6 +238,24 @@ def unread_first_shots(raw: dict) -> dict:
     return out
 
 
+def failed_takes(folder: Path) -> list:
+    """[(take folder name, status, error text)] of the takes below a segment's folder whose job ended without a result:
+    an error on the server, no output file, or a job the server had forgotten when it was collected."""
+    out = []
+    if not Path(folder).is_dir():
+        return out
+    for rj in sorted(Path(folder).glob("*/run.json")):
+        if rj.parent.name.startswith("_prev_"):
+            continue
+        try:
+            rec = json.loads(rj.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(rec, dict) and rec.get("status") not in (None, "success"):
+            out.append((rj.parent.name, str(rec.get("status")), " ".join(str(rec.get("error") or "").split())[:140]))
+    return out
+
+
 def pending_takes(folder: Path) -> list:
     """[(take folder name, handle.json)] of the jobs that were queued for a segment and whose result was never fetched:
     a handle without a record beside it. The job may still be running, be finished on the server, or be gone."""

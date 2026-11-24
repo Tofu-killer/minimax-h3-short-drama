@@ -130,6 +130,7 @@ def segment_report(ep, seg, raw_seg: dict, ep_path: Path, prompts: Path, takes: 
     # queued and never fetched (the script was stopped, the conversation lost): invisible to everything that reads records
     rep["pending"] = [{"take": n, "folder": str(folder / n), "seed": h.get("seed"), "queued_at": h.get("queued_at")}
                       for n, h in take_records.pending_takes(folder)]
+    rep["failed"] = [{"take": n, "status": st, "error": err} for n, st, err in take_records.failed_takes(folder)]
     rep["drafts_out_of_date"] = [n for n, r in drafts if current and r.get("inputs_sha") and r["inputs_sha"] != current]
     acc = raw_seg.get("accepted_take") or {}
     accepted = seg.status.startswith("accepted") and bool(acc.get("path"))
@@ -411,6 +412,9 @@ def main():
         if rep["pending"]:
             line += (f"; !! {len(rep['pending'])} job(s) queued and never collected (" + ", ".join(x["take"] for x in rep["pending"][:3])
                      + ") - running, finished or gone on the server")
+        if rep["failed"]:
+            line += (f"; {len(rep['failed'])} take(s) ended without a result (" + "; ".join(
+                f"{x['take']}: {x['status']}" + (f" - {x['error'][:90]}" if x["error"] else "") for x in rep["failed"][:3]) + ")")
         for p in rep["second_passes"]:
             line += (f"; second pass {p['take']}" + (f" {p['size']}" if p["size"] else "")
                      + (" of the accepted take" if p["of_accepted"] else " (not of the accepted take)")

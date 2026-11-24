@@ -1672,6 +1672,13 @@ def collect(folders: list[str], a) -> int:
         print(f"{dest}: job {pid} is {'finished' if state == 'done' else 'still on the server - waiting for it'}", flush=True)
         if entry is None:
             entry = wait(server, pid, a.poll, a.timeout)
+        try:                             # the script that queued it may have been alive after all and finished the take meanwhile
+            done = json.loads((dest / "run.json").read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            done = {}
+        if done.get("prompt_id") == pid and done.get("status") == "success" and all(Path(f).exists() for f in done.get("files") or []):
+            print(f"  already collected meanwhile by the run that queued it ({', '.join(Path(f).name for f in done['files'])})")
+            continue
         meta, files, ok = finish_take(server, pid, float(h.get("queued_at") or time.time()), dest, base, entry, {},
                                       Path(h["log"]) if h.get("log") else None, h.get("log_row"))
         if ok and files:
