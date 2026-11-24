@@ -168,27 +168,46 @@ def segment_report(ep, seg, raw_seg: dict, ep_path: Path, prompts: Path, takes: 
     return rep
 
 
+def voice_first(voices: list[dict]) -> str:
+    """What has to happen before a segment is drafted when someone who speaks in it has no voice sample yet."""
+    parts = []
+    for v in voices:
+        if v["first_accepted"]:
+            parts.append(f"{v['character']}'s voice sample is still to cut from the accepted take of {v['first']} and to write to "
+                         f"voice_reference (the block at the top)")
+        else:
+            parts.append(f"{v['character']} first speaks in {v['first']}, which is not accepted yet - accept it and cut the voice "
+                         f"sample there (the block at the top)")
+    return "; ".join(parts)
+
+
 def next_step(rep: dict, ep_path: Path, prompts: Path, takes: Path, selects: Path, edl_path: Path, prev: dict | None,
-              from_plan: bool = False) -> str:
+              from_plan: bool = False, voices: list[dict] | None = None) -> str:
     sid, media = rep["id"], prompts / f"{rep['id']}.media.json"
     family = "h3_ref2va" if rep["mode"] == "ref2va" else "h3_fl2va"
     draft_wf, refine_wf = FLOWS / f"{family}.api.json", FLOWS / f"{family}_refine.api.json"
+    # a sample attached later changes this segment's prompt: whatever is drafted before that has to be drafted again
+    before = f"first the voice: {voice_first(voices)}. This segment's prompt changes with the sample, so drafts come after it. Then: " if voices else ""
     if rep["missing_files"]:
         return (f"make the missing file(s) first - pictures: {py('plan_stills.py')} {cli(ep_path)} lists each with its command; "
-                f"a voice sample is recorded, or cut from an accepted take (references/audio-and-post.md)")
+                f"a voice sample is recorded, or cut from an accepted take (references/audio-and-post.md)"
+                + (f". Also before this segment is drafted: {voice_first(voices)}" if voices else ""))
     if rep["prompt"] in ("missing", "changed"):
-        return f"build the prompts: {py('build_prompts.py')} {cli(ep_path)} --out {cli(prompts)}" + (" --allow-planned" if from_plan else "")
+        return before + f"build the prompts: {py('build_prompts.py')} {cli(ep_path)} --out {cli(prompts)}" + (" --allow-planned" if from_plan else "")
     if rep["prompt"] == "blocked":
         return "fix what stops the build (see the prompt line), then build the prompts again"
     if not rep["accepted"]:
         good = [d for d in rep["drafts"] if d not in rep["drafts_out_of_date"]]
         if not good:
-            return (f"make drafts: {py('comfy_submit.py')} {cli(draft_wf)} --media {cli(media)} --batch 3 --keep-latent --dry-run "
-                    f"(with Sage installed: the _sage file), then the same command with --confirm <batch id>")
+            return before + (f"make drafts: {py('comfy_submit.py')} {cli(draft_wf)} --media {cli(media)} --batch 3 --keep-latent --dry-run "
+                             f"(with Sage installed: the _sage file), then the same command with --confirm <batch id>")
+        unanchored = (f" These drafts were made without a voice sample ({voice_first(voices)}): the voice in them is not anchored - "
+                      f"keep one and measure the voices after the mix (voice_check.py), or attach the sample and draft again.") if voices else ""
         if prev and not str(prev["status"]).startswith("accepted"):
-            return f"{len(good)} draft(s) wait - choose one after {prev['id']} is accepted (its real ending decides whether they still fit)"
+            return (f"{len(good)} draft(s) wait - choose one after {prev['id']} is accepted (its real ending decides whether they still fit)"
+                    + unanchored)
         return (f"choose one of the {len(good)} draft(s) and write it back: {py('observe_take.py')} <the clip> --episode {cli(ep_path)} "
-                f"--segment {sid} (look), then --as-planned or --write \"...\" --confidence ...")
+                f"--segment {sid} (look), then --as-planned or --write \"...\" --confidence ..." + unanchored)
     if not rep["accepted"]["on_disk"]:
         return f"the accepted take is not on disk - see {py('validate_episode.py')} {cli(ep_path)}"
     mine = [p for p in rep["second_passes"] if p["of_accepted"]]
@@ -201,7 +220,12 @@ def next_step(rep: dict, ep_path: Path, prompts: Path, takes: Path, selects: Pat
         if rep["edit"] and rep["edit"]["level"] != "WARN":      # the draft is in the edit: a decision, not an open step
             rep["optional"] = f"no second pass: the draft is in the edit as it is. To refine it after all: {refine}"
             return ""
-        return f"refine the accepted take: {refine} (or put the draft into the edit as it is: make_edl.py)"
+        edl_cmd = f"{py('make_edl.py')} {cli(ep_path)} --selects {cli(selects)} --out {cli(edl_path)} --pick {sid}="
+        if rep["edit"]:                                         # the edit list has this segment, with a clip that is not this take
+            return (f"refine the accepted take: {refine} - the edit list holds another clip for this segment (the edit line above), so "
+                    f"afterwards put the refined clip in its place: {edl_cmd}<the refined clip>; to use the accepted draft as it is: "
+                    f"{edl_cmd}{cli(rep['accepted']['file'])}")
+        return f"refine the accepted take: {refine} (or put the draft into the edit as it is: {edl_cmd}{cli(rep['accepted']['file'])})"
     if not rep["edit"]:
         return (f"put it into the edit: {py('make_edl.py')} {cli(ep_path)} --selects {cli(selects)} --out {cli(edl_path)} "
                 f"--pick {sid}={cli(mine[-1]['file'])}")
@@ -244,13 +268,31 @@ def main():
     print(f"{ep.title} - {len(ep.segments)} segment(s), {total} s  ({ep_path})")
     print(f"  prompts {prompts} | takes {takes} | selects {selects} | edit list {edl_path}"
           + ("" if edl_path.exists() else " (not made yet)"))
+    # voice samples come before everything they change: say so at the top and again at each segment that waits for one
+    status_of = {seg.id: seg.status for seg in ep.segments}
+    accepted_file = {r["id"]: str((r.get("accepted_take") or {}).get("path") or "") for r in raw["segments"]}
+    voices = [dict(v, first_accepted=status_of[v["first"]].startswith("accepted"), first_file=accepted_file.get(v["first"], ""))
+              for v in voice_plan(ep) if v["later"]]
+    if voices:
+        print("\nfirst (a voice sample changes the prompts of the segments named here - drafts made before it is attached have to be made again)")
+        for v in voices:
+            later = ", ".join(v["later"])
+            if v["first_accepted"]:
+                print(f"     voice      {v['character']} has no sample: {v['first']}, where the character first speaks, is accepted - cut the sample "
+                      f"from its take now" + (f" ({v['first_file']})" if v["first_file"] else "") + f", write it to voice_reference "
+                      f"(references/audio-and-post.md §2), then build the prompt of {later}")
+            else:
+                print(f"     voice      {v['character']} has no sample: first speaks in {v['first']}, which is not accepted yet - draft and accept "
+                      f"{v['first']}, cut the sample from that take, write voice_reference (references/audio-and-post.md §2), and only "
+                      f"then draft {later}")
     reports, prev = [], None
     # one build command for the whole episode: drafts made in one go open from the PLANNED end of a segment that is not accepted yet
     from_plan = any((b.continuity or "").strip().startswith("@observed") and not a_.status.startswith("accepted")
                     for a_, b in zip(ep.segments, ep.segments[1:]))
     for seg, raw_seg in zip(ep.segments, raw["segments"]):
         rep = segment_report(ep, seg, raw_seg, ep_path, prompts, takes, entries.get(seg.id))
-        rep["next"] = next_step(rep, ep_path, prompts, takes, selects, edl_path, prev, from_plan)
+        rep["next"] = next_step(rep, ep_path, prompts, takes, selects, edl_path, prev, from_plan,
+                                [v for v in voices if seg.id in v["later"]])
         reports.append(rep)
         acc = rep["accepted"]
         head = (f"accepted{' with a deviation' if acc['deviation'] else ''}: {acc['take']}"
@@ -265,6 +307,8 @@ def main():
             print(f"     !!         {rep['script_drift']}")
         stale = [] if acc else rep["drafts_out_of_date"]         # once a take is accepted the other drafts no longer matter
         line = f"{len(rep['drafts'])} draft(s)" + (f", {len(stale)} of them made from an earlier prompt ({', '.join(stale[:3])})" if stale else "")
+        if not acc and rep["prompt"] == "changed" and len(rep["drafts"]) > len(stale):
+            line += " - made from the prompt on disk, which is out of date (the prompt line): once it is rebuilt they count as made from an earlier prompt"
         if acc and acc["take"] in rep["drafts_out_of_date"]:
             line += " (the accepted one was made from an earlier prompt: a second pass takes the media.json kept in its folder)"
         for p in rep["second_passes"]:
@@ -286,10 +330,6 @@ def main():
 
     # ---- the episode as a whole ---------------------------------------------------------------------------
     print("\nafter the segments")
-    waiting = [v for v in voice_plan(ep) if v["later"]]
-    if waiting:
-        print("     voices     " + "; ".join(f"{v['character']} has no sample yet (first speaks in {v['first']}; later: {', '.join(v['later'])})"
-                                            for v in waiting) + " - accept that first segment, cut the sample, then batch the later ones")
     post = {"edit_list": edl_path.exists(), "segments_in_edit": len(entries), "subtitles": None, "mix": None}
     todo = ""
     if not edl:
@@ -326,7 +366,9 @@ def main():
         else:
             stale = edl_lib.mix_is_stale(edl, report_path=report if report.exists() else None, edl_path=edl_path)
             post["mix"] = "stale" if stale else "made"
-            print(f"     mix        {final}" + (f" - !! {stale}" if stale else " belongs to this cut"))
+            unfinished = bool(absent) or any(r["edit"] and r["edit"]["level"] == "WARN" for r in reports)
+            print(f"     mix        {final}" + (f" - !! {stale}" if stale else " belongs to this cut")
+                  + (" - a cut that is not the final one (see the edit lines above)" if unfinished and not stale else ""))
             if stale:
                 todo = todo or f"{py('mix_episode.py')} {cli(edl_path)} --out {cli(final)}"
     if todo and not any(r["next"] for r in reports):
@@ -337,7 +379,8 @@ def main():
     if a.json:
         out = Path(a.json)
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps({"episode": str(ep_path), "segments": reports, "post": post, "next": todo}, ensure_ascii=False, indent=1),
+        out.write_text(json.dumps({"episode": str(ep_path), "voices": voices, "segments": reports, "post": post, "next": todo},
+                                  ensure_ascii=False, indent=1),
                        encoding="utf-8")
         print(f"written: {out}")
 

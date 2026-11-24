@@ -737,8 +737,30 @@ def main():
             seen = st_a.returncode == 0 and f"second pass {s2['id']}_refine_1001" in st_a.stdout and "of the accepted take" in st_a.stdout \
                 and "the accepted take or a second pass of it" in st_a.stdout and len(status.get("segments", [])) == len(flow["segments"]) \
                 and st_b.returncode == 0 and "not built yet" in st_b.stdout and "build_prompts.py" in st_b.stdout and "no edit list yet" in st_b.stdout
+            # an edit list that holds another clip than the accepted take, and no second pass yet: the command that swaps it in
+            shutil.copytree(work / "takes/guard", work / "takes/guard_nr")
+            shutil.rmtree(work / "takes/guard_nr" / s2["id"] / f"{s2['id']}_refine_1001")
+            st_c = run([sys.executable, str(HERE / "project_status.py"), "ep_guard.json", "--prompts", "prompts/guard", "--takes", "takes/guard_nr",
+                        "--selects", "selects", "--edl", "edit/guard_a.edl.json"], work)
+            seen = seen and st_c.returncode == 0 and "the edit list holds another clip for this segment" in st_c.stdout \
+                and f"--pick {s2['id']}=" in st_c.stdout and "a cut that is not the final one" not in st_a.stdout
+            # someone who speaks in a later ref2va segment and has no voice sample: said at the top, before any segment
+            novoice = json.loads((work / "ep_guard.json").read_text(encoding="utf-8"))
+            spoken_seg = next(g for g in novoice["segments"] if any(sh.get("dialogue") for sh in g["shots"]))
+            said = next(d for sh in spoken_seg["shots"] for d in sh.get("dialogue") or [])
+            later_seg = novoice["segments"][novoice["segments"].index(spoken_seg) + 1]      # the same person speaks again, not accepted yet
+            later_seg["shots"][0]["dialogue"] = [dict(said)]
+            (work / "ep_guard_novoice.json").write_text(json.dumps(novoice, ensure_ascii=False, indent=1), encoding="utf-8")
+            st_d = run([sys.executable, str(HERE / "project_status.py"), "ep_guard_novoice.json", "--prompts", "prompts/guard", "--takes", "takes/guard",
+                        "--selects", "selects", "--edl", "edit/guard_b.edl.json"], work)
+            top = st_d.stdout.split("\n" + s1["id"] + "  ")[0]
+            wanted = said["speaker"]
+            seen = seen and st_d.returncode == 0 and "first (a voice sample" not in st_a.stdout and "first (a voice sample" in top \
+                and wanted in top and "is accepted - cut the sample from its take now" in top and f"build the prompt of {later_seg['id']}" in top \
+                and "voice sample" in st_d.stdout.split("\n" + later_seg["id"] + "  ")[-1].split("after the segments")[0]
             record("project_status.py (what is accepted, refined and in the edit; the next step for a new storyboard)", "PASS" if seen else "FAIL",
-                   "" if seen else f"{(st_a.stderr.strip() or st_a.stdout.strip())[-260:]} | {(st_b.stderr.strip() or st_b.stdout.strip())[-200:]}")
+                   "" if seen else f"{(st_a.stderr.strip() or st_a.stdout.strip())[-260:]} | {(st_b.stderr.strip() or st_b.stdout.strip())[-200:]} | "
+                                   f"{(st_c.stderr.strip() or st_c.stdout.strip())[-300:]} | voices {wanted}: {(st_d.stderr.strip() or st_d.stdout.strip())[:300]}")
         except Exception as e:  # noqa: BLE001
             record("takes are checked against what they were made from", "FAIL", f"{type(e).__name__}: {e}")
 
