@@ -158,6 +158,16 @@
 | `yetone/magpie` | Every agent's model. One place. |
 | `ztxz16/fastllm` | FastLLM 是用于本地运行和服务部署的大模型推理引擎，支持语言模型、图片生成和视频生成。核心运行时使用 C++，不依赖 PyTorch；支持稠密与 MoE 模型、GPU/CPU/NUMA/磁盘混合推理，以及多卡部署。 |
 
+## 索引之外：同一轮网上检索到的
+
+2026-11-24 另用网页检索找了一遍近期的 H3 + ComfyUI 项目，结果里只有一个仓库是本目录没提过的：
+
+| 仓库 | 是什么 | 对本流程的意义 |
+|------|--------|----------------|
+| `HM-RunningHub/ComfyUI_RH_MinMaxH3` | RunningHub 维护的一整套 H3 运行时节点（`RHMiniMaxH3*`），改编自 MiniMax 发布的源码包，Apache-2.0；T2VA / FL2VA / Ref2VA 都有，自带按层卸载和 adaLN 预计算，面向 24 GB 单卡。**不走 ComfyUI 的原生节点**：权重是另一套文件名和目录（`models/MiniMax-H3/…`，INT8 版在 HF 的 `Gluttony10/MiniMax-H3-INT8-CONVROT`），工作流也是它自己的 | 和本 skill 的原生节点路线是两套东西，权重和工作流都不通用，不要混装着用。README 里有一组数据可作旁证：不挂蒸馏 LoRA 时，`res_multistep` 约 21 个 sigma 点（20 次 DiT）与 50 点 Euler 同 seed 下看不出差别，832×480 × 125 帧的采样时间 101 s 对 249 s——和本流程「关 Turbo 时 20 步 `res_multistep`」的取法一致。它重申的两条也和本 skill 的规则相同：关键帧占时间轴上的真实帧位、必须和画布同尺寸，参考图没有帧位、可以用自己的分辨率；参考上限 9 图 / 3 视频 / 3 音频、合计 12 |
+
+检索到的其余条目（官方模板与教程、`xiaolibai-sys`、`LeonQ8` 的一体化节点、Spectrum、`BennyDaBall` / `RuneXX` 的工作流集、`pottokao` 的 RotNVFP4 加载器、长视频工作流、vLLM-Omni 集成、`open-h3-ir`）都已在本目录里。上游也核对过：`lightx2v/Minimax-h3-Turbo` 自 2026-11-16 起没有新文件，ComfyUI 最新的 tag 仍是 v0.46.2。
+
 ## 仍未读
 
 表里只引了 README 第一句的仓库没有往下读。`henjicc/Henji-AI` 没克隆下来。H3-Image 那一类等用户把 ComfyUI 升到 0.45 以上、要用这个出图模型时再读。
