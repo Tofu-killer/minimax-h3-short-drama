@@ -168,6 +168,25 @@
 
 检索到的其余条目（官方模板与教程、`xiaolibai-sys`、`LeonQ8` 的一体化节点、Spectrum、`BennyDaBall` / `RuneXX` 的工作流集、`pottokao` 的 RotNVFP4 加载器、长视频工作流、vLLM-Omni 集成、`open-h3-ir`）都已在本目录里。上游也核对过：`lightx2v/Minimax-h3-Turbo` 自 2026-11-16 起没有新文件，ComfyUI 最新的 tag 仍是 v0.46.2。
 
+## 2026-11-24 上游复查
+
+逐个看了本流程依赖的上游仓库的最新提交（浅克隆只取提交记录）。没有新提交的：两个生态索引（`MiniMax-AI/awesome-minimax-h3-integration` 停在 11-12，`wildminder/awesome-minimax-H3` 停在 11-16）、`tazmannner/ComfyUI-H3-ResCascade`（10-24）、`LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler`（11-10）、`MiniMax-AI/MiniMax-H3`（10-28）、`ModelTC/Minimax-H3-Turbo`（08-27）、`nkxx188/ComfyUI-MiniMaxH3-Easy`（11-13）、`seesee75-commits/ComfyUI-MiniMaxH3-Director`（11-03）、`HM-RunningHub/ComfyUI_RH_MinMaxH3`（08-06）、`Kosinkadink/ComfyUI-VideoHelperSuite`（09-01）；ComfyUI 最新的 tag 仍是 v0.46.2。有新内容的两处：
+
+### 官方模板库：H3-Image「换角色」（`Comfy-Org/workflow_templates` #1451，2026-11-23）
+
+- 新模板 `image_minimax_h3_image_character_swap`（`minComfyUIVersion` 0.45.0）：把照片里的人换成参考图里的角色，姿势、景别、光照跟源图，脸、服装、材质跟参考。18 个节点，全是原生节点：`UNETLoader`（`minimax_h3_image_pruned_int8_convrot`）→ `LoadLoraModel`（`h3_image_character_swap_v1.safetensors` 1.0）→ `KSampler` 6 步 CFG 1 euler / simple；`MiniMaxH3ImageConditioning` 的 `images.image_0` 接缩过的源图、`images.image_1` 接角色参考，宽高取自源图；负向是 `ConditioningZeroOut`。源图先 `scale total pixels` 到 1 MP，再 `scale to multiple` 32。模板默认的文本编码器是 `qwen3vl_32b_minimax_h3_int8_convrot`（27.1 GB）；作者模型卡用的是 `…_nvfp4_awq`。
+- LoRA 在 `akatz-ai/MiniMax-H3-Image-Character-Swap-LoRA`（2026-11-20 建仓）：155,110,448 字节，SHA-256 `68378574bede5ca9d7d69df8bb8f8d9f7860d07ea45b26d9c67a7babf50d330f`（HF 接口与模型卡一致）；rank 16，AI Toolkit 训练，最后一阶段 140 对、18 个验证例；作者在 ComfyUI 0.45.0、RTX 4090（dynamic VRAM）上测，只评过 int8_convrot 底模、约 1 MP；「只用于人和类人角色；小的或被遮挡的人、手靠近道具、衣服和背景颜色接近时要检查；可能留下原来的衣服、改动目标周围、选错人」（模型卡原话的意思）。对比图是挑过的例子，没有量化。
+- `Comfy-Org/MiniMax-H3-Image` 在 11-24 的文件：DiT `…_pruned_int8_convrot` 20.98 GB、`…_pruned_bf16` 40.23 GB、`…_pruned_w4a8` 12.55 GB；文本编码器 `qwen3vl_32b_minimax_h3_nvfp4_awq`（15.69 GB，SHA-256 与 `Comfy-Org/MiniMax-H3` 里那一个相同——已经装了 H3 的机器不用再下）、`…_int8_convrot` 27.14 GB、提示词扩写 `qwen3.8_27b_minimax_h3_image_pe_w4a8_gptq` 17.29 GB、`qwen3.5_9b_w4a8_gptq` 7.34 GB；VAE 1.17 GB。仓库说明现在列三个官方模板：Image Edit、Text to Image、Character Swap。
+- **许可全文读了**（LoRA 仓库带的 LICENSE 与 `MiniMaxAI/MiniMax-H3-Image` 的逐字节相同，18,208 字节）：许可日期 2026-11-10；适用地域 = 全球，除去欧盟、英国、韩国、美国（澳洲在内）；§V.4 输出也不得在排除地区使用、展示或分发；§V.3 输出不得用来改进别的 AI 模型；§IV 年化营收超过 100 万美元或对第三方提供托管服务要另行书面授权，商用产品界面要醒目显示 “MiniMax-H3-Image”；附件 A 第 12 条：往公共环境发布要醒目标明是机器生成的；适用香港法律。不是法律意见。
+- 进了 skill：`references/image-stage.md` §1 多一行和一条「什么时候用」，`assets/image-prompts.md` §13 是两句作者原句。没有在显卡上跑过。
+
+### KJNodes（`kijai/ComfyUI-KJNodes`，1.5.5 之后到 2026-11-23）
+
+- `MiniMax H3 Prompt Weight` 多了两个视频模式（11-18）：`edit video` 包的是 `MiniMaxH3ReferenceToVideo`（参考图最多 9、参考视频 3、参考视频的声音 3、参考音频 3，`ref_image_size` match / max，宽高填 0 时按 1344×768，帧数吸附到 17k+5），`first last frame` 包的是 `MiniMaxH3ImageToVideo`（首帧、尾帧）；两个模式都有 `start_percent` / `end_percent`，范围之外提示词不带参考重新编码。11-13 起还支持 `[cat|fox:-1]` 式的提示词混合。
+- 它的 `execute` 第一行是 `from comfy_extras.nodes_minimax_h3 import MiniMaxH3ImageConditioning, MiniMaxH3ReferenceToVideo, MiniMaxH3ImageToVideo`。**在真实的 ComfyUI 0.37.2 上**：节点注册得上（`/object_info` 里有，界面里搜得到），但这条 import 报 `ImportError: cannot import name 'MiniMaxH3ImageConditioning'`——0.37.2 的 `nodes_minimax_h3.py` 只有视频那几个节点。所以用户现在的 0.37.2 用不了它，要 ≥ 0.45。SKILL.md 铁律 2 里的说法照此改了。
+- `Skip DiT Blocks KJ`（11-23，实验节点）：按序号整块跳过 transformer block，靠 ComfyUI 的 DiT block replace 补丁；说明里列的支持模型是 Flux、Chroma、Wan、LTX、Qwen-Image、HunyuanVideo、SD3、Kandinsky5「等」，没有点名 H3，跳不到的块只记一条警告。没有试，不进流程。
+- 其余：`Get Workflow KJ`（把工作流取成字符串）、支持 H3-Image 的 tiny VAE（11-15）、几处重采样提速——和本流程无关。
+
 ## 仍未读
 
 表里只引了 README 第一句的仓库没有往下读。`henjicc/Henji-AI` 没克隆下来。H3-Image 那一类等用户把 ComfyUI 升到 0.45 以上、要用这个出图模型时再读。

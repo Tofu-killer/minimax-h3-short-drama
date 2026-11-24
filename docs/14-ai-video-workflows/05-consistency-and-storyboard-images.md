@@ -166,6 +166,7 @@ G 脸漂了就换头，不重抽（BFS head swap）
 - **训练**：Fizgig 9.6+ 支持 LoRA / LoKR / 编辑 LoRA，int8 训练 21.0–21.7 GB、带 2048 预览峰值 22.7 GB（RTX 5090 实测）→ 24 GB 刚好；Fizgig 文档称 ComfyUI 默认动态显存下 LoRA 约弱 15%（issue #17690，`--disable-dynamic-vram` 可避免）。
 - **许可**：年收入 ≤ 100 万美元且不做托管服务可商用；产品界面须显示模型名；**输出也不得在排除地区（欧盟 / 英 / 韩 / 美）使用**（LICENSE §V.4，面向这些地区发行前自查）。
 - **评级：试用**（场景母版、九宫格、道具、海报级剧照；人物首帧**不用它**）。
+- **2026-11-24 补**：带身份的编辑现在有一枚专用 LoRA——Akatz 的 Character Swap V1（`akatz-ai/MiniMax-H3-Image-Character-Swap-LoRA`，155 MB，rank 16，1.0），11-23 进了官方模板库（`image_minimax_h3_image_character_swap`）：`<Picture 1>` 里的一个人换成 `<Picture 2>` 的角色，姿势、景别、光照跟源图；作者只在 1 MP、int8_convrot、RTX 4090 上测过，对比图是挑过的例子，没有量化。上面的评级不变，多一个「构图已定、只换人」的用法；细节和许可全文的要点见 `../13-github-survey/14-index-triage-2026-11-23.md` 的「2026-11-24 上游复查」。
 
 ### 3.4 把 H3 视频底模当图像编辑器（P-H3-Image / Fizgig Still / H3 Image Studio / musubi 单帧）
 

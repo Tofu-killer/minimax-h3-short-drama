@@ -207,3 +207,19 @@ _`Comfy-Org/Qwen-Image-Edit` 的 `split_files/loras/Qwen-Image-Edit-2509-Light-M
 ```text
 参考色调，移除图1原有的光照并参考图2的光照和色调对图1重新照明
 ```
+
+## 13. 换角色（MiniMax-H3-Image + Character Swap V1，需 ComfyUI ≥ 0.45）
+
+_`akatz-ai/MiniMax-H3-Image-Character-Swap-LoRA` 的 `h3_image_character_swap_v1.safetensors` 1.0，6 步 CFG 1 euler / simple，不接提示词扩写；`<Picture 1>` = 要改的图（构图、姿势、光照跟它走，先缩到约 1 MP），`<Picture 2>` = 角色参考（定妆照或单人全身）。把图里的一个人整个换成参考里的角色——脸、服装、材质一起换；只是脸漂了用 §10 的换头。只用于人和类人角色；源图只用自己的图（照片、3D 假人渲染、自己生成的图、自己草稿里截的帧）。没有在 4090 上跑过，作者和官方模板的说法见 `../references/image-stage.md` §1_
+
+**作者模型卡的示例句（逐字；多人镜头用位置、衣着或正在做的事点名要换的那个人）**
+
+```text
+Replace the woman in the dark jacket in <Picture 1> with the character from <Picture 2>. Keep her position, pose, and expression. Preserve the background and everyone else in the scene. Carry over the reference character's costume and materials, and match the light in the source shot.
+```
+
+**官方模板说明里的作者句（缩短版，逐字）：前景里有多个人、只换其中一个时**
+
+```text
+Swap only the red-haired woman in the dark high-collared jacket in the close foreground in <Picture 1> with the character from <Picture 2>. Keep the original scene, framing, other people, and the target's placement and action.
+```
