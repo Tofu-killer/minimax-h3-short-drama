@@ -1726,9 +1726,11 @@ def main():
     ap.add_argument("--log", help="append one row per take to this CSV (e.g. logs/takes.csv)")
     a = ap.parse_args()
 
-    if a.collect:
-        folders = ([a.workflow] if a.workflow else []) + a.collect       # a first folder may land in the positional slot
-        sys.exit(collect(folders, a))
+    if a.collect:                        # needs no workflow; a folder typed before the option counts as one more to collect
+        first = [a.workflow] if a.workflow and Path(a.workflow).is_dir() else []
+        if a.workflow and not first:
+            print(f"note: --collect needs no workflow file - {a.workflow} is not used")
+        sys.exit(collect(first + a.collect, a))
     if not a.workflow:
         die("give the workflow file to run (or --collect <take folder> to fetch a job queued earlier)")
     wf = json.loads(Path(a.workflow).read_text(encoding="utf-8"))
