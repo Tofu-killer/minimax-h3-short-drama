@@ -53,6 +53,14 @@ def srt_time(t: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
+def portable(path: str) -> str:
+    """A path below the working directory written relative to it (forward slashes); anything else as it is."""
+    try:
+        return Path(path).resolve().relative_to(Path.cwd().resolve()).as_posix()
+    except (ValueError, OSError):
+        return path
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("episode")
@@ -103,7 +111,9 @@ def main():
                            f"validate_episode.py lists every missing file at once")
             continue
         text = next(c["text"] for c in bp.content if c["type"] == "text")
-        media = [c for c in bp.content if c["type"] != "text"]
+        # reference paths as they are from the project root (the folder every script runs from): a project that is moved
+        # to another drive or machine keeps working, and so do the copies kept beside each take
+        media = [dict(c, path=portable(c["path"])) if c.get("path") else c for c in bp.content if c["type"] != "text"]
         frames = frames_for_seconds(seg.duration)
         target = out / f"{seg.id}.txt"
         before = target.read_text(encoding="utf-8") if target.exists() else None

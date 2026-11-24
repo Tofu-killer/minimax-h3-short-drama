@@ -135,6 +135,20 @@ sha256_file = take_records.sha256_file
 upload_name = take_records.upload_name      # <ascii stem>_<8 hex of the content hash><suffix>
 
 
+def on_server(server: str, name: str) -> bool | None:
+    """Is this file in ComfyUI's input folder? None when the server does not answer."""
+    sub, _, base = name.rpartition("/")
+    query = urllib.parse.urlencode({"filename": base, "type": "input", **({"subfolder": sub} if sub else {})})
+    try:
+        with urllib.request.urlopen(urllib.request.Request(f"{server}/view?{query}", method="GET"), timeout=20) as r:
+            r.read(1)
+            return r.status == 200
+    except urllib.error.HTTPError:
+        return False
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def upload(server, path: Path) -> str:
     boundary = uuid.uuid4().hex
     ctype = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
@@ -336,12 +350,40 @@ def apply_media(wf: dict, media_json: Path, server: str, media: dict, do_upload:
             inputs.pop(key, None)
     next_id = max([int(k) for k in wf if str(k).isdigit()] + [0]) + 1000        # ids well clear of the exported ones
 
+    # --media is a take's own copy (<take folder>/media.json): a reference file that was made again under its name since -
+    # a first frame overwritten after the take, as the stills stage tells you to - is not what this take saw. The copy it
+    # was sent still lies in ComfyUI's input folder under its content-hash name: use that one.
+    sent_then: dict = {}
+    if (media_json.parent / "run.json").is_file():
+        try:
+            sent_then = json.loads((media_json.parent / "run.json").read_text(encoding="utf-8")).get("media_sha256") or {}
+        except (OSError, json.JSONDecodeError):
+            sent_then = {}
+
+    def plain(name: str) -> str:                         # upload name without its content hash
+        return re.sub(r"_[0-9a-f]{8}(\.[A-Za-z0-9]+)$", r"\1", name)
+
+    reused: list[str] = []
+
     def load_node(kind: str, path: Path, title: str) -> str:
         nonlocal next_id
         if not path.exists():
             die(f"--media: reference file not found: {path}")
-        name = upload(server, path) if do_upload else upload_name(path)
-        media[name] = sha256_file(path)
+        now = upload_name(path)
+        then = next((n for n in sent_then if plain(n) == plain(now)), None) if sent_then and now not in sent_then else None
+        there = on_server(server, then) if then else None
+        if then and there is not False:
+            name = then
+            media[name] = sent_then[then]
+            reused.append(f"{path} has other content now than when this take was made: the copy it was sent ({then}) "
+                          + ("is still in ComfyUI's input folder and is used" if there else
+                             "is used - whether it is still in ComfyUI's input folder could not be checked (the server does not answer)"))
+        else:
+            if then:
+                reused.append(f"{path} has other content now than when this take was made, and the copy it was sent ({then}) is no "
+                              f"longer in ComfyUI's input folder: the second pass gets the picture of now")
+            name = upload(server, path) if do_upload else now
+            media[name] = sha256_file(path)
         new = str(next_id)
         next_id += 1
         wf[new] = {"class_type": "LoadImage" if kind == "image" else "LoadAudio",
@@ -422,7 +464,7 @@ def apply_media(wf: dict, media_json: Path, server: str, media: dict, do_upload:
                      "picture they load is pinned into this take"
                      + (" and --anchor adds nothing for this segment" if anchors and anchor else "")
                      + " - export the draft workflow without guide nodes")
-    return lines
+    return lines + reused
 
 
 def first_pass_latent(wf: dict):
@@ -1082,7 +1124,8 @@ def canvas_of(first_pass: str) -> str:
     return m.group(1) if m else ""
 
 
-def kept_latent_note(folder: Path, inputs_sha: str, frames: int = 0, first_pass: str = "", h3_node: str = "") -> str:
+def kept_latent_note(folder: Path, inputs_sha: str, frames: int = 0, first_pass: str = "", h3_node: str = "",
+                     media_json: str | None = None) -> str:
     """--from-latent: the latent already is that take. Say so - and say when the job around it is not the one the
     take was made with: other prompt or references (the second pass is steered by them), another canvas on the H3
     node (references and pinned frames are prepared for that size), another length (the latent has the old one)."""
@@ -1092,8 +1135,11 @@ def kept_latent_note(folder: Path, inputs_sha: str, frames: int = 0, first_pass:
         return f"; continues the take in {folder.name}"
     wrong = []
     if r.get("inputs_sha") and r["inputs_sha"] != inputs_sha:
-        wrong.append("the prompt or references given now differ from the ones it was made with - the second pass would be steered "
-                     "by other text or pictures than the first" + made_from_hint(folder))
+        what = take_records.what_changed(r, Path(media_json), folder) if media_json else []
+        own = bool(media_json) and Path(media_json).resolve() == (folder / "media.json").resolve()
+        wrong.append("the prompt or references given now differ from the ones it was made with"
+                     + (f" ({'; '.join(what)})" if what else "") + " - the second pass would be steered by other text or pictures "
+                     "than the first" + ("" if own else made_from_hint(folder)))
     then, now = canvas_of(str(r.get("first_pass") or "")), canvas_of(first_pass)
     if then and now and then != now:
         w, h = then.split("x")
@@ -1845,7 +1891,7 @@ def main():
         if p["state"] == "pending":
             pass
         elif p["state"] != "done" and a.from_latent:
-            note += kept_latent_note(Path(a.from_latent), inputs_sha, frames, first_pass_signature(view), h3_id)
+            note += kept_latent_note(Path(a.from_latent), inputs_sha, frames, first_pass_signature(view), h3_id, a.media)
         elif p["state"] != "done":
             note += same_seed_note(out, p["dest"], p["seed"], inputs_sha, first_pass_signature(view),
                                    refine=any(str(v.get("class_type", "")).startswith(SECOND_PASS[:4]) for v in view.values()))
