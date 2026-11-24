@@ -139,6 +139,50 @@ def source_take(clip: Path, acc: dict, episode: Path) -> Path | None:
     return None
 
 
+def lines_of_take(seg: dict, episode: Path) -> list[str] | None:
+    """The dialogue lines the accepted take was made with, read from the prompt kept beside it (prompt.txt in the take's
+    folder) or, for takes made before prompts were kept, from the prompt file its run.json names. None when neither
+    can be read."""
+    acc = seg.get("accepted_take") or {}
+    rel = Path(str(acc.get("path") or ""))
+    if not rel.name:
+        return None
+    for base in ([Path()] if rel.is_absolute() else [Path.cwd(), episode.resolve().parent.parent]):
+        take = base / rel
+        places = [take.parent / "prompt.txt"]
+        rec = take_records.take_record(take) or {}
+        if rec.get("media_json"):
+            media = Path(rec["media_json"]) if Path(rec["media_json"]).is_absolute() else base / rec["media_json"]
+            try:
+                spec = json.loads(media.read_text(encoding="utf-8"))
+                places.append(media.parent / spec.get("prompt_file", f"{spec.get('segment', seg['id'])}.txt"))
+            except (OSError, json.JSONDecodeError):
+                pass
+        for f in places:
+            try:
+                return [" ".join(t.split()) for t in re.findall(r"<d>\[[^\]]*\]\s*(.*?)</d>", f.read_text(encoding="utf-8"), re.S)]
+            except OSError:
+                continue
+    return None
+
+
+def script_drift(seg: dict, episode: Path) -> str:
+    """The storyboard's lines against the lines the accepted take was made with. Subtitles are written from the
+    storyboard: when a line was edited after the take was accepted, they would show words nobody says."""
+    made = lines_of_take(seg, episode)
+    if made is None:
+        return ""
+    now = [" ".join(str(d.get("text", "")).split()) for sh in seg.get("shots", []) for d in sh.get("dialogue", [])]
+    if sorted(made) == sorted(now):
+        return ""
+    gone = [t for t in made if t not in now]
+    new = [t for t in now if t not in made]
+    return ("the storyboard's lines are not the ones the accepted take was made with"
+            + (f" - in the take: {' / '.join(gone)[:120]}" if gone else "") + (f" - in the storyboard now: {' / '.join(new)[:120]}" if new else "")
+            + ". Subtitles come from the storyboard: put the line back as it is spoken, or rebuild the segment "
+              "(build_prompts.py --only) and make its take again")
+
+
 def provenance(seg: dict, clip: Path, episode: Path) -> tuple[str, str]:
     """Is this clip the take the storyboard records as accepted, or a second pass of it (same prompt, references
     and seed)? ('', '') when it is; ('WARN', why) when its record says it is something else or the segment has no
@@ -206,7 +250,7 @@ def main():
         if not Path(v).exists():
             sys.exit(f"--pick {k}: clip not found: {v}")
         picks[k.strip()] = Path(v)
-    segments, missing, doubts, untraced, replaced, ambiguous = [], [], [], [], [], []
+    segments, missing, doubts, untraced, replaced, ambiguous, drifted = [], [], [], [], [], [], []
     any_accepted = any(seg.get("accepted_take") for seg in ep["segments"])
 
     def check(seg: dict, clip: Path, entry: dict, kept: bool = False) -> None:
@@ -223,6 +267,10 @@ def main():
 
     for seg in ep["segments"]:
         sid = seg["id"]
+        drift = script_drift(seg, ep_path)
+        if drift:
+            drifted.append(sid)
+            print(f"  WARN {sid}: {drift}")
         if sid in old and sid not in picks:
             segments.append(old[sid])
             kept_clip = Path(str(old[sid].get("video") or ""))

@@ -588,6 +588,15 @@ def main():
             follows = follows and "first/s03.png" in r5.stdout.split("MAKE AGAIN")[-1] \
                 and "made from an earlier version of bible/chars/hero_face.png" in plan5 \
                 and "For other candidates of the same prompt" in plan5      # a picture on disk keeps its command
+            # a scene crop is cut by hand from the scene master: when the master is made again, the crop is listed to cut again
+            (work / "bible/scenes").mkdir(parents=True, exist_ok=True)
+            (work / "bible/scenes/room_master.png").write_bytes(b"master v1")
+            (work / "bible/scenes/room_s03_crop.png").write_bytes(b"crop of v1")
+            run(plan_cmd, work)                                   # both on disk: the crop belongs to this master
+            (work / "bible/scenes/room_master.png").write_bytes(b"master v2")
+            r6 = run(plan_cmd, work)
+            follows = follows and "CUT AGAIN (1): bible/scenes/room_s03_crop.png" in r6.stdout \
+                and "CUT AGAIN - the scene master was made again" in (work / "stills/plan.md").read_text(encoding="utf-8")
             # the person an over-the-shoulder frame looks past gets the back view once one is planned, never the face
             ots = json.loads(json.dumps(st))
             ots["characters"].append({"id": "guest", "name": "Guest", "sheet_phrase": "a woman in her thirties with a short bob and a red scarf",
@@ -687,6 +696,15 @@ def main():
                 and all(f"WARN {s2['id']}" not in e.stdout and f"note {s2['id']}" not in e.stdout and e.returncode == e1.returncode
                         for e in (e2, e3, e4)) \
                 and f"WARN {s2['id']} (entry kept from guard_a.edl.json" in e5.stdout    # a kept entry is checked again on every run
+            # a line edited in the storyboard after its take was accepted: the subtitles would show words nobody says
+            edited = json.loads((work / "ep_guard.json").read_text(encoding="utf-8"))
+            spoken = edited["segments"][1]["shots"][1]["dialogue"][0]["text"]
+            edited["segments"][1]["shots"][1]["dialogue"][0]["text"] = "现在就开始"
+            (work / "ep_guard_edited.json").write_text(json.dumps(edited, ensure_ascii=False, indent=1), encoding="utf-8")
+            e6 = run([sys.executable, str(HERE / "make_edl.py"), "ep_guard_edited.json", "--selects", "selects", "--out", "edit/guard_e.edl.json",
+                      "--pick", f"{s2['id']}={draft / 'clip.mp4'}"], work)
+            told = told and "lines are not the ones the accepted take was made with" in e6.stdout and spoken in e6.stdout \
+                and "lines are not the ones" not in e4.stdout
             record("make_edl.py compares each clip with the accepted take (another seed warned; a refine, and a copy of it, pass)",
                    "PASS" if told else "FAIL", "" if told else f"{e1.stdout.strip()[-200:]} | {e3.stdout.strip()[-200:]} | {e5.stdout.strip()[-160:]}")
         except Exception as e:  # noqa: BLE001

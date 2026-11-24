@@ -178,6 +178,7 @@ class Plan:
         self.updated: list[str] = []
         self.kept: list[str] = []
         self.why: dict[str, str] = {}             # picture -> why it has to be made again
+        self.old_crops: list[str] = []            # scene crops cut from a master that has been made again since
         self.frame_inputs_of: dict[tuple, set] = {}   # (segment, shot index) -> the pictures its frame picture is made from
         self.record_file = prompts / ".stills_plan.json"      # what this script wrote, and which prompt each picture was made from
         try:
@@ -447,10 +448,29 @@ class Plan:
                                   f"frame {who}'s back view instead (run this again with --back {who}), or no picture of {who} at all")
 
     def crops(self) -> list[str]:
-        out = []
+        """Scene crops the frame pictures need and that are still to cut: not on disk yet, or cut from a scene master
+        that has been made again since (self.old_crops names those)."""
+        out, rec = [], self.record.setdefault("crops", {})
+        masters = {s["id"]: s.get("_master") for s in self.raw.get("scenes", [])}
         for it in self.items:
             for need in it["needs"]:
-                if need.endswith("_crop.png") and not Path(need).exists() and need not in out:
+                if not need.endswith("_crop.png") or need in out:
+                    continue
+                if not Path(need).exists():
+                    rec.pop(need, None)
+                    out.append(need)
+                    continue
+                master = next((m for sid, m in masters.items() if m and Path(need).name.startswith(sid + "_")), None)
+                try:
+                    now = hashlib.sha256(Path(master).read_bytes()).hexdigest()[:16] if master else None
+                except OSError:
+                    now = None
+                mtime = round(Path(need).stat().st_mtime, 2)
+                seen = rec.get(need)
+                if seen is None or seen.get("mtime") != mtime or not seen.get("master"):     # first seen, or cut again since
+                    rec[need] = {"master": now, "mtime": mtime}
+                elif now and seen["master"] != now:
+                    self.old_crops.append(need)
                     out.append(need)
         return out
 
@@ -482,7 +502,9 @@ def render(plan: Plan, episode: str) -> tuple[str, int, int]:
             for c in crops:
                 scene = next((s for s in plan.raw.get("scenes", []) if Path(c).name.startswith(s["id"] + "_")), None)
                 master = scene["_master"] if scene else "<scene master>"
-                lines.append(f'    ffmpeg -i {master} -vf "crop={w * 3 // 2}:{h * 3 // 2}:X:Y,scale={w}:{h}:flags=lanczos" {c}')
+                if c in plan.old_crops:                      # on a line of its own: a trailing comment would be passed to ffmpeg by cmd
+                    lines += ["", f"CUT AGAIN - the scene master was made again after `{c}` was cut:", ""]
+                lines.append(f'    ffmpeg -y -i {master} -vf "crop={w * 3 // 2}:{h * 3 // 2}:X:Y,scale={w}:{h}:flags=lanczos" {c}')
             lines.append("")
         for i in part:
             state = "have it" if i["have"] else f"{i['n']} candidates"
@@ -551,6 +573,9 @@ def main():
     if again:
         print(f"MAKE AGAIN ({len(again)}): {', '.join(again)} - on disk, but made before its prompt or one of its input pictures changed; "
               f"counted above as still to make")
+    if plan.old_crops:
+        print(f"CUT AGAIN ({len(plan.old_crops)}): {', '.join(plan.old_crops)} - cut from a scene master that has been made again since "
+              f"(the ffmpeg lines are in the plan); the frame pictures made from them follow once the crops are new")
     # a picture that exists needs no command - but one whose prompt quotes an outdated look was made from that look
     checks = [(i["what"], p) for i in plan.items for p in i["problems"] if not i["have"] or "sheet_phrase as it is now" in p]
     for what, p in checks:
