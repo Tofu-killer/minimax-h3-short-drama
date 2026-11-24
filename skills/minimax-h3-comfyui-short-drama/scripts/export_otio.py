@@ -129,6 +129,8 @@ def main():
     print(f"timeline {dur.value:g} frames @ {dur.rate:g} fps ({total_frames} planned), "
           f"tracks: {', '.join(t.name + '=' + str(len(t)) for t in tl.tracks)}")
     print("wrote " + ", ".join(wrote))
+    if wrote:
+        edl_lib.note_export(edl, edl_path, "otio", str(wrote[0]))
     if conformed:
         print(f"NOTE: {', '.join(conformed)} are not {fps:g} fps clips; the editor will conform them - check their length there")
     print("levels are not exported: use the master mix track or apply the gains from the mix report by hand")

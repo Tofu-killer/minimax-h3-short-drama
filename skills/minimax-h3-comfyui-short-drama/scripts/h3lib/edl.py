@@ -122,6 +122,51 @@ def sound_signature(edl: dict, edl_path) -> str:
     return hashlib.sha1(_json.dumps(key, sort_keys=True, ensure_ascii=False, default=str).encode("utf-8")).hexdigest()[:12]
 
 
+def exports_file(edl_path) -> Path:
+    return Path(str(edl_path)[:-len(".edl.json")] + ".exports.json") if str(edl_path).endswith(".edl.json") \
+        else Path(edl_path).with_suffix(".exports.json")
+
+
+def note_export(edl: dict, edl_path, kind: str, target: str) -> None:
+    """Remember that the edit list was exported (an editor project is a copy: it does not follow later changes).
+    Kept beside the edit list as <name>.exports.json; project_status.py compares it with the cut of now."""
+    import json as _json
+    import time as _time
+    f = exports_file(edl_path)
+    try:
+        rec = _json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        rec = {}
+    rec[kind] = {"path": str(target), "at": round(_time.time(), 1), "cut_signature": cut_signature(edl),
+                 "clips_signature": clips_signature(edl, edl_path), "sound_signature": sound_signature(edl, edl_path)}
+    try:
+        f.write_text(_json.dumps(rec, ensure_ascii=False, indent=1), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def exports_state(edl: dict, edl_path) -> list[tuple[str, str, str]]:
+    """[(kind, path, '' or why it is out of date)] for the exports recorded beside the edit list."""
+    import json as _json
+    try:
+        rec = _json.loads(exports_file(edl_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    out = []
+    for kind, e in sorted(rec.items()):
+        if not isinstance(e, dict):
+            continue
+        why = ""
+        if e.get("cut_signature") != cut_signature(edl):
+            why = "exported from another cut (a clip or an in / out frame changed since)"
+        elif e.get("clips_signature") and e["clips_signature"] != clips_signature(edl, edl_path):
+            why = "a clip was replaced under the same name since it was exported"
+        elif e.get("sound_signature") and e["sound_signature"] != sound_signature(edl, edl_path):
+            why = "the music, a level or the time of a line changed since it was exported"
+        out.append((kind, str(e.get("path") or ""), why))
+    return out
+
+
 def clip_sha(path) -> str:
     """First 12 hex digits of a file's SHA-256, '' when it cannot be read."""
     import hashlib

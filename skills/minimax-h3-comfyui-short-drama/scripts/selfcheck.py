@@ -765,7 +765,8 @@ def main():
             e4 = run(edl + ["--out", "edit/guard_d.edl.json", "--pick", f"{s2['id']}={draft / 'clip.mp4'}"], work)
             e5 = run([sys.executable, str(HERE / "make_edl.py"), "ep_guard.json", "--selects", "selects", "--out", "edit/guard_a.edl.json"], work)
             told = f"WARN {s2['id']}" in e1.stdout and "another seed" in e1.stdout and "CHECK: " in e1.stdout \
-                and all(f"WARN {s2['id']}" not in e.stdout and f"note {s2['id']}" not in e.stdout and e.returncode == e1.returncode
+                and all(f"WARN {s2['id']}" not in e.stdout and "cannot tell what this file was made from" not in e.stdout
+                        and "which is not the accepted take" not in e.stdout and e.returncode == e1.returncode
                         for e in (e2, e3, e4)) \
                 and f"WARN {s2['id']} (entry kept from guard_a.edl.json" in e5.stdout    # a kept entry is checked again on every run
             # a line edited in the storyboard after its take was accepted: the subtitles would show words nobody says

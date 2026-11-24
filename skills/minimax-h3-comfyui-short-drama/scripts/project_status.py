@@ -255,10 +255,22 @@ def next_step(rep: dict, ep_path: Path, prompts: Path, takes: Path, selects: Pat
         folder = Path(rep["accepted"]["file"]).parent
         has_latent = any(folder.glob("*video*.latent"))
         own = folder / "media.json"
+        target = ""
+        if not refine_sets:                  # a draft that is not 1344x768: the workflow's own 1920x1088 target is not for it
+            try:
+                made = re.search(r"(\d+)x(\d+), \d+ frames", str(json.loads((folder / "run.json").read_text(encoding="utf-8")).get("first_pass")))
+            except (OSError, json.JSONDecodeError):
+                made = None
+            if made and (int(made.group(1)), int(made.group(2))) not in ((1344, 768), (768, 1344)):
+                dw, dh = int(made.group(1)), int(made.group(2))
+                tw = max(32, round(dw * 10 / 7 / 32) * 32)
+                th = max(32, round(tw * dh / dw / 32) * 32)
+                target = (f" - this draft is {dw}x{dh}: the workflow's own second-pass target (1920x1088) belongs to 1344x768 drafts. "
+                          f"Give yours, about 1.4 times the draft in multiples of 32: --set 300.width={tw} --set 300.height={th}")
         refine = (f"{py('comfy_submit.py')} {cli(refine_wf)} --media {cli(own if own.exists() else media)} "
                   + (f"--from-latent {cli(folder)}" if has_latent else f"--seed {rep['accepted']['seed']}{draft_sets}")
                   + f"{refine_sets}{log} --dry-run"
-                  + (" (target size as in the second passes this project already has)" if refine_sets else ""))
+                  + (" (target size as in the second passes this project already has)" if refine_sets else target))
         if rep["edit"] and rep["edit"]["level"] != "WARN":      # the draft is in the edit: a decision, not an open step
             rep["optional"] = f"no second pass: the draft is in the edit as it is. To refine it after all: {refine}"
             return ""
@@ -421,6 +433,22 @@ def main():
                   + (" - a cut that is not the final one (see the edit lines above)" if unfinished and not stale else ""))
             if stale:
                 todo = todo or f"{py('mix_episode.py')} {cli(edl_path)} --out {cli(final)}"
+        for kind, where, why in edl_lib.exports_state(edl, edl_path):
+            print(f"     export     {kind}: {where}" + (f" - !! {why}: export again" if why else " - made from this cut"))
+            post.setdefault("exports", {})[kind] = why or "current"
+        # clips in the selects folder that the edit does not use (a rough cut's leftovers): --overwrite would take them back
+        used = {Path(str(e.get("video") or "")).resolve() for e in entries.values()}
+        spare = []
+        if selects.is_dir():
+            for r in reports:
+                for c in sorted(selects.glob(f"{r['id']}*")):
+                    if c.suffix.lower() in take_records.VIDEO_EXT and c.is_file() and c.resolve() not in used:
+                        raw_seg = next(x for x in raw["segments"] if x["id"] == r["id"])
+                        level, _why = take_records.provenance(raw_seg, c, ep_path)
+                        spare.append(c.name + (" (not the accepted take)" if level == "WARN" else ""))
+        if spare:
+            print(f"     selects    {selects} holds {len(spare)} clip(s) the edit list does not use: {', '.join(spare[:6])} - take out the "
+                  f"ones that are not accepted takes; make_edl.py offers them by name and a rebuild from that folder would use them")
         # the score is optional and belongs to the finished cut: its length is the length of the cut
         music = edl.get("music") if isinstance(edl.get("music"), dict) else None
         if music and music.get("file"):

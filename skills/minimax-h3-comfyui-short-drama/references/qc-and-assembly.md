@@ -166,4 +166,4 @@ refine:  {workflow: h3_ref2va_sage_refine.api.json, note: "中选片段的 laten
 camera:  {workflow: h3_ref2va_sage.api.json, set: "146.value=false 123.sampler_name=res_multistep", steps: 20, lora: none, note: "有运镜的镜头重出（铁律 16）；算新片段，要重新选片和观测"}
 ```
 
-任何一段都能从 `prompts/ + bible/ + project.yaml` 重新生成；成片能从 `selects/ + edit/` 重新装配。
+任何一段都能从 `prompts/ + bible/ + project.yaml` 重新生成；成片能从剪辑单（`edit/`）和它指向的片段重新装配——片段要么在 `selects/` 里，要么是 `make_edl.py --pick` 直接指到的 `takes/` 里的文件（`project_status.py` 给的就是后一种命令，省掉一次复制）。两种放法可以混用；`selects/` 里不在剪辑单里、又不是采纳片段的文件（比如粗剪时放进去的草稿）要拿走，`make_edl.py` 和 `project_status.py` 都会点名。

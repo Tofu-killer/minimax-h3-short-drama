@@ -241,6 +241,7 @@ def main():
         print("  master_mix is muted: un-mute it and mute the rest only if no cut was moved")
     for n_ in notes:
         print("  NOTE " + n_)
+    edl_lib.note_export(edl, edl_path, "capcut", str(drafts / name))
     if edl_lib.subtitles_stale(edl, edl_path):
         print("  WARN the cuts or the clips changed after the subtitles were timed: run retime_subtitles.py again, then export once more")
     stale = edl_lib.mix_is_stale(edl, report_path=a.report, mix_path=a.mix, edl_path=edl_path)

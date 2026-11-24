@@ -169,6 +169,30 @@ def main():
         if level == "WARN":
             entry["take_check"] = doubt                      # mix_episode.py repeats it: the master should not pass in silence
 
+    def also_there(seg: dict, used: Path) -> None:
+        """Clips of this segment in the selects folder that the edit does not use: say what each one is. A rough cut's
+        clip left there is offered back by name on every run, and --overwrite would put it into the film."""
+        sid = seg["id"]
+        for c in candidates(selects, sid):
+            if used.exists() and c.resolve() == used.resolve():
+                continue
+            level, why = provenance(seg, c, ep_path)
+            if level == "WARN" and any_accepted:
+                print(f"  note {sid}: {selects} also holds {c.name}, which is not the accepted take nor a second pass of it "
+                      f"({why[:150]}). It is not used - take it out of the folder, so that nothing picks it up again")
+            elif level == "note":
+                print(f"  note {sid}: {selects} also holds {c.name} (nothing says what it was made from); the edit uses {used}. "
+                      f"To use it instead: --pick {sid}={c}")
+            else:
+                print(f"  note {sid}: the edit list uses {used}; {selects} also holds {c.name}. To use it instead: --pick {sid}={c}")
+
+    def in_selects(clip: Path) -> bool:
+        try:
+            clip.resolve().relative_to(selects.resolve())
+            return True
+        except ValueError:
+            return False
+
     for seg in ep["segments"]:
         sid = seg["id"]
         drift = script_drift(seg, ep_path)
@@ -185,12 +209,15 @@ def main():
                     replaced.append(sid)
                     print(f"  WARN {sid} (entry kept from {out_path.name}): {kept_clip} has other content than when this entry was made - "
                           f"its in / out frames and line times were measured on the old clip. Rebuild the entry: --pick {sid}={kept_clip}")
-            others = [c for c in candidates(selects, sid) if not (kept_clip.exists() and c.resolve() == kept_clip.resolve())]
-            if others:                                       # a clip added to selects/ later does not replace a kept entry by itself
-                print(f"  note {sid}: the edit list keeps {kept_clip}; {selects} also holds {', '.join(c.name for c in others)}. "
-                      f"To use one of them instead: --pick {sid}={others[0]}")
+            also_there(seg, kept_clip)                       # a clip added to selects/ later does not replace a kept entry by itself
             continue
         found = [picks[sid]] if sid in picks else candidates(selects, sid)
+        earlier = Path(str((before.get(sid) or {}).get("video") or ""))
+        if a.overwrite and sid not in picks and earlier.is_file() and not in_selects(earlier):
+            # the entry was made from a clip named with --pick (a take in its own folder): --overwrite measures that clip
+            # again, it does not fall back to whatever lies in the selects folder
+            found = [earlier]
+            print(f"  note {sid}: rebuilt from {earlier} (the clip this entry was picked from), not from {selects}")
         if len(found) > 1:                                   # which of them is the film? not for this script to guess
             ambiguous.append(sid)
             print(f"AMBIGUOUS {sid}: {len(found)} clips in {selects} belong to this segment ({', '.join(c.name for c in found)}) - "
@@ -226,6 +253,8 @@ def main():
         if lost:
             print(f"  note {sid}: {lost}")
         check(seg, clip, segments[-1])
+        if not in_selects(clip) or len(candidates(selects, sid)) > 1:
+            also_there(seg, clip)
 
     edl = {"name": prev.get("name") or ep_path.stem, "title": ep.get("title", ""), "fps": a.fps, "width": w, "height": h,
            "episode": str(ep_path),                          # mix_episode.py compares the clips with it again, at mix time

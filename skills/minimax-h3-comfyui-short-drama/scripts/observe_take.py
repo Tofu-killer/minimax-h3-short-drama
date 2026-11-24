@@ -336,8 +336,11 @@ If the frames differ from the plan and you keep the take, say how with --deviati
         text = Path(path).as_posix()
         return f'"{text}"' if re.search(r"\s", text) else text
 
-    print(f"\nthen:\n  python {cli(Path(__file__).resolve())} {cli(take)} --episode {cli(ep_path)} --segment {a.segment} "
-          f"--write \"<observed state>\" --confidence high|medium|low [--deviation \"<what differs>\"]")
+    again = f"python {cli(Path(__file__).resolve())} {cli(take)} --episode {cli(ep_path)} --segment {a.segment}" \
+        + (" --small-ok" if a.small_ok else "")
+    print(f"\nthen, to accept this take:\n  it ends the way the planned end_state above says:\n    {again} --as-planned\n"
+          f"  it ends differently (or to record what is really there):\n    {again} --write \"<observed state>\" "
+          f"--confidence high|medium|low [--deviation \"<what differs>\"]")
     if nxt and not (nxt.get("continuity") or "").strip().startswith("@observed") and nxt.get("scene_id") == seg.get("scene_id"):
         print(f"\nnote: {nxt['id']} follows in the same scene with a hand-written continuity; consider \"@observed\" there.")
 
