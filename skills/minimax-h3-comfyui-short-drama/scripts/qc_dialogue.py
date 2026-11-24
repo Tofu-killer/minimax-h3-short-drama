@@ -223,7 +223,7 @@ def main():
     counts = {k: sum(1 for r in rows[len(kept_rows):] if r["verdict"] == k) for k in ("pass", "warn", "fail", "skip")}
     print(f"{this_run} take(s): {counts} -> {out / 'dialogue_report.json'}"
           + (f" (which also keeps {len(kept_rows)} clip(s) checked in earlier runs)" if kept_rows else "")
-          f"  [matching: {'pinyin' if speech.PHONETIC else 'exact characters (pip install pypinyin)'}; model {a.model}]")
+          + f"  [matching: {'pinyin' if speech.PHONETIC else 'exact characters (pip install pypinyin)'}; model {a.model}]")
     sys.exit(1 if (a.strict and any_fail) else 0)
 
 
