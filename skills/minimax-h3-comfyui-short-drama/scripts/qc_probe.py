@@ -101,6 +101,8 @@ def main():
         print(f"note: {skipped} file(s) skipped: superseded takes in _prev_* folders, and *_trimmed.mp4 copies (extract_tail_frame.py) of takes that are in the list")
     if not paths:
         sys.exit("no clips matched")
+    if signals.stale_note(paths):
+        print(signals.stale_note(paths))
     segs, ep, ep_ratio = {}, {}, None
     if a.episode:
         ep = json.loads(Path(a.episode).read_text(encoding="utf-8"))

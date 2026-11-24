@@ -125,6 +125,17 @@ def finished_takes(folder: Path) -> list:
     return out
 
 
+def out_of_date(clip) -> bool:
+    """True when the take this clip belongs to was made from another prompt or other references than the media file
+    it was submitted with holds now. False when it is current - or when nothing can be compared (no record, a clip
+    copied elsewhere, the media file gone)."""
+    rec = take_record(Path(clip))
+    if not rec or not rec.get("inputs_sha") or not rec.get("media_json"):
+        return False
+    now = media_inputs_sha(Path(str(rec["media_json"])))
+    return bool(now) and now != rec["inputs_sha"]
+
+
 STILLS_RECORD = Path("bible/prompts/.stills_plan.json")       # plan_stills.py's manifest, at its default place
 
 

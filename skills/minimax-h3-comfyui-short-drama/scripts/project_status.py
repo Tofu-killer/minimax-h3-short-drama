@@ -433,6 +433,16 @@ def main():
                   + (" - a cut that is not the final one (see the edit lines above)" if unfinished and not stale else ""))
             if stale:
                 todo = todo or f"{py('mix_episode.py')} {cli(edl_path)} --out {cli(final)}"
+        by_size: dict = {}
+        for sid_, e in entries.items():
+            if e.get("src_size"):
+                by_size.setdefault(e["src_size"], []).append(sid_)
+        if len(by_size) > 1:                 # one refine among drafts: every segment is "done", the film is not even
+            order = sorted(by_size, key=lambda z: -int(z.split("x")[0]) * int(z.split("x")[1]))
+            print("     sizes      " + "; ".join(f"{z}: {', '.join(by_size[z])}" for z in order) + " - the film mixes clips of "
+                  "different size (second passes and drafts): the smaller ones are scaled up and look softer beside the others. "
+                  "Give them a second pass too (their `optional` lines), or accept the difference")
+            post["sizes"] = {z: by_size[z] for z in order}
         for kind, where, why in edl_lib.exports_state(edl, edl_path):
             print(f"     export     {kind}: {where}" + (f" - !! {why}: export again" if why else " - made from this cut"))
             post.setdefault("exports", {})[kind] = why or "current"

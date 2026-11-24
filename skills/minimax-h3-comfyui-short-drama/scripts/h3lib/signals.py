@@ -44,6 +44,27 @@ def live_takes(paths: list) -> tuple[list, int]:
     return live, len(paths) - len(live)
 
 
+def stale_note(paths: list) -> str:
+    """A wildcard over a segment's folder also finds the drafts that were made before its prompt last changed. They are
+    measured like the others; this names them, so that what is said about them is not taken for the segment as it is."""
+    try:
+        import takes as _takes
+    except ImportError:
+        return ""
+    old = []
+    for p in paths:
+        try:
+            if _takes.out_of_date(p):
+                old.append(take_label(p))
+        except Exception:  # noqa: BLE001
+            continue
+    if not old:
+        return ""
+    return (f"NOTE: {len(old)} of these {len(paths)} clip(s) were made from an earlier prompt or other references than their segment "
+            f"has now ({', '.join(old[:6])}{' ...' if len(old) > 6 else ''}): what is measured on them says nothing about the "
+            f"segment as it is - observe_take.py will not accept them without --stale-ok")
+
+
 def take_label(path) -> str:
     """Name a take by its last two path parts when the file name alone says nothing ("s03_101/ComfyUI_00001_")."""
     from pathlib import Path as _P

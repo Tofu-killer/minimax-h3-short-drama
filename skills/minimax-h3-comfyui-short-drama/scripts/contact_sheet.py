@@ -110,6 +110,8 @@ def main():
         print(f"note: {skipped} file(s) skipped: superseded takes in _prev_* folders, and *_trimmed.mp4 copies (extract_tail_frame.py) of takes that are in the list")
     if not paths:
         sys.exit("no clips matched")
+    if signals.stale_note(paths):
+        print(signals.stale_note(paths))
     used: set[str] = set()
     stems = [x.stem for x in paths]
     segs = {}
@@ -147,7 +149,8 @@ def main():
         except RuntimeError as e:
             sys.exit(str(e))
         print(f"{sheet}")
-        print(f"  {dur:.2f}s, {len(det['cuts']) + 1} shot(s), cuts at {[c['t'] for c in det['cuts']] or 'none'}"
+        planned = f" (the storyboard has {len(shots)})" if shots and len(shots) != len(det["cuts"]) + 1 else ""
+        print(f"  {dur:.2f}s, {len(det['cuts']) + 1} shot(s) found{planned}, cuts at {[c['t'] for c in det['cuts']] or 'none'}"
               + (f", black {bf['black']}" if bf["black"] else "") + (f", frozen {bf['freeze']}" if bf["freeze"] else ""))
         print("  " + " | ".join(f"{i + 1}: {t:.2f}s {tag}" for i, (t, tag) in enumerate(samples)))
 

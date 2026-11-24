@@ -108,6 +108,8 @@ def main():
         print(f"note: {skipped} file(s) skipped: superseded takes in _prev_* folders, and *_trimmed.mp4 copies (extract_tail_frame.py) of takes that are in the list")
     if not paths:
         sys.exit("no targets matched")
+    if signals.stale_note(paths):
+        print(signals.stale_note(paths))
 
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -200,6 +202,17 @@ def main():
             sim = "" if entry.get("similarity") is None else f" sim={entry['similarity']}"
             print(f"{verdict:5s} {p} [{sid}]{sim} heard={entry.get('heard', '')!r} {' '.join(entry['flags'])}")
 
+    # the report is one file for the folder: a run over one segment must not wipe what earlier runs found for the others
+    kept_rows = []
+    try:
+        seen_now = {r["take"] for r in rows}
+        for r in json.loads((out / "dialogue_report.json").read_text(encoding="utf-8")):
+            if isinstance(r, dict) and r.get("take") not in seen_now and Path(str(r.get("take"))).exists():
+                kept_rows.append(r)
+    except (OSError, ValueError, TypeError):
+        kept_rows = []
+    this_run = len(rows)
+    rows = kept_rows + rows
     (out / "dialogue_report.json").write_text(json.dumps(rows, ensure_ascii=False, indent=1), encoding="utf-8")
     with open(out / "dialogue_summary.csv", "w", newline="", encoding="utf-8-sig") as fh:
         w = csv.writer(fh)
@@ -207,8 +220,9 @@ def main():
         for r in rows:
             w.writerow([r["take"], r.get("segment") or "", r["verdict"], r.get("similarity", ""), r.get("first_word_s", ""),
                         r.get("last_word_s", ""), r.get("heard", ""), " ".join(r.get("flags", []))])
-    counts = {k: sum(1 for r in rows if r["verdict"] == k) for k in ("pass", "warn", "fail", "skip")}
-    print(f"{len(rows)} take(s): {counts} -> {out / 'dialogue_report.json'}"
+    counts = {k: sum(1 for r in rows[len(kept_rows):] if r["verdict"] == k) for k in ("pass", "warn", "fail", "skip")}
+    print(f"{this_run} take(s): {counts} -> {out / 'dialogue_report.json'}"
+          + (f" (which also keeps {len(kept_rows)} clip(s) checked in earlier runs)" if kept_rows else "")
           f"  [matching: {'pinyin' if speech.PHONETIC else 'exact characters (pip install pypinyin)'}; model {a.model}]")
     sys.exit(1 if (a.strict and any_fail) else 0)
 

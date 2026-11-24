@@ -429,6 +429,8 @@ def main():
         print(f"note: {skipped} file(s) skipped: superseded takes in _prev_* folders, and *_trimmed.mp4 copies (extract_tail_frame.py) of takes that are in the list")
     if not paths:
         sys.exit("no image / video targets matched")
+    if signals.stale_note(paths):
+        print(signals.stale_note(paths))
 
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
