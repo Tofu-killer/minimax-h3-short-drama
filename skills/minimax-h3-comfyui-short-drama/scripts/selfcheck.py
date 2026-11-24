@@ -598,6 +598,17 @@ def main():
             r6 = run(plan_cmd, work)
             follows = follows and "CUT AGAIN (1): bible/scenes/room_s03_crop.png" in r6.stdout \
                 and "CUT AGAIN - the scene master was made again" in (work / "stills/plan.md").read_text(encoding="utf-8")
+            # a newer version of the skill words a template differently: same storyboard, so the prompt file and the picture stand
+            import hashlib as _hl
+            mf = work / "stills/prompts/.stills_plan.json"
+            man = json.loads(mf.read_text(encoding="utf-8"))
+            earlier = "A studio portrait in the wording of an earlier version.\n"
+            (work / "stills/prompts/hero_full.txt").write_text(earlier, encoding="utf-8")
+            man["prompts"]["hero_full.txt"] = _hl.sha256(earlier.strip().encode("utf-8")).hexdigest()[:16]
+            mf.write_text(json.dumps(man), encoding="utf-8")
+            r7 = run(plan_cmd, work)
+            follows = follows and "written by another version of this script" in r7.stdout and "hero_full.txt" in r7.stdout \
+                and (work / "stills/prompts/hero_full.txt").read_text(encoding="utf-8") == earlier and "updated from the storyboard" not in r7.stdout
             # the person an over-the-shoulder frame looks past gets the back view once one is planned, never the face
             ots = json.loads(json.dumps(st))
             ots["characters"].append({"id": "guest", "name": "Guest", "sheet_phrase": "a woman in her thirties with a short bob and a red scarf",

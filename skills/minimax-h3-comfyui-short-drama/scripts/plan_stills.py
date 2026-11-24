@@ -179,6 +179,7 @@ class Plan:
         self.kept: list[str] = []
         self.why: dict[str, str] = {}             # picture -> why it has to be made again
         self.old_crops: list[str] = []            # scene crops cut from a master that has been made again since
+        self.template_only: list[str] = []        # prompt files kept although this version of the script words them differently
         self.frame_inputs_of: dict[tuple, set] = {}   # (segment, shot index) -> the pictures its frame picture is made from
         self.record_file = prompts / ".stills_plan.json"      # what this script wrote, and which prompt each picture was made from
         try:
@@ -189,12 +190,16 @@ class Plan:
         self.record.setdefault("pictures", {})
 
     # -- prompt files ------------------------------------------------------------------------------------
-    def prompt_file(self, name: str, text: str) -> Path:
-        """Write <name>.txt. A file this script wrote follows the storyboard (it is written again when the text the
-        storyboard gives has changed); a file that was edited by hand is kept unless --rewrite."""
+    def prompt_file(self, name: str, text: str, source: str | None = None) -> Path:
+        """Write <name>.txt. A file this script wrote follows the storyboard: it is written again when what the
+        storyboard gives for it (`source`: the look, the description, the frame prompt ...) has changed. When only the
+        wording of this script's template changed - a newer version of the skill - the file stays as it is: the picture
+        made from it is still the picture of that storyboard. A file edited by hand is kept unless --rewrite."""
         path = self.prompts / f"{name}.txt"
         text = text.strip() + "\n"
-        new, was = sha(text), self.record["prompts"].get(path.name)
+        src = sha(source if source is not None else text)
+        sources = self.record.setdefault("sources", {})
+        new, was, was_src = sha(text), self.record["prompts"].get(path.name), sources.get(path.name)
         now = sha(path.read_text(encoding="utf-8")) if path.exists() else None
         if now is None:
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -202,6 +207,10 @@ class Plan:
             self.written.append(path.name)
         elif now == new:
             self.kept.append(path.name)
+        elif not self.rewrite and was is not None and now == was and was_src is not None and was_src == src:
+            self.kept.append(path.name)             # same storyboard text, other template wording: nothing to redo
+            self.template_only.append(path.name)
+            return path
         elif self.rewrite or (was is not None and now == was):
             path.write_text(text, encoding="utf-8")
             self.updated.append(path.name)
@@ -211,8 +220,10 @@ class Plan:
                 self.notes.append(f"{path} differs from what the storyboard gives now and was kept as it is (edited by hand?) - "
                                   f"--rewrite replaces it with the storyboard's text")
             self.record["prompts"][path.name] = was if was is not None else new
+            sources.setdefault(path.name, src)
             return path
         self.record["prompts"][path.name] = new
+        sources[path.name] = src
         return path
 
     def picture_state(self, dest: str, prompt: Path | None, inputs: list | None = None) -> str:
@@ -290,7 +301,7 @@ class Plan:
                                   f"(assets/agent-prompts/01-outline.md) and run this again")
                 continue
             self.add("A", f"{cid}: bust (the anchor - choose one and freeze it)", paths["bust"], self.t2i["file"],
-                     self.prompt_file(f"{cid}_bust", bust_prompt(look, self.style)), 6, cand, "bust", size=(1024, 1024))
+                     self.prompt_file(f"{cid}_bust", bust_prompt(look, self.style), f"{look}|{self.style}"), 6, cand, "bust", size=(1024, 1024))
             # a side / back view asked for once stays planned: named in the storyboard, asked for now, or already on disk
             views = ["full", "face"] + [v for v in ("side", "back") if v in extra_views.get(cid, set()) or pick(refs, v)
                                         or (base / f"{cid}_{v}.png").exists()]
@@ -299,7 +310,7 @@ class Plan:
                 dest = paths.get(v) or pick(refs, v) or (base / f"{cid}_{v}.png").as_posix()
                 paths[v] = dest
                 self.add("B1" if src == "bust" else "B2", f"{cid}: {v} view (from the {src})", dest, "qwen_edit2511_1ref.api.json",
-                         self.prompt_file(f"{cid}_{v}", view_prompt(look, self.style, v)), 3, cand, v, images=[paths[src]],
+                         self.prompt_file(f"{cid}_{v}", view_prompt(look, self.style, v), f"{look}|{self.style}|{v}"), 3, cand, v, images=[paths[src]],
                          size=(1024, 1024) if v == "face" else (1024, 1536), needs=[paths[src]])
             c["_back"] = paths.get("back")
 
@@ -311,12 +322,12 @@ class Plan:
             master = refs[0] if refs else (base / f"{sid}_master.png").as_posix()
             s["_master"], s["_dir"] = master, base
             self.add("A", f"scene {sid}: master, no people", master, self.t2i["file"],
-                     self.prompt_file(f"{sid}_master", master_prompt(s.get("description", ""), self.style, self.ratio)), 3,
+                     self.prompt_file(f"{sid}_master", master_prompt(s.get("description", ""), self.style, self.ratio), f"{s.get('description', '')}|{self.style}|{self.ratio}"), 3,
                      f"bible/candidates/{sid}", "master", size=self.master)
             grid = pick(refs[1:], "grid")
             if grid:
                 self.add("A", f"scene {sid}: nine-grid (for people to look at and to cut single views from - never a reference)", grid,
-                         self.t2i["file"], self.prompt_file(f"{sid}_grid9", grid_prompt(s.get("description", ""), self.style, self.ratio)),
+                         self.t2i["file"], self.prompt_file(f"{sid}_grid9", grid_prompt(s.get("description", ""), self.style, self.ratio), f"{s.get('description', '')}|{self.style}|{self.ratio}"),
                          2, f"bible/candidates/{sid}", "grid", size=self.master)
 
     def props(self):
@@ -326,7 +337,7 @@ class Plan:
             dest = refs[0] if refs else f"bible/props/{pid}.png"
             p["_pic"] = dest
             self.add("A", f"prop {pid}: one object on white", dest, self.t2i["file"],
-                     self.prompt_file(pid, prop_prompt(p.get("description", p.get("name", pid)), self.style)), 3,
+                     self.prompt_file(pid, prop_prompt(p.get("description", p.get("name", pid)), self.style), f"{p.get('description', p.get('name', pid))}|{self.style}"), 3,
                      f"bible/candidates/{pid}", "prop", size=self.t2i["prop"])
 
     # -- first frames and keyframes ----------------------------------------------------------------------
@@ -573,6 +584,10 @@ def main():
     if again:
         print(f"MAKE AGAIN ({len(again)}): {', '.join(again)} - on disk, but made before its prompt or one of its input pictures changed; "
               f"counted above as still to make")
+    if plan.template_only:
+        print(f"note: {len(plan.template_only)} prompt file(s) were written by another version of this script from the same storyboard "
+              f"text and are kept as they are ({', '.join(plan.template_only[:4])}{' ...' if len(plan.template_only) > 4 else ''}): the "
+              f"pictures made from them stay valid; --rewrite brings the files to the current wording (and lists those pictures to make again)")
     if plan.old_crops:
         print(f"CUT AGAIN ({len(plan.old_crops)}): {', '.join(plan.old_crops)} - cut from a scene master that has been made again since "
               f"(the ffmpeg lines are in the plan); the frame pictures made from them follow once the crops are new")
