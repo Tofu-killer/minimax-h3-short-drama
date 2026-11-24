@@ -68,6 +68,12 @@ def mix_is_stale(edl: dict, report_path=None, mix_path=None, edl_path=None) -> s
             return (f"{report_path} was mixed before the sound in the edit list changed (the music or an ambience bed - its file or "
                     f"its settings -, a stem, a level, or the time of a line, which retime_subtitles.py or a hand edit set again): "
                     f"run mix_episode.py again, then export once more")
+        film, film_sha = rep.get("output"), rep.get("output_sha")          # the film itself: replaced, re-encoded, copied over?
+        if film and film_sha:
+            there = resolve(edl_path, film) if edl_path is not None else _P(film)
+            if _P(there).exists() and clip_sha(there) != film_sha:
+                return (f"{film} is not the file this mix made (it was replaced or encoded again since): what is in it cannot be "
+                        f"told from the report - run mix_episode.py again")
         burned, burned_sha = rep.get("subtitles_file"), rep.get("subtitles_sha")
         if burned and burned_sha:
             now = clip_sha(resolve(edl_path, burned) if edl_path is not None else burned)

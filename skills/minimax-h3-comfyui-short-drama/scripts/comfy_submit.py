@@ -394,7 +394,7 @@ def apply_media(wf: dict, media_json: Path, server: str, media: dict, do_upload:
     guides = [k for k, v in wf.items() if v.get("class_type") == H3_GUIDE]        # guide nodes the export already carried
     anchors: list[dict] = []                                                      # frame pictures of this segment
     for item in spec.get("media", []):
-        path = Path(item["path"])
+        path = take_records.find_media(item["path"])      # also finds a file under a root the project was moved from
         if item["type"] == "image" and item.get("role") in ("first_frame", "last_frame"):
             new = load_node("image", path, item["role"])
             inputs[item["role"]] = [new, 0]

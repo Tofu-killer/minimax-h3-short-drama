@@ -37,7 +37,7 @@ import edl as edl_lib  # noqa: E402
 import prompt_builder  # noqa: E402
 import signals  # noqa: E402
 import takes as take_records  # noqa: E402
-from storyboard import NotObservedYet, load_episode, voice_plan, missing_media  # noqa: E402
+from storyboard import NotObservedYet, load_episode, voice_plan, missing_media, stale_join_problems  # noqa: E402
 
 FLOWS = HERE.parent / "assets" / "workflows"
 
@@ -138,7 +138,9 @@ def segment_report(ep, seg, raw_seg: dict, ep_path: Path, prompts: Path, takes: 
         p = Path(str(acc["path"]))
         in_take = (p.parent / "run.json").exists()            # else a file accepted from somewhere else: name the file itself
         rep["accepted"] = {"take": p.parent.name if in_take else str(p), "file": str(p), "seed": acc.get("seed"), "on_disk": p.exists(),
-                           "deviation": seg.status == "accepted_with_deviation"}
+                           "deviation": seg.status == "accepted_with_deviation",
+                           # the file was replaced since it was accepted: everything built on it was built on something else
+                           "changed": bool(p.exists() and acc.get("sha256") and take_records.sha256_file(p) != acc["sha256"])}
     rep["second_passes"] = []
     for name, rec in passes:
         of_accepted = bool(accepted and acc.get("inputs_sha") and rec.get("inputs_sha") == acc["inputs_sha"]
@@ -250,6 +252,11 @@ def next_step(rep: dict, ep_path: Path, prompts: Path, takes: Path, selects: Pat
                 f"--segment {sid} (look), then --as-planned or --write \"...\" --confidence ..." + unanchored)
     if not rep["accepted"]["on_disk"]:
         return f"the accepted take is not on disk - see {py('validate_episode.py')} {cli(ep_path)}"
+    if rep["accepted"].get("changed"):
+        return (f"the accepted take's file has other content than when it was accepted (it was replaced): look at it and accept it "
+                f"again - {py('observe_take.py')} {cli(Path(rep['accepted']['file']))} --episode {cli(ep_path)} --segment {sid}")
+    if rep.get("join"):
+        return (f"look at the cut from the segment before: {rep['join']}")
     mine = [p for p in rep["second_passes"] if p["of_accepted"]]
     if not mine:
         folder = Path(rep["accepted"]["file"]).parent
@@ -342,25 +349,34 @@ def main():
     reports, prev = [], None
     ways = ways_so_far(takes)
     first_checks = take_records.stale_first_frames(raw, ep_path)
+    joins = {}                               # an accepted take that opens from a state the segment before it no longer ends in
+    for line in stale_join_problems(ep):
+        m_join = re.match(r"segment (\S+): WARN (.*)", line)
+        if m_join:
+            joins[m_join.group(1)] = m_join.group(2)
     # one build command for the whole episode: drafts made in one go open from the PLANNED end of a segment that is not accepted yet
     from_plan = any((b.continuity or "").strip().startswith("@observed") and not a_.status.startswith("accepted")
                     for a_, b in zip(ep.segments, ep.segments[1:]))
     for seg, raw_seg in zip(ep.segments, raw["segments"]):
         rep = segment_report(ep, seg, raw_seg, ep_path, prompts, takes, entries.get(seg.id))
         rep["first_check"] = first_checks.get(seg.id)
+        rep["join"] = joins.get(seg.id, "")
         rep["next"] = next_step(rep, ep_path, prompts, takes, selects, edl_path, prev, from_plan,
                                 [v for v in voices if seg.id in v["later"]], ways)
         reports.append(rep)
         acc = rep["accepted"]
         head = (f"accepted{' with a deviation' if acc['deviation'] else ''}: {acc['take']}"
                 + (f", seed {acc['seed']}" if acc.get("seed") is not None else "")
-                + ("" if acc["on_disk"] else "  !! NOT ON DISK")) if acc else ("rejected" if seg.status == "rejected" else "not accepted")
+                + ("" if acc["on_disk"] else "  !! NOT ON DISK") + ("  !! THE FILE WAS REPLACED since" if acc.get("changed") else "")) \
+            if acc else ("rejected" if seg.status == "rejected" else "not accepted")
         print(f"\n{seg.id}  {seg.duration} s {seg.mode}  -  {head}")
         if rep["missing_files"]:
             print(f"     files      {len(rep['missing_files'])} missing: {', '.join(rep['missing_files'][:4])}"
                   + (" ..." if len(rep["missing_files"]) > 4 else ""))
         if rep["first_check"]:
             print(f"     first      !! {rep['first_check']['why']}")
+        if rep["join"]:
+            print(f"     cut        !! {rep['join'][:260]}")
         print(f"     prompt     {rep['prompt_note']}")
         if rep["script_drift"]:
             print(f"     !!         {rep['script_drift']}")

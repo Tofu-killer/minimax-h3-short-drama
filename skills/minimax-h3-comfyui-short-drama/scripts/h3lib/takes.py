@@ -42,6 +42,21 @@ def inputs_sha(prompts: list, media: dict) -> str:
     return hashlib.sha256(("\x1f".join(texts) + "\x1e" + "\x1f".join(sorted(media.values()))).encode()).hexdigest()[:16]
 
 
+def find_media(path) -> Path:
+    """A reference path from a .media.json as it can be opened now. Builds of today write paths relative to the project
+    root; earlier ones wrote absolute paths, which stop being true when the project folder is moved or opened on another
+    machine. Such a path is looked for by its tail below the working directory (…/first/s03.png -> first/s03.png)."""
+    p = Path(str(path))
+    if p.exists() or not p.is_absolute():
+        return p
+    parts = p.parts
+    for i in range(1, len(parts) - 1):                      # keep at least folder/file: a bare file name could be anybody's
+        cand = Path(*parts[i:])
+        if not cand.is_absolute() and cand.exists():
+            return cand
+    return p
+
+
 def media_inputs_sha(media_json: Path) -> Optional[str]:
     """The inputs_sha a take gets when it is submitted with `--media <this file>` as it is on disk now.
     None when the file, its prompt or one of its references cannot be read."""
@@ -50,7 +65,7 @@ def media_inputs_sha(media_json: Path) -> Optional[str]:
         prompt = (Path(media_json).parent / spec.get("prompt_file", f"{spec['segment']}.txt")).read_text(encoding="utf-8")
         media = {}
         for item in spec.get("media", []):
-            p = Path(item["path"])
+            p = find_media(item["path"])
             media[upload_name(p)] = sha256_file(p)
     except (OSError, KeyError, TypeError, json.JSONDecodeError):
         return None
@@ -70,7 +85,7 @@ def what_changed(rec: dict, media_json: Path, take_folder: Optional[Path] = None
         now_prompt = (Path(media_json).parent / spec.get("prompt_file", f"{spec['segment']}.txt")).read_text(encoding="utf-8")
         now = {}
         for item in spec.get("media", []):
-            now[upload_name(Path(item["path"]))] = Path(item["path"])
+            now[upload_name(find_media(item["path"]))] = find_media(item["path"])
     except (OSError, KeyError, TypeError, json.JSONDecodeError):
         return []
     if not then and now:                                   # an old record without the file list

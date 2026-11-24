@@ -612,6 +612,7 @@ def main():
                   "music_duck_db": duck_db, "music_duck_method": duck_how, "subtitles_burned": bool(a.ass),
                   "cut_signature": edl_lib.cut_signature(edl), "clips_signature": edl_lib.clips_signature(edl, edl_path),
                   "sound_signature": edl_lib.sound_signature(edl, edl_path), "music_used": bool(music),
+                  "output_sha": edl_lib.clip_sha(out),
                   "subtitles_file": str(a.ass) if a.ass else None, "subtitles_sha": edl_lib.clip_sha(a.ass) if a.ass else None,
                   "checks": checks, "warnings": warnings}
         out.with_suffix(".mix.report.json").write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
