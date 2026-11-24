@@ -266,6 +266,60 @@ def script_drift(seg: dict, episode: Path) -> str:
               "(build_prompts.py --only) and make its take again")
 
 
+def accepted_record(acc: dict, episode: Path) -> dict | None:
+    """run.json of the take a segment records as accepted, None when it cannot be found."""
+    rel = Path(str(acc.get("path") or ""))
+    if not rel.name:
+        return None
+    for base in ([Path()] if rel.is_absolute() else [Path.cwd(), Path(episode).resolve().parent.parent]):
+        rec = take_record(base / rel)
+        if rec is not None:
+            return rec
+    return None
+
+
+def edit_against_storyboard(edl: dict, edl_path: Path) -> list[str]:
+    """The clips of an edit list against the takes the storyboard records as accepted NOW - one sentence per segment
+    whose clip is not the accepted take nor a clean second pass of it. An edit list made before the takes were
+    accepted (a rough cut) carries no warning of its own; this looks again. [] when the storyboard cannot be read or
+    no segment of it has an accepted take (an episode made without observe_take.py)."""
+    named = edl.get("episode")
+    places = [Path(named)] if named else []
+    places += [Path(edl_path).parent / Path(named).name] if named else []
+    places += [Path("episodes") / f"{edl.get('name', '')}.json"]
+    raw, ep_path = None, None
+    for cand in places:
+        try:
+            raw, ep_path = json.loads(cand.read_text(encoding="utf-8")), cand
+            break
+        except (OSError, json.JSONDecodeError):
+            continue
+    if not isinstance(raw, dict) or not any((s.get("accepted_take") or {}).get("path") for s in raw.get("segments", [])):
+        return []
+    by_id = {s.get("id"): s for s in raw.get("segments", [])}
+    out = []
+    for entry in edl.get("segments", []):
+        seg = by_id.get(entry.get("id"))
+        if seg is None:
+            out.append(f"{entry.get('id')}: the storyboard {ep_path} has no such segment any more")
+            continue
+        clip = Path(str(entry.get("video") or ""))
+        if not clip.is_file():
+            clip = Path(edl_path).parent / clip
+        if not clip.is_file():
+            continue                                         # the mix stops on a missing clip by itself
+        level, why = provenance(seg, clip, ep_path)
+        if level == "WARN":
+            out.append(f"{entry['id']}: {why}")
+    in_edit = {e.get("id") for e in edl.get("segments", [])}
+    absent = [s["id"] for s in raw.get("segments", []) if s.get("id") not in in_edit]
+    if absent:
+        out.append(f"the storyboard has {len(raw.get('segments', []))} segment(s), the edit list {len(in_edit)}: "
+                   f"{', '.join(absent)} {'is' if len(absent) == 1 else 'are'} not in the film - run make_edl.py again once "
+                   f"{'it has' if len(absent) == 1 else 'they have'} a clip")
+    return out
+
+
 def provenance(seg: dict, clip: Path, episode: Path) -> tuple[str, str]:
     """Is this clip the take the storyboard records as accepted, or a second pass of it (same prompt, references
     and seed)? ('', '') when it is; ('WARN', why) when its record says it is something else or the segment has no
@@ -287,6 +341,17 @@ def provenance(seg: dict, clip: Path, episode: Path) -> tuple[str, str]:
     was = Path(str(acc.get("path") or "?")).parent.name
     if rec and rec.get("inputs_sha") and acc.get("inputs_sha"):
         if rec["inputs_sha"] == acc["inputs_sha"] and (acc.get("seed") is None or rec.get("seed") == acc.get("seed")):
+            second = bool(rec.get("second_pass") or rec.get("from_latent")) or "refine" in Path(str(rec.get("workflow") or "")).name \
+                or "_refine" in made_in
+            if not second:                                   # same prompt and seed, no second pass: the same settings too?
+                base = accepted_record(acc, episode) or {}
+                mine, theirs = str(rec.get("first_pass") or ""), str(base.get("first_pass") or "")
+                if mine and theirs and mine != theirs:
+                    other = [x for x in mine.split("; ") if x not in theirs.split("; ")]
+                    return "WARN", (f"{made_in} has the prompt, the references and the seed of the accepted take ({was}) but was made "
+                                    f"with other settings ({'; '.join(other)[:200] or 'see its run.json'}): with other steps, sampler or "
+                                    f"canvas the same seed gives another take, not a second pass of the accepted one. If this is the "
+                                    f"one you want in the film, accept it with observe_take.py")
             if rec.get("warnings"):                          # submitted although the preview warned (another canvas, length ...)
                 return "WARN", (f"{made_in} is a second pass of the accepted take ({was}), but it was submitted in spite of a warning: "
                                 f"{str(rec['warnings'][0])[:300]}")

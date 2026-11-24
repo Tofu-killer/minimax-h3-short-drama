@@ -26,7 +26,7 @@ import argparse, json, sys
 from pathlib import Path
 sys.dont_write_bytecode = True      # keep the skill folder free of __pycache__
 sys.path.insert(0, str(Path(__file__).parent / "h3lib"))
-from storyboard import NotObservedYet, load_episode, validate_episode, effective_continuity, frames_for_seconds, voice_plan, handover_state  # noqa: E402
+from storyboard import NotObservedYet, load_episode, validate_episode, effective_continuity, frames_for_seconds, voice_plan, handover_state, missing_media  # noqa: E402
 import prompt_builder  # noqa: E402
 import takes as take_records  # noqa: E402
 from prompt_builder import build, dialogue_cues  # noqa: E402
@@ -95,8 +95,12 @@ def main():
             blocked.append(str(e))
             continue
         except FileNotFoundError as e:                 # a reference file named in the storyboard is not on disk
-            blocked.append(f"{seg.id}: {e} - fix the path in the storyboard, or put the file there "
-                           "(validate_episode.py lists every missing file at once)")
+            gone = missing_media(ep, seg, Path(a.episode).resolve().parent)
+            blocked.append(f"{seg.id}: not on disk: {', '.join(gone) if gone else e} (as the storyboard writes "
+                           f"{'them' if len(gone) > 1 else 'it'}; a relative name is looked for in the folder this runs from - the "
+                           f"project root, where the other pictures of the project are - and then beside the storyboard). Make the "
+                           f"file (pictures: plan_stills.py lists each with its command) or fix the name in the storyboard; "
+                           f"validate_episode.py lists every missing file at once")
             continue
         text = next(c["text"] for c in bp.content if c["type"] == "text")
         media = [c for c in bp.content if c["type"] != "text"]

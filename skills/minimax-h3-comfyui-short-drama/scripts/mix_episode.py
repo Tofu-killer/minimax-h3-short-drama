@@ -265,11 +265,19 @@ def main():
             music_short = (f"the music ({music['file']}) is {m_len:.1f} s long, the cut {total:.1f} s: it stops {total - m_len:.1f} s before "
                            f"the film ends, and the fade-out set for the end never plays. Make one as long as the cut (the score "
                            f"workflow: --set 120.value={math.ceil(total) + 2}), or set \"loop\": true for a bed that may repeat")
+    # the clips against the takes the storyboard records as accepted now - an edit list made before the takes were chosen
+    # (a rough cut) has no warning of its own
+    import takes as take_records
+    not_chosen = [f"{w} (checked against the storyboard as it is now: accept a take with observe_take.py, or put the accepted one "
+                  f"in with make_edl.py --pick <segment>=<clip>)"
+                  for w in take_records.edit_against_storyboard(edl, edl_path)]
     if a.dry_run:
         if edl_lib.subtitles_stale(edl, edl_path):
             print("WARN  the cuts or the clips changed after the subtitles were timed: run retime_subtitles.py before mixing with --ass")
         if music_short:
             print(f"WARN  {music_short}")
+        for w in not_chosen:
+            print(f"WARN  {w}")
         return
 
     keep = Path(a.keep_temp) if a.keep_temp else None
@@ -280,8 +288,10 @@ def main():
         warnings: list[str] = []
         if music_short:
             warnings.append(music_short)
+        warnings += not_chosen
+        seen_now = {w.split(":", 1)[0] for w in not_chosen}
         for p in plan:                                       # what make_edl.py found out about the clip travels to the master
-            if p["seg"].get("take_check"):
+            if p["seg"].get("take_check") and p["id"] not in seen_now:
                 warnings.append(f"{p['id']}: {p['seg']['take_check']} (found by make_edl.py; run it again after choosing the clip)")
 
         # ---- 1. picture ---------------------------------------------------------------------------

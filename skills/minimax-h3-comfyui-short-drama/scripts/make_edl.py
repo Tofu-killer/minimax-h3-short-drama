@@ -228,6 +228,7 @@ def main():
         check(seg, clip, segments[-1])
 
     edl = {"name": prev.get("name") or ep_path.stem, "title": ep.get("title", ""), "fps": a.fps, "width": w, "height": h,
+           "episode": str(ep_path),                          # mix_episode.py compares the clips with it again, at mix time
            "segments": segments,
            "ambience": prev.get("ambience", {}),
            "music": prev.get("music"),

@@ -777,8 +777,35 @@ def main():
                       "--pick", f"{s2['id']}={draft / 'clip.mp4'}"], work)
             told = told and "lines are not the ones the accepted take was made with" in e6.stdout and spoken in e6.stdout \
                 and "lines are not the ones" not in e4.stdout
+            # the accepted take's prompt and seed with other settings (a 20-step re-shoot) is another take, not a second pass
+            twin = seg_takes / f"{s2['id']}_full_1001"
+            twin.mkdir(parents=True, exist_ok=True)
+            run(["ffmpeg", "-v", "error", "-y", "-i", str(draft / "clip.mp4"), "-c", "copy", "-metadata", "comment=twin", str(twin / "clip.mp4")], work)
+            drec = json.loads((draft / "run.json").read_text(encoding="utf-8"))
+            drec["first_pass"] = "BasicScheduler [124]: 8 steps, scheduler simple; MiniMaxH3ReferenceToVideo [136]: 1344x768, 148 frames"
+            (draft / "run.json").write_text(json.dumps(drec), encoding="utf-8")
+            (twin / "run.json").write_text(json.dumps(dict(drec, first_pass=drec["first_pass"].replace("8 steps", "20 steps"))), encoding="utf-8")
+            e7 = run(edl + ["--out", "edit/guard_t.edl.json", "--pick", f"{s2['id']}={twin / 'clip.mp4'}"], work)
+            (twin / "run.json").write_text(json.dumps(drec), encoding="utf-8")          # made again with the same settings: the same take
+            e8 = run(edl + ["--out", "edit/guard_t2.edl.json", "--pick", f"{s2['id']}={twin / 'clip.mp4'}"], work)
+            shutil.rmtree(twin)
+            told = told and "but was made with other settings" in e7.stdout and "20 steps" in e7.stdout and f"WARN {s2['id']}" not in e8.stdout
+            # a rough cut made before the takes were chosen carries no warning of its own: the mix looks at the storyboard again
+            rough = json.loads((work / "edit/guard_b.edl.json").read_text(encoding="utf-8"))
+            undecided = json.loads((work / "ep_guard.json").read_text(encoding="utf-8"))
+            undecided["segments"][1]["status"] = "planned"
+            undecided["segments"][1].pop("accepted_take", None)
+            (work / "ep_guard_undecided.json").write_text(json.dumps(undecided, ensure_ascii=False), encoding="utf-8")
+            (work / "edit/guard_rough.edl.json").write_text(json.dumps(dict(rough, episode="ep_guard_undecided.json"), ensure_ascii=False), encoding="utf-8")
+            m_ok = run([sys.executable, str(HERE / "mix_episode.py"), "edit/guard_b.edl.json", "--out", "final/g.mp4", "--dry-run"], work)
+            m_rough = run([sys.executable, str(HERE / "mix_episode.py"), "edit/guard_rough.edl.json", "--out", "final/g.mp4", "--dry-run"], work)
+            told = told and rough.get("episode") == "ep_guard.json" and f"WARN  {s2['id']}:" not in m_ok.stdout \
+                and f"WARN  {s2['id']}: the storyboard records no accepted take" in m_rough.stdout \
+                and "checked against the storyboard as it is now" in m_rough.stdout
             record("make_edl.py compares each clip with the accepted take (another seed warned; a refine, and a copy of it, pass)",
-                   "PASS" if told else "FAIL", "" if told else f"{e1.stdout.strip()[-200:]} | {e3.stdout.strip()[-200:]} | {e5.stdout.strip()[-160:]}")
+                   "PASS" if told else "FAIL", "" if told else f"{e1.stdout.strip()[-200:]} | {e3.stdout.strip()[-200:]} | {e5.stdout.strip()[-160:]} | "
+                                                             f"twin: {e7.stdout.strip()[-200:]} / {e8.stdout.strip()[-120:]} | mix: "
+                                                             f"{(m_ok.stderr.strip() or m_ok.stdout.strip())[-160:]} / {(m_rough.stderr.strip() or m_rough.stdout.strip())[-200:]}")
             # the overview of a project reads all of this back: what is accepted, which second pass belongs to it, what the
             # edit uses, and - for a storyboard nothing has been made from yet - the first step
             st_a = run([sys.executable, str(HERE / "project_status.py"), "ep_guard.json", "--prompts", "prompts/guard", "--takes", "takes/guard",

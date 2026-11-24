@@ -306,6 +306,29 @@ def stale_join_problems(ep: "Episode") -> list[str]:
     return out
 
 
+def missing_media(ep: "Episode", seg: "Segment", base: Path) -> list[str]:
+    """Pictures and sound files this segment needs that are not on disk, named as the storyboard writes them
+    (`base` = the storyboard's folder: the loader turned relative names into absolute paths)."""
+    need = [seg.first_frame, seg.last_frame] + [sh.keyframe for sh in seg.shots]
+    for cid in seg.character_ids:
+        c = ep.char(cid)
+        need += list(c.reference_images) + [c.voice_reference]
+    need += list(ep.scene(seg.scene_id).reference_images)
+    for pid in seg.prop_ids:
+        need += list(ep.prop(pid).reference_images)
+    out = []
+    for f in need:
+        if not f or str(f).startswith(("http://", "https://", "mm_file://", "data:")) or Path(f).exists():
+            continue
+        try:
+            shown = Path(f).resolve().relative_to(Path(base).resolve()).as_posix()
+        except ValueError:
+            shown = str(f)
+        if shown not in out:
+            out.append(shown)
+    return out
+
+
 def voice_plan(ep: "Episode") -> list[dict]:
     """Characters who speak but have no voice sample yet: the segment a sample can be cut from (their first spoken
     one) and the later ref2va segments whose prompt changes once the sample is attached."""

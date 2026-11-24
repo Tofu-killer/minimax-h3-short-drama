@@ -37,7 +37,7 @@ import edl as edl_lib  # noqa: E402
 import prompt_builder  # noqa: E402
 import signals  # noqa: E402
 import takes as take_records  # noqa: E402
-from storyboard import NotObservedYet, load_episode, voice_plan  # noqa: E402
+from storyboard import NotObservedYet, load_episode, voice_plan, missing_media  # noqa: E402
 
 FLOWS = HERE.parent / "assets" / "workflows"
 
@@ -65,24 +65,7 @@ def is_url(f: str) -> bool:
 
 def missing_files(ep, seg, base: Path) -> list[str]:
     """Pictures and sound files this segment needs that are not on disk, named as the storyboard writes them."""
-    need = [seg.first_frame, seg.last_frame] + [sh.keyframe for sh in seg.shots]
-    for cid in seg.character_ids:
-        c = ep.char(cid)
-        need += list(c.reference_images) + [c.voice_reference]
-    need += list(ep.scene(seg.scene_id).reference_images)
-    for pid in seg.prop_ids:
-        need += list(ep.prop(pid).reference_images)
-    out = []
-    for f in need:
-        if not f or is_url(f) or Path(f).exists():
-            continue
-        try:
-            shown = Path(f).resolve().relative_to(base).as_posix()     # the loader made it absolute: back to what was written
-        except ValueError:
-            shown = str(f)
-        if shown not in out:
-            out.append(shown)
-    return out
+    return missing_media(ep, seg, base)
 
 
 def prompt_state(ep, seg, prompts: Path) -> tuple[str, str]:
@@ -259,7 +242,11 @@ def next_step(rep: dict, ep_path: Path, prompts: Path, takes: Path, selects: Pat
         if prev and not str(prev["status"]).startswith("accepted"):
             return (f"{len(good)} draft(s) wait - choose one after {prev['id']} is accepted (its real ending decides whether they still fit)"
                     + unanchored)
-        return (f"choose one of the {len(good)} draft(s) and write it back: {py('observe_take.py')} <the clip> --episode {cli(ep_path)} "
+        pattern = f'"{(takes / sid).as_posix()}/**/*.mp4"'
+        return (f"look at the {len(good)} draft(s), then choose one. Checks (SKILL.md step 7): {py('qc_probe.py')} {pattern} "
+                f"--episode {cli(ep_path)} --out qc/probe; {py('qc_dialogue.py')} --episode {cli(ep_path)} --targets {pattern} "
+                f"--out qc/dialogue; {py('contact_sheet.py')} {pattern} --episode {cli(ep_path)} (faces: identity_gate.py). "
+                f"Write the chosen one back: {py('observe_take.py')} <the clip> --episode {cli(ep_path)} "
                 f"--segment {sid} (look), then --as-planned or --write \"...\" --confidence ..." + unanchored)
     if not rep["accepted"]["on_disk"]:
         return f"the accepted take is not on disk - see {py('validate_episode.py')} {cli(ep_path)}"
