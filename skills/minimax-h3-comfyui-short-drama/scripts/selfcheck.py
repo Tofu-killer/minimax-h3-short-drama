@@ -670,6 +670,14 @@ def main():
             v3 = run([sys.executable, str(HERE / "validate_episode.py"), "ep_guard.json"], work)
             warned = g6.returncode == 0 and "CHECK THE CUT" in g6.stdout and "another state than" in v2.stdout \
                 and g7.returncode == 0 and "another state than" not in v3.stdout          # looked at and confirmed: the warning ends
+            # the accepted take is a file: the validator says so when it is gone or has other content than when it was accepted
+            moved = json.loads((work / "ep_guard.json").read_text(encoding="utf-8"))
+            moved["segments"][0]["accepted_take"]["path"] = "selects/no_longer_here.mp4"
+            moved["segments"][1]["accepted_take"]["sha256"] = "0" * 64
+            (work / "ep_guard_moved.json").write_text(json.dumps(moved, ensure_ascii=False, indent=1), encoding="utf-8")
+            v4 = run([sys.executable, str(HERE / "validate_episode.py"), "ep_guard_moved.json"], work)
+            warned = warned and "is not on disk" in v4.stdout and "has other content than the take that was accepted" in v4.stdout \
+                and "is not on disk" not in v3.stdout and "has other content" not in v3.stdout
             good = fresh and lasting and refused and knowingly and warned
             record("takes are checked against what they were made from (wrong segment, out-of-date draft, changed earlier ending)",
                    "PASS" if good else "FAIL",

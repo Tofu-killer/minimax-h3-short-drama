@@ -153,7 +153,8 @@ def main():
               f"made from. To rebuild one on purpose (its take then has to be made again): --only <segment>")
     if kept_stale:
         print(f"note: the accepted take of {', '.join(kept_stale)} was made from an earlier version of its prompt files (it was accepted "
-              f"with --stale-ok). Refine it with what it was made from - comfy_submit.py keeps that beside every take: "
+              f"with --stale-ok, or the prompt was rebuilt with --only after it was accepted, or a reference file was replaced). "
+              f"Refine it with what it was made from - comfy_submit.py keeps that beside every take: "
               f"--media <take folder>/media.json (plus --from-latent <take folder>, or --seed <its seed>). The files in {out} "
               f"as they are now would steer the second pass with other text.")
     pending = [v for v in voice_plan(ep) if v["later"]]

@@ -78,7 +78,7 @@ H3 是 33B 全模态 DiT：一次出 4–15 s 视频 + 原生立体声对白/音
 
 | 脚本 | 作用 |
 |------|------|
-| `scripts/validate_episode.py <ep.json> [--rhythm] [--catalog props.json]` | 分镜校验：时长、台词预算、一镜一说话人、未知资产、道具无图、空终态、已采纳但没观测末态的段、拼错的字段名（会提示最接近的正确名字）、否定句；分镜点了名但还不在盘上的图 / 音色以 `+` 列出，不算错误；`--rhythm` 加纯算术的节奏审计（超载、各镜等长、连续三镜同景别、台词塞不进镜头、开场偏慢）。警告以 `~` 打印，不影响退出码 |
+| `scripts/validate_episode.py <ep.json> [--rhythm] [--catalog props.json]` | 分镜校验：时长、台词预算、一镜一说话人、未知资产、道具无图、空终态、已采纳但没观测末态的段、拼错的字段名（会提示最接近的正确名字）、否定句；分镜点了名但还不在盘上的图 / 音色以 `+` 列出，不算错误；已采纳的片段文件不在了、或者内容被换过（和采纳时的 sha256 不一样）会提醒；`--rhythm` 加纯算术的节奏审计（超载、各镜等长、连续三镜同景别、台词塞不进镜头、开场偏慢）。警告以 `~` 打印，不影响退出码 |
 | `scripts/render_storyboard.py <ep.json> --out ep01_storyboard.md` | 把分镜 JSON 渲染成人能审的分镜表（每镜时间、景别 / 焦段、运镜、动作、表演、光线、台词与语速、声音） |
 | `scripts/plan_stills.py <ep.json> [--back 角色id …] [--side 角色id …] [--t2i zimage]` | 出图阶段的清单：按 `assets/image-prompts.md` 的模板写出每张图的提示词（定妆照 / 全身 / face 来自角色的 `sheet_phrase`，母版 / 九宫格 / 道具来自描述，首帧 / 关键帧来自分镜里的 `first_frame_prompt` / `keyframe_prompt`），并在 `bible/stills_plan.md` 逐张列出提交命令：工作流、`image1`–`image3` 各接哪张图（从提示词里的 `Picture N` 句子读出来）、尺寸、候选数、选中后存成的文件名（就是分镜里已经写的路径）；已经在盘上的图标成已完成；它写的提示词文件跟着分镜走（分镜改了就重写，并把按旧提示词出的图标成 `MAKE AGAIN`），手改过的提示词文件不动（`--rewrite` 才覆盖）；营利项目加 `--t2i zimage`，定妆照 / 母版 / 道具的命令改用 Apache-2.0 的 Z-Image-Turbo（默认的 Qwen-Image 2.1 是研究许可）；不提交任何任务 |
 | `scripts/build_prompts.py <ep.json> --out prompts/ep01 [--only s03] [--allow-planned]` | 生成每段最终提示词 `.txt` + 媒体顺序 `.media.json` + `planned_cues.srt`（计划的台词时间，只供预览）；分镜本身有错误（时长、台词预算、未知资产……）时一段都不出（`--force` 强行出，警告从不拦）；某一段点名的图 / 音色还不在盘上，只跳过这一段（列在 `NOT BUILT` 下，退出码 1），其余照出；`continuity` 为 `"@observed"` 的段从上一段实拍末态开场，尚未观测时不出这一段。每次都报告：各段提示词变没变、`takes/<--out 的文件夹名>/<段>` 里有几条成片是按旧提示词抽的、还缺音色样本时该先抽哪几段 |

@@ -85,6 +85,26 @@ def main():
         n += 1 if (seg.mode == "ref2va" and seg.first_frame) else 0
         n += sum(1 for sh in seg.shots if sh.keyframe and sh.index > 1) if seg.mode == "ref2va" else 0
         if n > 9: problems.append(f"segment {seg.id}: {n} reference images exceed the 9-slot limit (drop a character detail image or a prop)")
+    # an accepted take is a file on disk: gone, or with other content than when it was accepted, the storyboard points at nothing
+    import hashlib
+    for seg in ep.segments:
+        acc = seg.accepted_take or {}
+        if not seg.status.startswith("accepted") or not acc.get("path"):
+            continue
+        rel = _P(str(acc["path"]))
+        found = next((c for c in ([rel] if rel.is_absolute() else [_P.cwd() / rel, base.parent / rel]) if c.is_file()), None)
+        if found is None:
+            problems.append(f"segment {seg.id}: WARN its accepted take {acc['path']} is not on disk (moved, or its folder was run again and "
+                            f"the old files went into _prev_...?) - accept the take that is there now with observe_take.py, or put the file back")
+            continue
+        if acc.get("sha256"):
+            h = hashlib.sha256()
+            with open(found, "rb") as fh:
+                for chunk in iter(lambda: fh.read(1 << 20), b""):
+                    h.update(chunk)
+            if h.hexdigest() != acc["sha256"]:
+                problems.append(f"segment {seg.id}: WARN {acc['path']} has other content than the take that was accepted (the file was "
+                                f"replaced) - look at it and accept it again with observe_take.py, so that what follows is built on what is there")
     warnings = [p.replace(": WARN ", ": ", 1) for p in problems if ": WARN " in p]
     errors = [p for p in problems if ": WARN " not in p]
     rhythm = rhythm_warnings(ep) if a.rhythm else []
