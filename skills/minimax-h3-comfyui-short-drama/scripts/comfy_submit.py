@@ -1582,6 +1582,20 @@ def shell_quote(arg: str) -> str:
     return arg if re.fullmatch(r"[A-Za-z0-9_@%+=:,./\\~-]+", arg) else '"' + arg.replace('"', '\\"') + '"'
 
 
+def command_again(argv: list[str]) -> str:
+    """The command as it can be given again: without the approval of one particular batch (--confirm <id> belongs to
+    the preview it was read from; a later run shows its own)."""
+    out, skip = [], False
+    for x in argv:
+        if skip:
+            skip = False
+        elif x == "--confirm":
+            skip = True
+        elif not x.startswith("--confirm="):
+            out.append(shell_quote(x))
+    return " ".join(out)
+
+
 def finish_take(server: str, pid: str, t0: float, dest: Path, base: dict, entry: dict, wf: dict,
                 log: Path | None, log_row: dict | None) -> tuple[dict, list, bool]:
     """Fetch what a finished job made, write the take's record (run.json) and its row in the takes log."""
@@ -1973,7 +1987,7 @@ def main():
                 pid = queue(a.server, wf, client)
                 (dest / "handle.json").write_text(json.dumps(
                     {"prompt_id": pid, "fingerprint": fp, "seed": seed, "queued_at": t0, "server": a.server,
-                     "command": " ".join(shell_quote(x) for x in sys.argv[1:]), "log": a.log, "log_row": log_row, "record": base},
+                     "command": command_again(sys.argv[1:]), "log": a.log, "log_row": log_row, "record": base},
                     ensure_ascii=False, indent=1), encoding="utf-8")
                 keep_inputs(dest, wf, meta_in if a.media else None, a.media, h3_id)
                 print(f"[{i + 1}/{len(plan)}] queued {pid} seed={seed}", flush=True)
