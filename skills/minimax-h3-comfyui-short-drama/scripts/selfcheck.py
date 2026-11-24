@@ -228,11 +228,12 @@ def main():
             setup = load("check_setup")
             facts, warned = setup.system_findings({"system": {"comfyui_version": "0.37.2", "python_version": "3.12.9 (x)", "pytorch_version": "2.8.0+cu126",
                                                                "ram_total": 64 * 2**30, "ram_free": 40 * 2**30,
-                                                               "argv": ["main.py", "--windows-standalone-build", "--lowvram"],
+                                                               "argv": ["main.py", "--windows-standalone-build", "--lowvram", "--use-ck-attention"],
                                                                "comfy_package_versions": [{"name": "comfy-kitchen", "installed": "0.2.30", "required": "0.2.35"}]},
                                                     "devices": [{"name": "cuda:0 NVIDIA GeForce RTX 4090", "type": "cuda",
                                                                  "vram_total": 24 * 2**30, "vram_free": 23 * 2**30}]})
             told = any("CUDA 12.6 build" in w for w in warned) and any("--lowvram" in w for w in warned) \
+                and any("--use-ck-attention" in w and "WITHOUT `_sage`" in w for w in warned) \
                 and any("comfy-kitchen" in w and "0.2.35" in w for w in warned) and not any("VRAM" in w for w in warned)
             ref = json.loads((HERE.parent / "assets/workflows/h3_ref2va_sage_refine.api.json").read_text(encoding="utf-8"))
             fake = {}

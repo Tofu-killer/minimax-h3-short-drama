@@ -116,6 +116,11 @@ def system_findings(st: dict) -> tuple[list[str], list[str]]:
     argv = [str(x) for x in sysinfo.get("argv", [])]
     flags = [a for a in argv[1:] if a.startswith("--")]
     facts.append("started with: " + (" ".join(argv[1:]) if argv[1:] else "no arguments"))
+    patched = [f for f in flags if f in ("--use-ck-attention", "--use-sage-attention", "--use-flash-attention")]
+    if patched:
+        warns.append(f"started with {patched[0]}: attention is already replaced for every model at start-up. Use the workflow files "
+                     f"WITHOUT `_sage` in their name - the Sage nodes in the `_sage` files would patch it a second time "
+                     f"(references/local-stack-and-acceleration.md, sections 0b and 3: one way or the other, not both)")
     for f in flags:
         if f in LOAD_FLAGS:
             warns.append(f"start-up flag {f}: {LOAD_FLAGS[f]}. The notes of this skill assume the default loading path "
