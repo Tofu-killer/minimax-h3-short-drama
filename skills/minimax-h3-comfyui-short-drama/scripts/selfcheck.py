@@ -869,6 +869,15 @@ def main():
                 remade = _tk.stale_first_frames(ff, Path("ep_guard.json"), Path("no_record.json"))
             seen = seen and list(old_pic) == [follower["id"]] and "older than the accepted take" in old_pic[follower["id"]]["why"] \
                 and "he stops short of the window" in old_pic[follower["id"]]["why"] and not confirmed and not remade
+            # the accepted take's file is gone, or has other content than when it was accepted: the overview says so too
+            st_g = run([sys.executable, str(HERE / "project_status.py"), "ep_guard_moved.json", "--prompts", "prompts/guard", "--takes", "takes/guard",
+                        "--selects", "selects", "--edl", "edit/guard_b.edl.json"], work)
+            seen = seen and "NOT ON DISK" in st_g.stdout and "THE FILE WAS REPLACED since" in st_g.stdout and "accept it again" in st_g.stdout
+            # a reference path written as an absolute path of another root (the project was moved): found by its tail
+            with in_dir(work):
+                moved_ref = _tk.find_media("/a/root/that/is/gone/bible/first_s03.png")
+                alone = _tk.find_media("/a/root/that/is/gone/first_s03.png")
+            seen = seen and moved_ref.as_posix() == "bible/first_s03.png" and alone.is_absolute()
             # a job that was queued for a segment and never fetched: named, and fetching it is the next step
             lost = work / "takes/guard" / s2["id"] / f"{s2['id']}_3001"
             lost.mkdir(parents=True, exist_ok=True)
@@ -976,8 +985,13 @@ def main():
                     burned = _edl_s.mix_is_stale(base, report_path=rep_file, edl_path=edl_file)
                     Path("subs/ep.ass").write_text(ass_text, encoding="utf-8")
                     back = _edl_s.mix_is_stale(base, report_path=rep_file, edl_path=edl_file)
+                    film = Path("final/ep.mp4")
+                    film_was = film.read_bytes()
+                    film.write_bytes(film_was + bytes(32))                   # another file under the film's name
+                    swapped = _edl_s.mix_is_stale(base, report_path=rep_file, edl_path=edl_file)
+                    film.write_bytes(film_was)
                 good = clean is None and back is None and all(x and "sound in the edit list changed" in x for x in said) \
-                    and bool(burned) and "burned into the picture" in burned
+                    and bool(burned) and "burned into the picture" in burned and bool(swapped) and "is not the file this mix made" in swapped
                 # a score that ends before the film: said before anything is rendered; a bed that loops is not complained about
                 run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=330:duration=1", "short_music.wav"], work)
                 brief = json.loads(json.dumps(base))
