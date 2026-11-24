@@ -1880,6 +1880,14 @@ def main():
                 "pending": "NOT queued: a job queued into this folder earlier (other settings or inputs than this command) was never "
                            "collected - it may still be running, or be finished on the server. Fetch it first: "
                            f"python {Path(__file__).resolve()} --collect {p['dest']}  - then look at this preview again"}[p["state"]]
+        if p["state"] == "resume" and version is not None:      # the server answers: does it still have that job?
+            try:
+                known, _entry = lookup_stable(a.server, json.loads((p["dest"] / "handle.json").read_text(encoding="utf-8"))["prompt_id"])
+            except (OSError, KeyError, json.JSONDecodeError):
+                known = "?"
+            if known not in ("done", "queued", "unreachable", "?"):
+                note = ("was queued before, but the server no longer knows that job (ComfyUI was restarted, or its history was "
+                        "cleared): it will be queued again - a full new run")
         if p["state"] == "new" and holds_earlier_run(p["dest"]):
             before = earlier_attempt(p["dest"], p["fp"])
             if before:                                    # the same take, tried before

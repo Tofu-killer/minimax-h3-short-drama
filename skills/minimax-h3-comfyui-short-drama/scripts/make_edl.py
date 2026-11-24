@@ -220,8 +220,13 @@ def main():
             print(f"  note {sid}: rebuilt from {earlier} (the clip this entry was picked from), not from {selects}")
         if len(found) > 1:                                   # which of them is the film? not for this script to guess
             ambiguous.append(sid)
-            print(f"AMBIGUOUS {sid}: {len(found)} clips in {selects} belong to this segment ({', '.join(c.name for c in found)}) - "
-                  f"one per segment. Take out the ones that are not the final clip, or name it: --pick {sid}={found[-1]}")
+            kinds = {c: provenance(seg, c, ep_path)[0] for c in found}
+            clean = [c for c in found if kinds[c] == ""]         # the accepted take, a second pass of it, or a copy of either
+            said = ", ".join(c.name + (" (the accepted take or a second pass of it)" if kinds[c] == "" else
+                                       " (not the accepted take)" if kinds[c] == "WARN" and any_accepted else "") for c in found)
+            offer = clean[-1] if clean else found[-1]
+            print(f"AMBIGUOUS {sid}: {len(found)} clips in {selects} belong to this segment ({said}) - "
+                  f"one per segment. Take out the ones that are not the final clip, or name it: --pick {sid}={offer}")
             if sid in before:
                 segments.append(before[sid])                 # the entry of the earlier edit list stays until it is decided
             continue
