@@ -454,6 +454,22 @@ def main():
                          "62 s, 72 BPM, D minor", 0)):
                     if r.returncode != code or need not in (r.stdout + r.stderr) or (code == 0 and "[Instrumental]" not in r.stdout):
                         notes.append(f"{what}: {(r.stderr.strip() or r.stdout.strip())[-200:]}")
+                # a job queued into a take folder earlier and never collected (the script was stopped, the conversation lost):
+                # another command for the same folder does not queue over it, and names the way to fetch it
+                pend = work / "qc/pend/take_1"
+                pend.mkdir(parents=True, exist_ok=True)
+                (pend / "handle.json").write_text(json.dumps({"prompt_id": "p-1", "fingerprint": "of another command", "seed": 1, "queued_at": 1.0,
+                                                              "server": "http://127.0.0.1:9", "command": "x"}), encoding="utf-8")
+                st = [sys.executable, str(HERE / "comfy_submit.py"), str(flows / "selftest_no_model.api.json"), "--server", "http://127.0.0.1:9",
+                      "--set", "1.image=@bible/face.png", "--out", "qc/pend", "--tag", "take", "--dry-run"]
+                r_dry = run(st, work)
+                r_col = run([sys.executable, str(HERE / "comfy_submit.py"), "--collect", "qc/pend/take_1"], work)
+                r_none = run([sys.executable, str(HERE / "comfy_submit.py"), "--collect", "qc/pend/nothing_here"], work)
+                if "[pending] NOT queued" not in r_dry.stdout or "--collect" not in r_dry.stdout or "add --confirm" in r_dry.stdout \
+                        or not (pend / "handle.json").exists():
+                    notes.append(f"an uncollected job in the take folder: {(r_dry.stderr.strip() or r_dry.stdout.strip())[-240:]}")
+                if r_col.returncode != 2 or "cannot reach ComfyUI" not in r_col.stderr or r_none.returncode != 1 or "no readable handle.json" not in r_none.stderr:
+                    notes.append(f"--collect without a server / without a handle: {r_col.stderr.strip()[-160:]} | {r_none.stderr.strip()[-160:]}")
                 # slips the server would accept or answer with a bare HTTP 400: a prompt file named without @, a size typed as WxH,
                 # a size this pipeline has no use for (advice only)
                 for what, r, need, code in (
@@ -576,6 +592,18 @@ def main():
             good = good and rz.returncode == 0 and "zimage_turbo_t2i.api.json" in plan_z and "57:27.text=@stills/prompts/hero_bust.txt" in plan_z \
                 and "--set 57:13.width=2048 --set 57:13.height=1152" in plan_z and "qwen21_t2i" not in plan_z \
                 and "qwen_edit2511_2ref.api.json" in plan_z           # the edit model stays the same
+            # a choice made once holds: the bare command another tool prints must not fall back to the research-licence model
+            # or to the default canvas; giving the option again changes it, --forget drops what was remembered
+            base_cmd = [sys.executable, str(HERE / "plan_stills.py"), "ep_stills.json", "--prompts", "stills/prompts"]
+            rz2 = run(base_cmd + ["--out", "stills/plan_z2.md", "--canvas", "1536x864"], work)
+            rz3 = run(base_cmd + ["--out", "stills/plan_z3.md"], work)
+            rz4 = run(base_cmd + ["--out", "stills/plan_z4.md", "--forget"], work)
+            pz = {n: ((work / f"stills/plan_z{n}.md").read_text(encoding="utf-8") if (work / f"stills/plan_z{n}.md").exists() else "") for n in (2, 3, 4)}
+            good = good and "as chosen in an earlier run" in rz2.stdout and "--t2i zimage" in rz2.stdout and "qwen21_t2i" not in pz[2] \
+                and "170:300.width=1536 --set 170:300.height=864" in pz[2] \
+                and "--canvas 1536x864" in rz3.stdout and "zimage_turbo_t2i.api.json" in pz[3] and "170:300.width=1536" in pz[3] \
+                and "as chosen in an earlier run" not in rz4.stdout and "qwen21_t2i.api.json" in pz[4] and "170:300.width=1536" not in pz[4] \
+                and run(base_cmd + ["--canvas", "1536x860"], work).returncode != 0
             record("plan_stills.py (prompt files and one command per picture, inputs read from the Picture N sentences)", "PASS" if good else "FAIL",
                    "" if good else f"{files} | {(r.stderr.strip() or r.stdout.strip())[-260:]} | {rz.stdout.strip()[-160:]}")
             # pictures the storyboard names but nobody has made yet are a to-do list, not errors: the storyboard is checked before the stills exist
@@ -782,9 +810,50 @@ def main():
             seen = seen and st_d.returncode == 0 and "first (a voice sample" not in st_a.stdout and "first (a voice sample" in top \
                 and wanted in top and "is accepted - cut the sample from its take now" in top and f"build the prompt of {later_seg['id']}" in top \
                 and "voice sample" in st_d.stdout.split("\n" + later_seg["id"] + "  ")[-1].split("after the segments")[0]
+            # the commands it prints repeat how the project is run: the workflow file and the canvas of the drafts it already has
+            # (not a one-off switch), and the takes log
+            earlier = work / "takes/guard_nr" / s1["id"] / "made_before"
+            earlier.mkdir(parents=True, exist_ok=True)
+            (earlier / "run.json").write_text(json.dumps({"status": "success", "seed": 7, "workflow": "x/h3_ref2va_sage.api.json",
+                                                          "overrides": ["136.width=864", "136.height=480", "146.value=false"]}), encoding="utf-8")
+            st_f = run([sys.executable, str(HERE / "project_status.py"), "ep_guard.json", "--prompts", "prompts/guard", "--takes", "takes/guard_nr",
+                        "--selects", "selects", "--edl", "edit/guard_a.edl.json"], work)
+            drafts_line = next((ln for ln in st_f.stdout.splitlines() if "make drafts:" in ln), "")
+            seen = seen and "h3_ref2va_sage.api.json" in drafts_line and "--set 136.width=864 --set 136.height=480" in drafts_line \
+                and "146.value" not in drafts_line and "--log logs/takes.csv" in drafts_line
+            # a first frame made before the segment it follows was accepted with another ending than planned: said until it
+            # is made again or confirmed
+            import takes as _tk
+            ff = json.loads((work / "ep_guard.json").read_text(encoding="utf-8"))
+            ff["segments"][0]["status"] = "accepted_with_deviation"
+            ff["segments"][0]["accepted_deviations"] = ["he stops short of the window"]
+            ff["segments"][0].setdefault("observed_end_state", "Hero stands short of the window.")
+            follower = ff["segments"][1]
+            follower.update(status="planned", continuity="@observed", first_frame="bible/first_s03.png")
+            follower.pop("accepted_take", None)
+            with in_dir(work):
+                os.utime("bible/first_s03.png", (1, 1))
+                old_pic = _tk.stale_first_frames(ff, Path("ep_guard.json"), Path("no_record.json"))
+                Path("fits.json").write_text(json.dumps({"fits": {"bible/first_s03.png": _tk.text_sha(ff["segments"][0]["observed_end_state"].strip())}}),
+                                             encoding="utf-8")
+                confirmed = _tk.stale_first_frames(ff, Path("ep_guard.json"), Path("fits.json"))
+                os.utime("bible/first_s03.png", None)
+                remade = _tk.stale_first_frames(ff, Path("ep_guard.json"), Path("no_record.json"))
+            seen = seen and list(old_pic) == [follower["id"]] and "older than the accepted take" in old_pic[follower["id"]]["why"] \
+                and "he stops short of the window" in old_pic[follower["id"]]["why"] and not confirmed and not remade
+            # a job that was queued for a segment and never fetched: named, and fetching it is the next step
+            lost = work / "takes/guard" / s2["id"] / f"{s2['id']}_3001"
+            lost.mkdir(parents=True, exist_ok=True)
+            (lost / "handle.json").write_text(json.dumps({"prompt_id": "p-9", "fingerprint": "f", "seed": 3001, "queued_at": 1.0}), encoding="utf-8")
+            st_e = run([sys.executable, str(HERE / "project_status.py"), "ep_guard.json", "--prompts", "prompts/guard", "--takes", "takes/guard",
+                        "--selects", "selects", "--edl", "edit/guard_b.edl.json"], work)
+            shutil.rmtree(lost)
+            seen = seen and "queued and never collected" in st_e.stdout and f"--collect {Path('takes/guard') / s2['id'] / (s2['id'] + '_3001')}" in st_e.stdout \
+                and "never collected" not in st_a.stdout
             record("project_status.py (what is accepted, refined and in the edit; the next step for a new storyboard)", "PASS" if seen else "FAIL",
                    "" if seen else f"{(st_a.stderr.strip() or st_a.stdout.strip())[-260:]} | {(st_b.stderr.strip() or st_b.stdout.strip())[-200:]} | "
-                                   f"{(st_c.stderr.strip() or st_c.stdout.strip())[-300:]} | voices {wanted}: {(st_d.stderr.strip() or st_d.stdout.strip())[:300]}")
+                                   f"{(st_c.stderr.strip() or st_c.stdout.strip())[-300:]} | voices {wanted}: {(st_d.stderr.strip() or st_d.stdout.strip())[:300]} | "
+                                   f"drafts: {drafts_line[-300:] or st_f.stdout.strip()[-300:]} | first frame: {old_pic} {confirmed} {remade}")
         except Exception as e:  # noqa: BLE001
             record("takes are checked against what they were made from", "FAIL", f"{type(e).__name__}: {e}")
 

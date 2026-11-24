@@ -1464,7 +1464,7 @@ def main_file(files: list[Path]) -> str:
 
 
 def take_state(dest: Path, fp: str) -> str:
-    """done | resume | new"""
+    """done | resume | pending | new   (pending: the folder holds the handle of ANOTHER job that was never collected)"""
     run_json, handle = dest / "run.json", dest / "handle.json"
     if run_json.exists():
         try:
@@ -1477,8 +1477,11 @@ def take_state(dest: Path, fp: str) -> str:
         return "new"
     if handle.exists():
         try:
-            if json.loads(handle.read_text(encoding="utf-8")).get("fingerprint") == fp:
+            h = json.loads(handle.read_text(encoding="utf-8"))
+            if h.get("fingerprint") == fp:
                 return "resume"
+            if h.get("prompt_id"):       # another job was queued into this folder and its result never fetched
+                return "pending"
         except json.JSONDecodeError:
             pass
     return "new"
@@ -1528,10 +1531,105 @@ def archive_previous(dest: Path) -> None:
         p.rename(keep / p.name)
 
 
+def shell_quote(arg: str) -> str:
+    """An argument as it can be typed again: quoted when it holds a space or a character a shell would read."""
+    return arg if re.fullmatch(r"[A-Za-z0-9_@%+=:,./\\~-]+", arg) else '"' + arg.replace('"', '\\"') + '"'
+
+
+def finish_take(server: str, pid: str, t0: float, dest: Path, base: dict, entry: dict, wf: dict,
+                log: Path | None, log_row: dict | None) -> tuple[dict, list, bool]:
+    """Fetch what a finished job made, write the take's record (run.json) and its row in the takes log."""
+    status = entry.get("status", {})
+    ok = status.get("status_str") != "error"
+    files = download(server, entry, dest) if ok else []
+    wall = round(time.time() - t0, 1)
+    ran_for = exec_seconds(status)
+    meta = {"prompt_id": pid, **base, "seconds": ran_for if ran_for is not None else wall, "wall_seconds": wall,
+            "status": "success" if ok and files else ("error" if not ok else "no_output"), "files": [str(f) for f in files]}
+    if (dest / "prompt.txt").is_file():
+        meta["prompt_file"] = "prompt.txt"                  # the text this take was made from, kept beside it
+    if not ok:
+        meta["error"] = describe_error(status, wf)
+    (dest / "run.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
+    if log and log_row is not None:
+        log_take(log, {"time": time.strftime("%Y-%m-%d %H:%M:%S"), "tag": log_row.get("tag", ""), "seed": meta.get("seed"),
+                       "status": meta["status"], "seconds": meta["seconds"], "workflow": log_row.get("workflow", ""),
+                       "fingerprint": str(meta.get("fingerprint", ""))[:12], "output": main_file(files),
+                       "overrides": log_row.get("overrides", ""), "score": "", "frames": log_row.get("frames", ""),
+                       "pixels": log_row.get("pixels", ""), "settings": log_row.get("settings", "")})
+    return meta, files, ok
+
+
+def collect(folders: list[str], a) -> int:
+    """--collect: finish takes whose job was queued and never fetched, from what their folder holds."""
+    rc = 0
+    for name in folders:
+        dest = Path(name)
+        try:
+            h = json.loads((dest / "handle.json").read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            print(f"{dest}: no readable handle.json - this folder holds no job queued by this script", file=sys.stderr)
+            rc = 1
+            continue
+        try:
+            done = json.loads((dest / "run.json").read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            done = {}
+        if done.get("prompt_id") == h.get("prompt_id") and done.get("status") == "success" \
+                and all(Path(f).exists() for f in done.get("files") or []):
+            print(f"{dest}: already collected ({', '.join(Path(f).name for f in done['files'])})")
+            continue
+        server, pid = h.get("server") or a.server, h.get("prompt_id")
+        base = h.get("record")
+        if not isinstance(base, dict):   # queued by an earlier version of this script: rebuild what the folder still tells
+            base = {"seed": h.get("seed"), "fingerprint": h.get("fingerprint")}
+            kept = dest / "media.json"
+            if kept.is_file():
+                try:
+                    m = json.loads(kept.read_text(encoding="utf-8"))
+                    base.update(segment=m.get("segment"), media_json=str(m.get("copied_from") or kept), frames=m.get("frames"),
+                                inputs_sha=take_records.media_inputs_sha(kept))
+                    if m.get("opens_from"):
+                        base["opens_from"] = m["opens_from"]
+                except (OSError, json.JSONDecodeError):
+                    pass
+            print(f"{dest}: queued by an earlier version of this script - the record is rebuilt from the files kept in the folder "
+                  f"(workflow and settings are not in it)")
+        state, entry = lookup_stable(server, pid)
+        if state == "unreachable":
+            print(f"{dest}: cannot reach ComfyUI at {server} (the server this job was queued on) - start it and run this again",
+                  file=sys.stderr)
+            rc = 2
+            continue
+        if state not in ("done", "queued"):
+            (dest / "run.json").write_text(json.dumps({"prompt_id": pid, **base, "status": "lost", "files": [],
+                                                       "error": "the server no longer knows this job"}, ensure_ascii=False, indent=1),
+                                           encoding="utf-8")
+            print(f"{dest}: the server no longer knows job {pid} (it was restarted, or its history was cleared) - nothing to fetch. "
+                  f"The take has to be made again" + (f": python {Path(__file__).resolve()} {h['command']}" if h.get("command") else ""))
+            rc = 1
+            continue
+        print(f"{dest}: job {pid} is {'finished' if state == 'done' else 'still on the server - waiting for it'}", flush=True)
+        if entry is None:
+            entry = wait(server, pid, a.poll, a.timeout)
+        meta, files, ok = finish_take(server, pid, float(h.get("queued_at") or time.time()), dest, base, entry, {},
+                                      Path(h["log"]) if h.get("log") else None, h.get("log_row"))
+        if ok and files:
+            print(f"  collected -> {', '.join(f.name for f in files)}" + (f"   (logged in {h['log']})" if h.get("log") else ""))
+        else:
+            rc = 1
+            print("  ERROR: " + str(meta.get("error") or "the job finished but produced no output files"))
+    return rc
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0], formatter_class=argparse.RawDescriptionHelpFormatter,
                                  epilog=__doc__[__doc__.index("    # 1) "):])
-    ap.add_argument("workflow", help="API-format workflow JSON")
+    ap.add_argument("workflow", nargs="?", help="API-format workflow JSON")
+    ap.add_argument("--collect", nargs="+", metavar="TAKE_FOLDER",
+                    help="fetch the result of a job that was queued earlier and never collected (the script was stopped, the "
+                         "conversation was lost): needs only the take folder - the server, the job and what the take is made "
+                         "from are in its handle.json. No workflow argument, nothing is queued")
     ap.add_argument("--media", help="<segment>.media.json from build_prompts.py: sets the prompt and the frame count on the H3 node and "
                                     "wires every reference in the order that numbered <Picture N> / <Audio N>")
     ap.add_argument("--h3-node", help="node id of the H3 conditioning node when the workflow has more than one")
@@ -1568,6 +1666,11 @@ def main():
     ap.add_argument("--log", help="append one row per take to this CSV (e.g. logs/takes.csv)")
     a = ap.parse_args()
 
+    if a.collect:
+        folders = ([a.workflow] if a.workflow else []) + a.collect       # a first folder may land in the positional slot
+        sys.exit(collect(folders, a))
+    if not a.workflow:
+        die("give the workflow file to run (or --collect <take folder> to fetch a job queued earlier)")
     wf = json.loads(Path(a.workflow).read_text(encoding="utf-8"))
     if "nodes" in wf and "links" in wf:
         die("this is a UI workflow; export with 'Export (API)' instead")
@@ -1676,7 +1779,7 @@ def main():
                 past.append((float(r["seconds"]), int(r.get("frames") or 0), int(r.get("pixels") or 0), int(r.get("steps") or 0)))
         except (OSError, json.JSONDecodeError, ValueError):
             pass
-    todo = [p for p in plan if p["state"] != "done"]
+    todo = [p for p in plan if p["state"] not in ("done", "pending")]
     where = "of this workflow in this folder"
     if not past and todo and a.log and Path(a.log).exists():               # no history here: look in the takes log
         try:
@@ -1727,7 +1830,10 @@ def main():
     warned = 0
     for p in plan:
         note = {"done": "already finished with identical inputs - skipped", "resume": "was queued before - will be collected, not resubmitted",
-                "new": "will be queued"}[p["state"]]
+                "new": "will be queued",
+                "pending": "NOT queued: a job queued into this folder earlier (other settings or inputs than this command) was never "
+                           "collected - it may still be running, or be finished on the server. Fetch it first: "
+                           f"python {Path(__file__).resolve()} --collect {p['dest']}  - then look at this preview again"}[p["state"]]
         if p["state"] == "new" and holds_earlier_run(p["dest"]):
             before = earlier_attempt(p["dest"], p["fp"])
             if before:                                    # the same take, tried before
@@ -1736,7 +1842,9 @@ def main():
                 note += ("; this folder already holds an earlier run (another workflow or other inputs) - its files will be "
                          "moved into _prev_... inside it. To keep both side by side, give this run its own --tag "
                          f"(e.g. --tag {a.tag + '_b' if a.tag.endswith('_refine') else a.tag + '_refine'})")
-        if p["state"] != "done" and a.from_latent:
+        if p["state"] == "pending":
+            pass
+        elif p["state"] != "done" and a.from_latent:
             note += kept_latent_note(Path(a.from_latent), inputs_sha, frames, first_pass_signature(view), h3_id)
         elif p["state"] != "done":
             note += same_seed_note(out, p["dest"], p["seed"], inputs_sha, first_pass_signature(view),
@@ -1751,9 +1859,15 @@ def main():
     if warned:
         print(f"  !! {warned} take(s) above carry a WARNING: read that line and change the command as it says (the new preview "
               f"gets a new batch id) - confirm this one only if what the warning describes is what you want")
+    waiting = [p for p in plan if p["state"] == "pending"]
+    if waiting:
+        print(f"  !! {len(waiting)} take folder(s) above hold a job that was never collected: nothing is queued over them. Collect "
+              f"(--collect <take folder>), then run this preview again - the collected take may be the one you were about to make")
+        if not a.dry_run:
+            sys.exit(2)
     if a.dry_run:
-        print(f"nothing queued (--dry-run). To run exactly this batch: add --confirm {batch_id}"
-              + (" (see the WARNING above first)" if warned else ""))
+        print("nothing queued (--dry-run). " + ("Collect the job(s) named above first, then preview again" if waiting else
+              f"To run exactly this batch: add --confirm {batch_id}" + (" (see the WARNING above first)" if warned else "")))
         return
     if a.confirm and a.confirm != batch_id:
         print(f"the batch is now {batch_id}, not the confirmed {a.confirm}: inputs changed since it was approved - "
@@ -1781,50 +1895,38 @@ def main():
                     die(f"cannot reach ComfyUI at {a.server}")
                 else:
                     print(f"[{i + 1}/{len(plan)}] seed={seed}: the server no longer knows job {h['prompt_id']} - resubmitting", flush=True)
+            # what the take is made from is known before it runs: it goes into the handle too, so that the result can be
+            # collected later from the take folder alone (--collect) and still get its full record
+            base = {"seed": seed, "fingerprint": fp, "steps": steps, "workflow": str(a.workflow), "comfyui_version": version,
+                    "overrides": a.set + a.set_title, "media_sha256": media, "inputs_sha": inputs_sha, "frames": frames, "pixels": pixels,
+                    "first_pass": first_pass_signature(view)}
+            if any(str(v.get("class_type", "")).startswith(SECOND_PASS[:4]) for v in view.values()):
+                base["second_pass"] = True                  # a refine: enlarged and sampled again after the first pass
+            if a.from_latent:
+                base["from_latent"] = str(a.from_latent)    # no first pass of its own: it continues that take
+            if p.get("warning"):
+                base["warnings"] = [p["warning"]]           # the preview warned and the batch was confirmed anyway
+            if a.media:                 # which segment and which prompt build this take belongs to (observe_take.py checks them)
+                base["segment"] = meta_in.get("segment")
+                base["media_json"] = str(meta_in.get("copied_from") or a.media)
+                if meta_in.get("opens_from"):
+                    base["opens_from"] = meta_in["opens_from"]
+            log_row = {"tag": a.tag, "workflow": Path(a.workflow).name, "overrides": " ".join(a.set + a.set_title),
+                       "frames": frames, "pixels": pixels, "settings": "; ".join(settings_summary(view))} if a.log else None
             if pid is None:
                 archive_previous(dest)
                 dest.mkdir(parents=True, exist_ok=True)
                 pid = queue(a.server, wf, client)
-                (dest / "handle.json").write_text(json.dumps({"prompt_id": pid, "fingerprint": fp, "seed": seed, "queued_at": t0,
-                                                              "server": a.server}, indent=1), encoding="utf-8")
+                (dest / "handle.json").write_text(json.dumps(
+                    {"prompt_id": pid, "fingerprint": fp, "seed": seed, "queued_at": t0, "server": a.server,
+                     "command": " ".join(shell_quote(x) for x in sys.argv[1:]), "log": a.log, "log_row": log_row, "record": base},
+                    ensure_ascii=False, indent=1), encoding="utf-8")
                 keep_inputs(dest, wf, meta_in if a.media else None, a.media, h3_id)
                 print(f"[{i + 1}/{len(plan)}] queued {pid} seed={seed}", flush=True)
             if entry is None:
                 entry = wait(a.server, pid, a.poll, a.timeout)
-            status = entry.get("status", {})
-            ok = status.get("status_str") != "error"
-            files = download(a.server, entry, dest) if ok else []
-            wall = round(time.time() - t0, 1)
-            ran_for = exec_seconds(status)
-            meta = {"prompt_id": pid, "seed": seed, "fingerprint": fp, "seconds": ran_for if ran_for is not None else wall,
-                    "wall_seconds": wall, "steps": steps,
-                    "status": "success" if ok and files else ("error" if not ok else "no_output"),
-                    "files": [str(f) for f in files], "workflow": str(a.workflow), "comfyui_version": version,
-                    "overrides": a.set + a.set_title, "media_sha256": media, "inputs_sha": inputs_sha, "frames": frames, "pixels": pixels,
-                    "first_pass": first_pass_signature(view)}
-            if (dest / "prompt.txt").is_file():
-                meta["prompt_file"] = "prompt.txt"          # the text this take was made from, kept beside it
-            if any(str(v.get("class_type", "")).startswith(SECOND_PASS[:4]) for v in view.values()):
-                meta["second_pass"] = True                  # a refine: enlarged and sampled again after the first pass
-            if a.from_latent:
-                meta["from_latent"] = str(a.from_latent)    # no first pass of its own: it continues that take
-            if p.get("warning"):
-                meta["warnings"] = [p["warning"]]           # the preview warned and the batch was confirmed anyway
-            if a.media:                 # which segment and which prompt build this take belongs to (observe_take.py checks them)
-                meta["segment"] = meta_in.get("segment")
-                meta["media_json"] = str(meta_in.get("copied_from") or a.media)
-                if meta_in.get("opens_from"):
-                    meta["opens_from"] = meta_in["opens_from"]
-            if not ok:
-                meta["error"] = describe_error(status, wf)
-            (dest / "run.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
+            meta, files, ok = finish_take(a.server, pid, t0, dest, base, entry, wf, Path(a.log) if a.log else None, log_row)
             ran += 1
-            if a.log:
-                log_take(Path(a.log), {"time": time.strftime("%Y-%m-%d %H:%M:%S"), "tag": a.tag, "seed": seed, "status": meta["status"],
-                                       "seconds": meta["seconds"], "workflow": Path(a.workflow).name, "fingerprint": fp[:12],
-                                       "output": main_file(files), "overrides": " ".join(a.set + a.set_title),
-                                       "score": "", "frames": frames, "pixels": pixels,
-                                       "settings": "; ".join(settings_summary(view))})
             if a.free_every and ran % a.free_every == 0:
                 try:
                     http(a.server, "/free", json.dumps({"unload_models": True, "free_memory": True}).encode(),
@@ -1843,8 +1945,8 @@ def main():
                 print(f"  done in {meta['seconds']}s" + (f" (plus {waited:.0f}s queued or waiting for the next poll)" if waited >= 30 else "")
                       + f" -> {', '.join(f.name for f in files)}")
     except KeyboardInterrupt:
-        print("\ninterrupted: jobs already queued keep running on the server; run the same command again to collect them",
-              file=sys.stderr)
+        print("\ninterrupted: jobs already queued keep running on the server; run the same command again to collect them "
+              "(or, from the take folder alone: --collect <take folder>)", file=sys.stderr)
         sys.exit(130)
     sys.exit(rc)
 

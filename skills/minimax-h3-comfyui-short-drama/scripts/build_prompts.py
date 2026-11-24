@@ -157,6 +157,16 @@ def main():
               f"Refine it with what it was made from - comfy_submit.py keeps that beside every take: "
               f"--media <take folder>/media.json (plus --from-latent <take folder>, or --seed <its seed>). The files in {out} "
               f"as they are now would steer the second pass with other text.")
+    # said on every build, not only on the one that changed the prompt: a first frame made for the planned ending of a
+    # segment that was then accepted with another one
+    try:
+        first_checks = take_records.stale_first_frames(json.loads(Path(a.episode).read_text(encoding="utf-8")), Path(a.episode))
+    except (OSError, json.JSONDecodeError):
+        first_checks = {}
+    for sid, c in first_checks.items():
+        print(f"FIRST FRAME - {sid}: {c['why']}. Drafts of {sid} start from this picture: look at it against that ending before "
+              f"making them - make it again (change {sid}'s first_frame_prompt and its first shot, then plan_stills.py), or confirm "
+              f"that it fits: plan_stills.py {a.episode} --fits {c['picture']}")
     pending = [v for v in voice_plan(ep) if v["later"]]
     if pending and not only:
         who = "; ".join(f"{v['character']} first speaks in {v['first']}" for v in pending)

@@ -105,6 +105,14 @@ def main():
             if h.hexdigest() != acc["sha256"]:
                 problems.append(f"segment {seg.id}: WARN {acc['path']} has other content than the take that was accepted (the file was "
                                 f"replaced) - look at it and accept it again with observe_take.py, so that what follows is built on what is there")
+    try:                                   # a first frame made for the planned ending of a segment accepted with another one
+        import json as _json
+        import takes as _takes
+        for sid, c in _takes.stale_first_frames(_json.loads(_P(a.episode).read_text(encoding="utf-8")), _P(a.episode)).items():
+            problems.append(f"segment {sid}: WARN {c['why']} - look at it before drafting {sid}: make it again, or confirm that it "
+                            f"fits with plan_stills.py {a.episode} --fits {c['picture']}")
+    except (OSError, ValueError):
+        pass
     warnings = [p.replace(": WARN ", ": ", 1) for p in problems if ": WARN " in p]
     errors = [p for p in problems if ": WARN " not in p]
     rhythm = rhythm_warnings(ep) if a.rhythm else []

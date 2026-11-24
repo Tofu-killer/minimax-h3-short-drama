@@ -125,6 +125,66 @@ def finished_takes(folder: Path) -> list:
     return out
 
 
+STILLS_RECORD = Path("bible/prompts/.stills_plan.json")       # plan_stills.py's manifest, at its default place
+
+
+def stale_first_frames(raw: dict, episode: Path, stills_record: Path | None = None) -> dict:
+    """{segment id: {"picture", "previous", "deviations", "why"}} for first frames that were made BEFORE the segment
+    they follow got the ending it has now. A segment that continues the one before it ("@observed") opens from that
+    segment's accepted take; when the take was accepted with a deviation from the plan, a first frame painted for the
+    planned ending may show another pose or other positions. The picture is older than the accepted take (or than its
+    acceptance), nobody has confirmed that it still fits, and the segment itself is not accepted yet: look at it."""
+    out: dict = {}
+    try:
+        fits = json.loads((stills_record or STILLS_RECORD).read_text(encoding="utf-8")).get("fits") or {}
+    except (OSError, json.JSONDecodeError, AttributeError):
+        fits = {}
+    segs = raw.get("segments") or []
+    for prev, seg in zip(segs, segs[1:]):
+        first = seg.get("first_frame")
+        if not first or not str(seg.get("continuity") or "").strip().startswith("@observed") \
+                or str(seg.get("status") or "").startswith("accepted") or prev.get("status") != "accepted_with_deviation":
+            continue
+        pic = Path(first) if Path(first).exists() else Path(episode).parent / first
+        acc = prev.get("accepted_take") or {}
+        take = Path(str(acc.get("path") or ""))
+        try:
+            made = pic.stat().st_mtime
+        except OSError:
+            continue                                         # not made yet: the stills plan lists it
+        since = float(acc.get("accepted_at") or 0)
+        try:
+            since = max(since, take.stat().st_mtime)
+        except OSError:
+            pass
+        observed = str(prev.get("observed_end_state") or "").strip()
+        if made >= since or (observed and fits.get(str(first)) == text_sha(observed)):
+            continue
+        devs = [str(d) for d in prev.get("accepted_deviations") or []]
+        out[seg["id"]] = {"picture": str(first), "previous": prev["id"], "deviations": devs,
+                          "why": (f"{first} is older than the accepted take of {prev['id']}, which ends differently from the plan"
+                                  + (f" ({'; '.join(devs)})" if devs else "") + " - it was made for the planned ending")}
+    return out
+
+
+def pending_takes(folder: Path) -> list:
+    """[(take folder name, handle.json)] of the jobs that were queued for a segment and whose result was never fetched:
+    a handle without a record beside it. The job may still be running, be finished on the server, or be gone."""
+    out = []
+    if not Path(folder).is_dir():
+        return out
+    for hj in sorted(Path(folder).glob("*/handle.json")):
+        if hj.parent.name.startswith("_prev_") or (hj.parent / "run.json").exists():
+            continue
+        try:
+            h = json.loads(hj.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(h, dict) and h.get("prompt_id"):
+            out.append((hj.parent.name, h))
+    return out
+
+
 def stale_takes(folder: Path, current_sha: Optional[str]) -> list:
     """Names of the finished takes in a segment's folder that were made from another prompt or other references
     than the segment has now. Takes without a recorded fingerprint cannot be judged and are not listed."""

@@ -144,6 +144,9 @@ def segment_report(ep, seg, raw_seg: dict, ep_path: Path, prompts: Path, takes: 
             or "_refine" in name
         (passes if second else drafts).append((name, rec))
     rep["drafts"] = [n for n, _r in drafts]
+    # queued and never fetched (the script was stopped, the conversation lost): invisible to everything that reads records
+    rep["pending"] = [{"take": n, "folder": str(folder / n), "seed": h.get("seed"), "queued_at": h.get("queued_at")}
+                      for n, h in take_records.pending_takes(folder)]
     rep["drafts_out_of_date"] = [n for n, r in drafts if current and r.get("inputs_sha") and r["inputs_sha"] != current]
     acc = raw_seg.get("accepted_take") or {}
     accepted = seg.status.startswith("accepted") and bool(acc.get("path"))
@@ -169,6 +172,30 @@ def segment_report(ep, seg, raw_seg: dict, ep_path: Path, prompts: Path, takes: 
     return rep
 
 
+def ways_so_far(takes: Path) -> dict:
+    """What the finished takes tell about how this project is run - the workflow file and the size overrides of the most
+    recent draft and of the most recent second pass, per family: {'h3_ref2va': {'draft': (file name, [--set ...]), ...}}.
+    The commands printed here repeat them: a bare command would fall back to the workflow's own 1344x768."""
+    found: dict = {}
+    for rj in takes.glob("*/*/run.json"):
+        if rj.parent.name.startswith("_prev_"):
+            continue
+        try:
+            rec = json.loads(rj.read_text(encoding="utf-8"))
+            when = rj.stat().st_mtime
+        except (OSError, json.JSONDecodeError):
+            continue
+        name = Path(str(rec.get("workflow") or "")).name
+        family = next((f for f in ("h3_ref2va", "h3_fl2va") if name.startswith(f)), None)
+        if rec.get("status") != "success" or not family:
+            continue
+        kind = "refine" if rec.get("second_pass") or rec.get("from_latent") or "refine" in name else "draft"
+        sizes = [o for o in rec.get("overrides") or [] if str(o).split("=", 1)[0].rsplit(".", 1)[-1] in ("width", "height")]
+        if kind not in found.setdefault(family, {}) or when > found[family][kind][2]:
+            found[family][kind] = (name, sizes, when)
+    return found
+
+
 def voice_first(voices: list[dict]) -> str:
     """What has to happen before a segment is drafted when someone who speaks in it has no voice sample yet."""
     parts = []
@@ -183,10 +210,28 @@ def voice_first(voices: list[dict]) -> str:
 
 
 def next_step(rep: dict, ep_path: Path, prompts: Path, takes: Path, selects: Path, edl_path: Path, prev: dict | None,
-              from_plan: bool = False, voices: list[dict] | None = None) -> str:
+              from_plan: bool = False, voices: list[dict] | None = None, ways: dict | None = None) -> str:
     sid, media = rep["id"], prompts / f"{rep['id']}.media.json"
     family = "h3_ref2va" if rep["mode"] == "ref2va" else "h3_fl2va"
-    draft_wf, refine_wf = FLOWS / f"{family}.api.json", FLOWS / f"{family}_refine.api.json"
+    way = (ways or {}).get(family, {})
+    draft_wf, draft_sets, as_before = FLOWS / f"{family}.api.json", "", ""
+    if "draft" in way:                       # the workflow file (Sage or not) and the canvas of the drafts this project has
+        if (FLOWS / way["draft"][0]).exists():
+            draft_wf = FLOWS / way["draft"][0]
+        draft_sets = "".join(f" --set {o}" for o in way["draft"][1])
+        as_before = " (workflow and size as in the drafts this project already has)"
+    refine_wf, refine_sets = FLOWS / (draft_wf.name.replace(".api.json", "_refine.api.json")), ""
+    if not refine_wf.exists():
+        refine_wf = FLOWS / f"{family}_refine.api.json"
+    if "refine" in way:
+        if (FLOWS / way["refine"][0]).exists():
+            refine_wf = FLOWS / way["refine"][0]
+        refine_sets = "".join(f" --set {o}" for o in way["refine"][1])
+    log = " --log logs/takes.csv"            # every take goes into the takes log (qc-and-assembly.md)
+    if rep.get("pending"):               # before anything else: a new job would queue behind it, and it may be the take wanted
+        return (f"fetch the job(s) queued earlier and never collected: {py('comfy_submit.py')} --collect "
+                + " ".join(cli(Path(x["folder"])) for x in rep["pending"])
+                + " (it waits if the job is still running; nothing is queued) - then run this overview again")
     # a sample attached later changes this segment's prompt: whatever is drafted before that has to be drafted again
     before = f"first the voice: {voice_first(voices)}. This segment's prompt changes with the sample, so drafts come after it. Then: " if voices else ""
     if rep["missing_files"]:
@@ -199,9 +244,16 @@ def next_step(rep: dict, ep_path: Path, prompts: Path, takes: Path, selects: Pat
         return "fix what stops the build (see the prompt line), then build the prompts again"
     if not rep["accepted"]:
         good = [d for d in rep["drafts"] if d not in rep["drafts_out_of_date"]]
+        if rep.get("first_check") and not good:      # drafts come from this picture: settle it before any GPU time is spent
+            return (f"before any draft, the first frame: {rep['first_check']['why']}. Look at it against that ending - make it "
+                    f"again (change this segment's first_frame_prompt and its first shot to the observed ending, then "
+                    f"{py('plan_stills.py')} {cli(ep_path)} lists it under MAKE AGAIN), or, if it still fits: "
+                    f"{py('plan_stills.py')} {cli(ep_path)} --fits {rep['first_check']['picture']}")
         if not good:
-            return before + (f"make drafts: {py('comfy_submit.py')} {cli(draft_wf)} --media {cli(media)} --batch 3 --keep-latent --dry-run "
-                             f"(with Sage installed: the _sage file), then the same command with --confirm <batch id>")
+            return before + (f"make drafts: {py('comfy_submit.py')} {cli(draft_wf)} --media {cli(media)} --batch 3 --keep-latent"
+                             f"{draft_sets}{log} --dry-run"
+                             + (as_before if as_before else " (with Sage installed: the _sage file)")
+                             + ", then the same command with --confirm <batch id>")
         unanchored = (f" These drafts were made without a voice sample ({voice_first(voices)}): the voice in them is not anchored - "
                       f"keep one and measure the voices after the mix (voice_check.py), or attach the sample and draft again.") if voices else ""
         if prev and not str(prev["status"]).startswith("accepted"):
@@ -217,7 +269,9 @@ def next_step(rep: dict, ep_path: Path, prompts: Path, takes: Path, selects: Pat
         has_latent = any(folder.glob("*video*.latent"))
         own = folder / "media.json"
         refine = (f"{py('comfy_submit.py')} {cli(refine_wf)} --media {cli(own if own.exists() else media)} "
-                  + (f"--from-latent {cli(folder)}" if has_latent else f"--seed {rep['accepted']['seed']}") + " --dry-run")
+                  + (f"--from-latent {cli(folder)}" if has_latent else f"--seed {rep['accepted']['seed']}{draft_sets}")
+                  + f"{refine_sets}{log} --dry-run"
+                  + (" (target size as in the second passes this project already has)" if refine_sets else ""))
         if rep["edit"] and rep["edit"]["level"] != "WARN":      # the draft is in the edit: a decision, not an open step
             rep["optional"] = f"no second pass: the draft is in the edit as it is. To refine it after all: {refine}"
             return ""
@@ -287,13 +341,16 @@ def main():
                       f"{v['first']}, cut the sample from that take, write voice_reference (references/audio-and-post.md §2), and only "
                       f"then draft {later}")
     reports, prev = [], None
+    ways = ways_so_far(takes)
+    first_checks = take_records.stale_first_frames(raw, ep_path)
     # one build command for the whole episode: drafts made in one go open from the PLANNED end of a segment that is not accepted yet
     from_plan = any((b.continuity or "").strip().startswith("@observed") and not a_.status.startswith("accepted")
                     for a_, b in zip(ep.segments, ep.segments[1:]))
     for seg, raw_seg in zip(ep.segments, raw["segments"]):
         rep = segment_report(ep, seg, raw_seg, ep_path, prompts, takes, entries.get(seg.id))
+        rep["first_check"] = first_checks.get(seg.id)
         rep["next"] = next_step(rep, ep_path, prompts, takes, selects, edl_path, prev, from_plan,
-                                [v for v in voices if seg.id in v["later"]])
+                                [v for v in voices if seg.id in v["later"]], ways)
         reports.append(rep)
         acc = rep["accepted"]
         head = (f"accepted{' with a deviation' if acc['deviation'] else ''}: {acc['take']}"
@@ -303,6 +360,8 @@ def main():
         if rep["missing_files"]:
             print(f"     files      {len(rep['missing_files'])} missing: {', '.join(rep['missing_files'][:4])}"
                   + (" ..." if len(rep["missing_files"]) > 4 else ""))
+        if rep["first_check"]:
+            print(f"     first      !! {rep['first_check']['why']}")
         print(f"     prompt     {rep['prompt_note']}")
         if rep["script_drift"]:
             print(f"     !!         {rep['script_drift']}")
@@ -312,6 +371,9 @@ def main():
             line += " - made from the prompt on disk, which is out of date (the prompt line): once it is rebuilt they count as made from an earlier prompt"
         if acc and acc["take"] in rep["drafts_out_of_date"]:
             line += " (the accepted one was made from an earlier prompt: a second pass takes the media.json kept in its folder)"
+        if rep["pending"]:
+            line += (f"; !! {len(rep['pending'])} job(s) queued and never collected (" + ", ".join(x["take"] for x in rep["pending"][:3])
+                     + ") - running, finished or gone on the server")
         for p in rep["second_passes"]:
             line += (f"; second pass {p['take']}" + (f" {p['size']}" if p["size"] else "")
                      + (" of the accepted take" if p["of_accepted"] else " (not of the accepted take)")

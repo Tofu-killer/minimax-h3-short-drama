@@ -43,6 +43,7 @@ import hashlib
 import json
 import re
 import sys
+import time
 from pathlib import Path
 
 sys.dont_write_bytecode = True      # keep the skill folder free of __pycache__
@@ -237,7 +238,7 @@ def main():
                      f"  if this size is the one you work at on purpose, add --small-ok.")
         before = (seg.get("observed_end_state") or "").strip()
         seg["status"] = "accepted_with_deviation" if a.deviation else "accepted"
-        seg["accepted_take"] = {"path": str(take), "sha256": sha256_file(take)}
+        seg["accepted_take"] = {"path": str(take), "sha256": sha256_file(take), "accepted_at": round(time.time(), 1)}
         for key in ("seed", "inputs_sha", "opens_from"):
             if rec.get(key) is not None and not wrong:
                 seg["accepted_take"][key] = rec[key]

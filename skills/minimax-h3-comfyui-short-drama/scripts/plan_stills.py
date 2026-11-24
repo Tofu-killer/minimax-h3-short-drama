@@ -164,13 +164,57 @@ T2I = {"qwen21": {"file": "qwen21_t2i.api.json", "prompt": "459:452.prompt", "si
                   "master": {"16:9": (2048, 1152), "9:16": (1152, 2048)}, "prop": (1024, 1024)}}
 
 
+def png_size(path) -> tuple | None:
+    """(width, height) of a PNG or JPEG file, None when it is not there or not one of the two."""
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(32)
+            if head[:8] == b"\x89PNG\r\n\x1a\n":
+                return int.from_bytes(head[16:20], "big"), int.from_bytes(head[20:24], "big")
+            if head[:2] == b"\xff\xd8":                       # JPEG: walk the segments to the frame header
+                fh.seek(2)
+                while True:
+                    marker = fh.read(4)
+                    if len(marker) < 4 or marker[0] != 0xFF:
+                        return None
+                    size = int.from_bytes(marker[2:4], "big")
+                    if 0xC0 <= marker[1] <= 0xCF and marker[1] not in (0xC4, 0xC8, 0xCC):
+                        body = fh.read(5)
+                        return int.from_bytes(body[3:5], "big"), int.from_bytes(body[1:3], "big")
+                    fh.seek(size - 2, 1)
+    except OSError:
+        return None
+    return None
+
+
 class Plan:
-    def __init__(self, raw: dict, prompts: Path, rewrite: bool, script: str, t2i: str = "qwen21"):
+    def __init__(self, raw: dict, prompts: Path, rewrite: bool, script: str, t2i: str | None = None,
+                 canvas: tuple | None = None, forget: bool = False):
         self.raw, self.prompts, self.rewrite, self.script = raw, prompts, rewrite, script
-        self.t2i = T2I[t2i]
+        self.record_file = prompts / ".stills_plan.json"      # what this script wrote, and which prompt each picture was made from
+        try:
+            self.record = json.loads(self.record_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            self.record = {}
+        # choices made once hold for the project: the model for text-to-picture (a licence decision), the canvas the frame
+        # pictures are made for, the extra views. A later run without the option - e.g. the bare command another tool
+        # prints - must not quietly fall back to the defaults.
+        before = {} if forget else (self.record.get("options") or {})
+        self.remembered: list[str] = []
+        if t2i is None and before.get("t2i") in T2I:
+            t2i = before["t2i"]
+            if t2i != "qwen21":
+                self.remembered.append(f"--t2i {t2i}")
+        self.t2i_name = t2i or "qwen21"
+        self.t2i = T2I[self.t2i_name]
         self.style = raw.get("style", "Live-action, cinematic")
         self.ratio = raw.get("ratio", "16:9")
-        self.canvas = {"16:9": (1344, 768), "9:16": (768, 1344)}.get(self.ratio)
+        if canvas is None and before.get("canvas"):
+            canvas = tuple(before["canvas"])
+            self.remembered.append(f"--canvas {canvas[0]}x{canvas[1]}")
+        self.canvas_given = tuple(canvas) if canvas else None
+        self.canvas = self.canvas_given or {"16:9": (1344, 768), "9:16": (768, 1344)}.get(self.ratio)
+        self.views_before = {k: list(v) for k, v in (before.get("views") or {}).items()}
         self.master = self.t2i["master"].get(self.ratio, self.t2i["master"]["16:9"])
         self.items: list[dict] = []           # one per picture
         self.notes: list[str] = []
@@ -181,11 +225,6 @@ class Plan:
         self.old_crops: list[str] = []            # scene crops cut from a master that has been made again since
         self.template_only: list[str] = []        # prompt files kept although this version of the script words them differently
         self.frame_inputs_of: dict[tuple, set] = {}   # (segment, shot index) -> the pictures its frame picture is made from
-        self.record_file = prompts / ".stills_plan.json"      # what this script wrote, and which prompt each picture was made from
-        try:
-            self.record = json.loads(self.record_file.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            self.record = {}
         self.record.setdefault("prompts", {})
         self.record.setdefault("pictures", {})
 
@@ -427,6 +466,13 @@ class Plan:
             tag = name if last else f"{name}_step{k}"
             target = dest if last else str(Path(dest).with_name(Path(dest).stem + f"_step{k}" + Path(dest).suffix).as_posix())
             pf = self.prompt_file(name if len(steps) == 1 else f"{name}_step{k}", text)
+            if last and self.canvas:
+                have = png_size(target)
+                if have and abs(have[0] / have[1] - self.canvas[0] / self.canvas[1]) / (self.canvas[0] / self.canvas[1]) > 0.01:
+                    self.notes.append(f"{target} is {have[0]}x{have[1]}, the canvas {self.canvas[0]}x{self.canvas[1]}: the two shapes differ by "
+                                      f"{abs(have[0] / have[1] / (self.canvas[0] / self.canvas[1]) - 1) * 100:.1f} % - a frame picture "
+                                      f"is stretched to the canvas. If the takes are made at another size than {self.canvas[0]}x{self.canvas[1]}, "
+                                      f"say so once with --canvas WxH; else make this picture again")
             self.add("C", what + ("" if len(steps) == 1 else f" - step {k} of {len(steps)}"), target,
                      f"qwen_edit2511_{max(1, min(3, len(images)))}ref.api.json", pf, 3, out, tag, images=images, size=self.canvas,
                      negative=True, problems=problems, needs=[i for i in images if not i.startswith("<")])
@@ -499,6 +545,10 @@ def render(plan: Plan, episode: str) -> tuple[str, int, int]:
              "Each command: run it with `--dry-run` added, read the preview, then run it again with `--confirm <batch id>`. "
              "Look at the candidates, copy the one you choose to the file named after `->`, and go on. A bust that is chosen is "
              "frozen: everything else of that person is made from it.", ""]
+    for sid, c in getattr(plan, "checks", {}).items():
+        lines += [f"**CHECK {sid}** - {c['why']}. Look at the picture against that ending. If the pose or the positions differ: change "
+                  f"{sid}'s `first_frame_prompt` (and its first shot) to the observed ending and run plan_stills.py again - the picture "
+                  f"is then listed to make again. If it still fits: `plan_stills.py {episode} --fits {c['picture']}`.", ""]
     crops = plan.crops()
     for phase in ("A", "B1", "B2", "C"):
         part = [i for i in plan.items if i["phase"] == phase]
@@ -546,10 +596,23 @@ def main():
     ap.add_argument("--back", nargs="*", default=[], metavar="CHARACTER", help="also plan a back view of these characters")
     ap.add_argument("--side", nargs="*", default=[], metavar="CHARACTER", help="also plan a 90-degree side view of these characters")
     ap.add_argument("--rewrite", action="store_true", help="write prompt files again even when they exist (hand edits are lost)")
-    ap.add_argument("--t2i", choices=sorted(T2I), default="qwen21",
+    ap.add_argument("--t2i", choices=sorted(T2I),
                     help="the text-to-picture model for busts, masters and props: qwen21 (default; research licence, not for projects "
-                         "that earn money) or zimage (Z-Image-Turbo, Apache-2.0)")
+                         "that earn money) or zimage (Z-Image-Turbo, Apache-2.0). Remembered: later runs without the option keep it")
+    ap.add_argument("--canvas", metavar="WxH",
+                    help="the size the takes are made at, when it is not 1344x768 (768x1344 for 9:16): first frames and keyframes "
+                         "are planned at this size, e.g. 1536x864. Remembered like --t2i")
+    ap.add_argument("--forget", action="store_true", help="drop the options remembered from earlier runs (--t2i, --canvas, --back, --side)")
+    ap.add_argument("--fits", nargs="+", default=[], metavar="PICTURE",
+                    help="a first frame listed under CHECK still fits the ending the segment before it was accepted with: you "
+                         "looked at it, it stays as it is")
     a = ap.parse_args()
+    canvas = None
+    if a.canvas:
+        m = re.fullmatch(r"(\d+)\s*[xX*]\s*(\d+)", a.canvas.strip())
+        if not m or int(m.group(1)) % 32 or int(m.group(2)) % 32:
+            sys.exit(f"--canvas {a.canvas}: write it as WIDTHxHEIGHT, both multiples of 32 (e.g. 1536x864)")
+        canvas = (int(m.group(1)), int(m.group(2)))
     raw = json.loads(Path(a.episode).read_text(encoding="utf-8"))
     ids = {c["id"] for c in raw.get("characters", [])}
     for who in a.back + a.side:
@@ -561,16 +624,45 @@ def main():
     for who in a.side:
         extra.setdefault(who, set()).add("side")
     script = f"python {quoted(HERE / 'comfy_submit.py')}"
-    plan = Plan(raw, Path(a.prompts), a.rewrite, script, a.t2i)
+    plan = Plan(raw, Path(a.prompts), a.rewrite, script, a.t2i, canvas, a.forget)
+    for who, views in plan.views_before.items():              # a back / side view planned before stays planned
+        fresh = [v for v in views if who in ids and v not in extra.get(who, set())]
+        if fresh:
+            extra.setdefault(who, set()).update(fresh)
+            plan.remembered += [f"--{v} {who}" for v in fresh]
+    plan.record["options"] = {"t2i": plan.t2i_name, "canvas": list(plan.canvas_given) if plan.canvas_given else None,
+                              "views": {who: sorted(v) for who, v in sorted(extra.items())}}
     plan.characters(extra)
     plan.scenes()
     plan.props()
     plan.frames()
+    # first frames made before the segment they follow got its accepted ending
+    import takes as take_records
+    by_picture = {str(seg.get("first_frame")): prev for prev, seg in zip(raw.get("segments", []), raw.get("segments", [])[1:])
+                  if seg.get("first_frame")}
+    fits = plan.record.setdefault("fits", {})
+    for pic in a.fits:
+        key = pic if pic in by_picture else Path(pic).as_posix()
+        prev = by_picture.get(key)
+        if prev is None or not str(prev.get("observed_end_state") or "").strip():
+            sys.exit(f"--fits {pic}: no segment's first_frame is written like this, or the segment before it has no accepted take yet "
+                     f"(first frames that follow another segment: {', '.join(by_picture) or 'none'})")
+        fits[key] = take_records.text_sha(prev["observed_end_state"].strip())
+    plan.record_file.parent.mkdir(parents=True, exist_ok=True)
+    plan.record_file.write_text(json.dumps(plan.record, ensure_ascii=False, indent=1), encoding="utf-8")
+    plan.checks = take_records.stale_first_frames(raw, Path(a.episode), plan.record_file)
     text, todo, done = render(plan, a.episode)
     out = Path(a.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text, encoding="utf-8")
     print(f"{len(plan.items)} picture(s) in the storyboard: {done} on disk, {len(plan.items) - done} to make = {todo} candidates to generate")
+    for sid, c in plan.checks.items():
+        print(f"CHECK {sid}: {c['why']}. Look at the picture against that ending. If the pose or the positions differ: change {sid}'s "
+              f"first_frame_prompt (and its first shot) to the observed ending and run this again - it is then listed to make again. "
+              f"If it still fits: add --fits {c['picture']}")
+    if plan.remembered:
+        print(f"  as chosen in an earlier run (kept in {plan.record_file}): {', '.join(plan.remembered)} - give the option again to change "
+              f"it, --forget to drop them all")
     for phase, label in (("A", plan.t2i["label"]), ("B1", "Edit-2511, from the bust"), ("B2", "Edit-2511, from the full body"), ("C", "Edit-2511, frames")):
         part = [i for i in plan.items if i["phase"] == phase and not i["have"]]
         if part:
