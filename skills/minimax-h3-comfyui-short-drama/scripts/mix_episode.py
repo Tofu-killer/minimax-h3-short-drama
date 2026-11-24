@@ -615,7 +615,6 @@ def main():
                   "output_sha": edl_lib.clip_sha(out),
                   "subtitles_file": str(a.ass) if a.ass else None, "subtitles_sha": edl_lib.clip_sha(a.ass) if a.ass else None,
                   "checks": checks, "warnings": warnings}
-        out.with_suffix(".mix.report.json").write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
         for e in seg_report:
             if e.get("gain_db") is not None:
                 print(f"  {e['id']:>6}  {e.get('basis', '-'):11s} {e.get('measured_lufs', '-')} LUFS -> {e['gain_db']:+.2f} dB")
@@ -633,6 +632,10 @@ def main():
                     warnings.append(note)
             except OSError:
                 pass
+        # written last: the report carries every warning, also the ones found after the encode
+        wrong_clips = [w_ for w_ in warnings if "checked against the storyboard as it is now" in w_ or "found by make_edl.py" in w_]
+        report["clips_not_accepted"] = len(wrong_clips)
+        out.with_suffix(".mix.report.json").write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
         for w_ in warnings:
             print("WARN ", w_)
         print(f"picture {vdur:.3f}s / sound {adur:.3f}s / plan {total:.3f}s ; loudness {integ} LUFS (target {tgt_i:g}), "
@@ -641,6 +644,9 @@ def main():
         print(("OK  " if ok else "FAIL ") + f"{out}  " + " ".join(f"{k}={'ok' if v else 'FAIL'}" for k, v in checks.items())
               + (f"  ({len(warnings)} warning(s) above - the checks cover length, frame count and loudness, not what the "
                  f"warnings are about)" if warnings else ""))
+        if wrong_clips:
+            print(f"!!  {len(wrong_clips)} segment(s) of this film hold a clip that is not an accepted take, or the film lacks a segment "
+                  f"(the WARN lines that name the storyboard): the file is technically sound and is not the film that was chosen")
         sys.exit(0 if ok else 1)
 
 
