@@ -23,6 +23,7 @@
 | `qwen21_t2i.api.json` | 文生图（定妆照、场景母版、道具）：Qwen-Image 2.1，25 步 CFG 1。**许可是研究用途，不能用在营利的项目里** | `image_qwen_image_2_1_t2i` | 无 |
 | `zimage_turbo_t2i.api.json` | 同样三类图的**可商用**替代：Z-Image-Turbo（Apache-2.0），`ModelSamplingAuraFlow` 3、`res_multistep` / `simple`、8 步、CFG 1——官方模板原样，只把提示词清空、种子固定。`plan_stills.py --t2i zimage` 出的命令用它。只通过了服务器校验，没有出过图；模板的尺寸是 1024×1024，清单里母版排 2048×1152、道具 1024×1024，更大的尺寸没试过 | `image_z_image_turbo_int8` | 无 |
 | `qwen_edit2511_1ref / 2ref / 3ref.api.json` | 编辑出图（派生视图、逐镜首帧）：Qwen-Image-Edit-2511 int8，40 步 CFG 4，**输出尺寸固定为 1344×768**（不跟着第一张图走），1 / 2 / 3 张输入图 | `image_qwen_image_edit_2511_int8` | 无 |
+| `acestep15_music.api.json` | 配乐：ACE-Step 1.5 XL turbo 文生音乐（MIT），`ModelSamplingAuraFlow` 3、euler / simple、8 步、CFG 1——官方模板的设置。改动：歌词默认是 `[Instrumental]`（ACE-Step 1.5 要纯器乐的写法，上游 `docs/en/INFERENCE.md`），人声语言交给模型（`unknown`），**时长只填一处**（节点 120 同时喂给文本编码和空 latent——模板里是两个数，要自己保持一致），输出改成无损的 flac。只通过了服务器校验，没有出过声音 | `audio_ace_step1_5_xl_turbo` | 无 |
 
 和官方模板不一样的地方：尺寸、帧数写成了数字（模板用选择器和公式算）；模板自带的示例图、示例提示词去掉了；H3 的 LoRA 换成 8 步 768p 版、开关默认打开、采样器换成 `euler`；编辑模板的 Lightning 4 步分支去掉了（所以不用下那个 LoRA），latent 从「取第一张图的尺寸」换成固定的 `EmptySD3LatentImage`。
 
@@ -43,8 +44,9 @@
 | 文生图（可商用的替代） | `Comfy-Org/Z-Image-Turbo`：`split_files/diffusion_models/z_image_turbo_int8_convrot.safetensors`（`diffusion_models/`）、`split_files/text_encoders/qwen_3_4b_fp8_mixed.safetensors`（`text_encoders/`）、`split_files/vae/ae.safetensors`（`vae/`） | 6.2 + 5.6 + 0.3 GB |
 | 编辑出图 | `Comfy-Org/Qwen-Image-Edit`：`split_files/diffusion_models/qwen_image_edit_2511_int8_convrot.safetensors`（`diffusion_models/`） | 20.5 GB |
 | | `Comfy-Org/Qwen-Image`：`split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors`（`text_encoders/`）、`split_files/vae/qwen_image_vae.safetensors`（`vae/`） | 9.4 + 0.3 GB |
+| 配乐（要用才下：`fetch_models.py --sets music`） | `Comfy-Org/ACE-Step-1.5`（模板里的链接写的是它的旧名 `ace_step_1.5_ComfyUI_files`，HuggingFace 会转过去）：`split_files/diffusion_models/acestep_v1.5_xl_turbo_bf16.safetensors`（`diffusion_models/`）、`split_files/text_encoders/qwen_0.6b_ace15.safetensors` 和 `qwen_4b_ace15.safetensors`（`text_encoders/`）、`split_files/vae/ace_1.5_vae.safetensors`（`vae/`） | 10.0 + 1.2 + 8.4 + 0.3 GB |
 
-合计：只做 Ref2VA 视频约 **42 GB**；加两套出图模型约 **89 GB**；再加精修约 **90 GB**；还要 FL2VA 的话约 **113 GB**。模型之外再留 20 GB 以上：语音识别模型约 0.5 GB，身份门禁的模型几十 MB，每条 10 s 的草稿连同存下的 latent 约 40–60 MB，ComfyUI 的 `output/` 里还会各留一份。文件名和大小取自 HuggingFace 的文件清单（2026-11-23）。下载页上文件在子目录里，放进 ComfyUI 时只放文件本身；放错目录或带着子目录，预检会报「not offered by the server」并给出最接近的名字。
+合计：只做 Ref2VA 视频约 **42 GB**；加两套出图模型约 **89 GB**；再加精修约 **90 GB**；还要 FL2VA 的话约 **113 GB**。配乐模型另算约 **20 GB**（2026-11-24 的清单）。模型之外再留 20 GB 以上：语音识别模型约 0.5 GB，身份门禁的模型几十 MB，每条 10 s 的草稿连同存下的 latent 约 40–60 MB，ComfyUI 的 `output/` 里还会各留一份。文件名和大小取自 HuggingFace 的文件清单（2026-11-23）。下载页上文件在子目录里，放进 ComfyUI 时只放文件本身；放错目录或带着子目录，预检会报「not offered by the server」并给出最接近的名字。
 
 ## 怎么用
 
@@ -77,6 +79,9 @@ python <skill>/scripts/comfy_submit.py $W/qwen21_t2i.api.json --set 459:452.prom
 
 # 5. 首帧：image1 = 这个人的 face.png，image2 = 场景裁切；输出 1344×768
 python <skill>/scripts/comfy_submit.py $W/qwen_edit2511_2ref.api.json --set 41.image=@bible/chars/lin_lan_face.png --set 42.image=@bible/scenes/corridor_s01_crop.png --set 170:151.prompt=@bible/prompts/first_s01.txt --batch 3 --seed 1 --out first/candidates/s01 --tag first --dry-run
+
+# 6. 配乐：成片 62 s 的纯器乐（时长填成片秒数 + 2；速度和调全集统一）
+python <skill>/scripts/comfy_submit.py $W/acestep15_music.api.json --set "94.tags=tense cinematic underscore, low sustained strings, soft felt piano, sparse sub pulse, dark and restrained" --set 120.value=64 --set 94.bpm=72 --set "94.keyscale=D minor" --out audio/ep01 --tag score --dry-run
 ```
 
 常用的 `--set`（节点 id 就是官方模板里的 id；带冒号的是模板子图里的节点，照写即可）：
@@ -95,10 +100,11 @@ python <skill>/scripts/comfy_submit.py $W/qwen_edit2511_2ref.api.json --set 41.i
 | `h3_fl2va*` | 关 Turbo / 采样器 / 画布 / shift | `--set 105:126.value=false`、`--set 105:17.sampler_name=…`、`--set 105:104.width=…`、`--set 105:200.shift_video=…` |
 | `qwen21_t2i` | 提示词 / 尺寸 / 步数 | `--set 459:452.prompt=@文件`、`--set 459:456.width=… .height=…`、`--set 459:458.steps=50` |
 | `zimage_turbo_t2i` | 提示词 / 尺寸 / 步数 | `--set 57:27.text=@文件`（这个节点的输入叫 `text`，不是 `prompt`）、`--set 57:13.width=… --set 57:13.height=…`、`--set 57:3.steps=8` |
+| `acestep15_music` | 写什么 / 多长 / 速度和调 | `--set "94.tags=<流派、乐器、情绪、质感，英文，逗号分开>"`（或 `--set 94.tags=@文件`；这个节点的输入叫 `tags`）、`--set 120.value=<秒数>`、`--set 94.bpm=72 --set "94.keyscale=D minor"`（调名照 `C major` / `F# minor` 这种写法，节点只收它列出的 34 个）；要人声才改 `--set 94.lyrics=@歌词文件 --set 94.language=zh` |
 | `qwen_edit2511_*` | 输入图 | `--set 41.image=@…`（`image1`）、`--set 42.image=@…`（`image2`）、`--set 43.image=@…`（`image3`）；也可以按标题：`--set-title image1.image=@…` |
 | | 提示词 / 输出尺寸 / 步数 | `--set 170:151.prompt=@文件`、`--set 170:300.width=… --set 170:300.height=…`、`--set 170:169.steps=20` |
 
-这些工作流里要你给的东西出厂时是空的：H3 和出图的提示词是空字符串，编辑工作流的图片位写着 `(not set)`。漏给任何一个，预检会直接拦下并写出该补的那条 `--set`（ComfyUI 自己不会拦——空提示词、拼错的输入名它都照收）；`--set` 写了节点没有的输入名也会被拦，并列出这个节点真正的输入名。出图的预览会列出尺寸、每张输入图和提示词的开头。
+这些工作流里要你给的东西出厂时是空的：H3 和出图的提示词是空字符串，配乐的描述（`tags`）也是空的，编辑工作流的图片位写着 `(not set)`。漏给任何一个，预检会直接拦下并写出该补的那条 `--set`（ComfyUI 自己不会拦——空提示词、拼错的输入名它都照收）；`--set` 写了节点没有的输入名也会被拦，并列出这个节点真正的输入名。出图的预览会列出尺寸、每张输入图和提示词的开头。
 
 种子不用 `--set`：`--seed N --batch K` 会把工作流里所有种子一起设成 N、N+1…（精修工作流里一采和 `H3 Hires Fix` 的种子是同一个数）。提示词、帧数、参考图、音色、首尾帧由 `--media` 接，不用手改。
 
@@ -113,7 +119,7 @@ python <skill>/scripts/comfy_submit.py $W/qwen_edit2511_2ref.api.json --set 41.i
 ## 已知的边界
 
 - **用微型随机权重模型执行过的**（真实的 0.37.2、CPU、448×256 或 320×192、真实的 VAE 和 LBH 权重；控制台的原话抄在括号里）：冒烟测试命令；`--media` 接 5 张参考图加音色；关 Turbo 的 20 步；`--anchor`（首帧钉第 0 帧、第二镜关键帧钉第 96 帧，243 帧）；`h3_ref2va_refine`（`[H3HiresFix] (16, 28) -> (22, 40), sigmas [0.45, 0.225, 0.0]`）；`h3_ref2va_refine_split`（124 帧分两块）；`--keep-latent` 再 `--from-latent`；`h3_fl2va` 的首尾帧、首帧、纯文字三种；`h3_fl2va_refine`（`[H3HiresFix] dropped 2 pass-1 keyframe(s) (start/end image) sized for pass 1`）。每条都出了尺寸、帧数、帧率正确、带 32 kHz 立体声的 mp4。
-- **仍然没有执行过的**：Sage 的两个节点（带 `_sage` 的六个文件只通过了服务器校验）；N 卡上默认的 DynamicVRAM 加载路径；真权重下的一切画面与耗时。第一次用时照 `../first-run-checklist.md` 各验一次。
+- **仍然没有执行过的**：Sage 的两个节点（带 `_sage` 的六个文件只通过了服务器校验）；配乐工作流（只通过了服务器校验，没有装过它的模型）；N 卡上默认的 DynamicVRAM 加载路径；真权重下的一切画面与耗时。第一次用时照 `../first-run-checklist.md` 各验一次。
 - 用真实权重实际跑过的只有不需要 33B 底模的那几段（真实的 0.37.2，CPU，小尺寸）：H3 的音画 latent 解码成 24 fps 视频 + 32 kHz 立体声；一采 latent 的拆分、保存、取回、传回、读入、拼回（`--keep-latent` / `--from-latent`）；LBH 放大器；音色样本过音频 VAE；1344×768 的空潜空间过 Qwen-Image VAE 解码出来就是 1344×768；脚本接好的参考图、音色、首帧和关键帧过 H3 的参考节点与关键帧节点（文本编码器用替身），顺序、尺寸、帧号都对。
 - Sage 版需要 `sageattention` 包装在 ComfyUI 自己的 Python 里（`references/local-stack-and-acceleration.md` §0b）；没装时节点能加载、预检也通过，运行到第一个 Sage 节点才报 `ModuleNotFoundError: No module named 'sageattention'`（实际跑出来的原话；脚本会在后面接一句怎么办），版本太旧时报 `sageattention is not new enough version …`——先用不带 `_sage` 的版本确认其余都通。两个 Sage 节点里接管 H3 自注意力的是第二个（`MiniMax H3 Mem Eff Sage Attention Patch`：替换 50 个块的注意力，自述是实验性的、用途是降低显存峰值）；第一个按文档里的基线链保留。
 - 这些文件对应 ComfyUI 0.37.2 的节点定义。升级 ComfyUI 之后如果预检报输入缺失或多余，按上一节从新模板重新导出一份。

@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import sys
 from pathlib import Path
@@ -371,6 +372,26 @@ def main():
                   + (" - a cut that is not the final one (see the edit lines above)" if unfinished and not stale else ""))
             if stale:
                 todo = todo or f"{py('mix_episode.py')} {cli(edl_path)} --out {cli(final)}"
+        # the score is optional and belongs to the finished cut: its length is the length of the cut
+        music = edl.get("music") if isinstance(edl.get("music"), dict) else None
+        if music and music.get("file"):
+            there = edl_lib.resolve(edl_path, music["file"]).exists()
+            post["music"] = "set" if there else "missing"
+            print(f"     music      {music['file']}" + ("" if there else "  !! NOT ON DISK - the mix stops on a missing file"))
+        else:
+            post["music"] = "none"
+            try:
+                fps_cut, _plan, n_frames = edl_lib.timeline(edl)
+            except (KeyError, ValueError, TypeError):
+                fps_cut, n_frames = 24.0, 0
+            if absent or not n_frames:
+                print("     music      none in the edit list (optional) - make a score once every segment is in the cut: the cut's length "
+                      "is the length to ask for")
+            else:
+                print(f"     music      none in the edit list (optional). The cut is {n_frames / fps_cut:.1f} s; a score for it: "
+                      f"{py('comfy_submit.py')} {cli(FLOWS / 'acestep15_music.api.json')} --set \"94.tags=<genre, instruments, mood>\" "
+                      f"--set 120.value={max(10, math.ceil(n_frames / fps_cut) + 2)} --out {cli(Path('audio') / name)} --tag score --dry-run; "
+                      f"then name the file under \"music\" in {edl_path} and mix again (references/audio-and-post.md §2)")
     if todo and not any(r["next"] for r in reports):
         print(f"     next       {todo}")
     open_segments = [r["id"] for r in reports if r["next"]]

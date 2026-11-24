@@ -49,6 +49,20 @@ def record(name: str, status: str, note: str = "") -> None:
     print(f"{status:4s} {name}" + (f" - {note}" if note else ""), flush=True)
 
 
+class in_dir:
+    """Paths in an edit list are relative to the project root the scripts run from: checks made inside this process
+    have to stand there too, or every file reads as missing."""
+    def __init__(self, path: Path):
+        self.path, self.back = path, None
+
+    def __enter__(self):
+        self.back = os.getcwd()
+        os.chdir(self.path)
+
+    def __exit__(self, *exc):
+        os.chdir(self.back)
+
+
 def run(args: list[str], cwd: Path) -> subprocess.CompletedProcess:
     return subprocess.run(args, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace")
 
@@ -430,6 +444,16 @@ def main():
                          "2048x1152", 0)):
                     if r.returncode != code or need not in (r.stdout + r.stderr) or (code == 0 and "advice:" in r.stdout):
                         notes.append(f"stills, {what}: {(r.stderr.strip() or r.stdout.strip())[-160:]}")
+                # the score: what a music encoder calls its prompt is `tags`; the preview states the length, tempo and key
+                mu = [sys.executable, str(HERE / "comfy_submit.py"), str(flows / "acestep15_music.api.json"), "--server", "http://127.0.0.1:9",
+                      "--out", "qc/score", "--tag", "score", "--dry-run"]
+                for what, r, need, code in (
+                        ("music, no description", run(mu, work), "--set 94.tags=@", 2),
+                        ("music, a 62 s instrumental", run(mu + ["--set", "94.tags=low strings, felt piano, dark and restrained", "--set", "120.value=62",
+                                                                  "--set", "94.bpm=72", "--set", "94.keyscale=D minor"], work),
+                         "62 s, 72 BPM, D minor", 0)):
+                    if r.returncode != code or need not in (r.stdout + r.stderr) or (code == 0 and "[Instrumental]" not in r.stdout):
+                        notes.append(f"{what}: {(r.stderr.strip() or r.stdout.strip())[-200:]}")
                 # slips the server would accept or answer with a bare HTTP 400: a prompt file named without @, a size typed as WxH,
                 # a size this pipeline has no use for (advice only)
                 for what, r, need, code in (
@@ -833,6 +857,32 @@ def main():
                 rep = json.loads((work / "final/ep.mix.report.json").read_text(encoding="utf-8"))
                 record("mixed programme: frames, length, loudness", "PASS" if all(rep["checks"].values()) else "FAIL",
                        f"{rep['total_frames']} frames, {rep['loudness']['measured_lufs']} LUFS, music ducked {rep['music_duck_db']} dB")
+            # what a mix is made from besides the cut: the music bed (settings and the file itself), the time of a line, the
+            # subtitle file that was burned in - each changed after the mix, each has to be noticed
+            if r.returncode == 0:
+                import edl as _edl_s
+                with in_dir(work):
+                    edl_file, rep_file = Path("edit/ep.edl.json"), Path("final/ep.mix.report.json")
+                    base = json.loads(edl_file.read_text(encoding="utf-8"))
+                    clean = _edl_s.mix_is_stale(base, report_path=rep_file, edl_path=edl_file)
+                    quieter, moved = json.loads(json.dumps(base)), json.loads(json.dumps(base))
+                    quieter["music"]["gain_db"] = -13
+                    moved["segments"][1]["lines"][0]["start"] += 0.3
+                    said = [_edl_s.mix_is_stale(x, report_path=rep_file, edl_path=edl_file) for x in (quieter, moved)]
+                    music_file = _edl_s.resolve(edl_file, base["music"]["file"])
+                    was = music_file.read_bytes()
+                    music_file.write_bytes(was + bytes(64))                  # another piece of music under the same name
+                    said.append(_edl_s.mix_is_stale(base, report_path=rep_file, edl_path=edl_file))
+                    music_file.write_bytes(was)
+                    ass_text = Path("subs/ep.ass").read_text(encoding="utf-8")
+                    Path("subs/ep.ass").write_text(ass_text + "\n; timed again\n", encoding="utf-8")
+                    burned = _edl_s.mix_is_stale(base, report_path=rep_file, edl_path=edl_file)
+                    Path("subs/ep.ass").write_text(ass_text, encoding="utf-8")
+                    back = _edl_s.mix_is_stale(base, report_path=rep_file, edl_path=edl_file)
+                good = clean is None and back is None and all(x and "sound in the edit list changed" in x for x in said) \
+                    and bool(burned) and "burned into the picture" in burned
+                record("a mix is checked against its music, levels, line times and burned subtitles, not only against the cut",
+                       "PASS" if good else "FAIL", "" if good else f"clean {clean} | {said} | {burned} | back {back}")
             if importlib.util.find_spec("opentimelineio"):
                 ok, note = script("export_otio.py", ["edit/ep.edl.json", "--out", "edit/ep", "--mix", "final/ep.mix.wav"], work)
                 record("export_otio.py", "PASS" if ok else "FAIL", note)
@@ -858,7 +908,8 @@ def main():
                 again = run([sys.executable, str(HERE / "make_edl.py"), "ep.json", "--selects", "selects", "--out", "edit/ep.edl.json"], work)
                 import edl as _edl
                 edl_now = json.loads((work / "edit/ep.edl.json").read_text(encoding="utf-8"))
-                old_mix = _edl.mix_is_stale(edl_now, report_path=work / "final/ep.mix.report.json", edl_path=work / "edit/ep.edl.json")
+                with in_dir(work):
+                    old_mix = _edl.mix_is_stale(edl_now, report_path=Path("final/ep.mix.report.json"), edl_path=Path("edit/ep.edl.json"))
                 (work / "selects/s02_first_version.mp4").unlink()
                 seen = "clips changed" not in fresh.stdout and "clips changed after the subtitles were timed" in after.stdout \
                     and "has other content than when this entry was made" in again.stdout and bool(old_mix) and "other clips" in old_mix

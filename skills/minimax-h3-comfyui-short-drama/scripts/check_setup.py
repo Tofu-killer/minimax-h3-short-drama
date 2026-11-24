@@ -55,7 +55,8 @@ WHAT_FOR = {"selftest_no_model": "connection test (no model)", "h3_ref2va": "Ref
             "qwen21_t2i": "stills: text to picture (Qwen-Image 2.1, research licence)",
             "zimage_turbo_t2i": "stills: text to picture (Z-Image-Turbo, Apache-2.0)",
             "qwen_edit2511_1ref": "stills: edit, 1 input picture", "qwen_edit2511_2ref": "stills: edit, 2 input pictures",
-            "qwen_edit2511_3ref": "stills: edit, 3 input pictures"}
+            "qwen_edit2511_3ref": "stills: edit, 3 input pictures",
+            "acestep15_music": "score: text to music (ACE-Step 1.5 XL turbo, MIT)"}
 
 
 def _utf8_console() -> None:

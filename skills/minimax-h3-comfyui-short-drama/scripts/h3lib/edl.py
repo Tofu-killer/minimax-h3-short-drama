@@ -63,6 +63,17 @@ def mix_is_stale(edl: dict, report_path=None, mix_path=None, edl_path=None) -> s
                     f"same name): run mix_episode.py again, then export once more")
         if not made and rep.get("total_frames") not in (None, total_frames):
             return f"{report_path} describes a {rep.get('total_frames')}-frame programme, this edit list has {total_frames} frames: mix again"
+        sound = rep.get("sound_signature")                      # absent in reports written by an earlier version
+        if sound and edl_path is not None and sound != sound_signature(edl, edl_path):
+            return (f"{report_path} was mixed before the sound in the edit list changed (the music or an ambience bed - its file or "
+                    f"its settings -, a stem, a level, or the time of a line, which retime_subtitles.py or a hand edit set again): "
+                    f"run mix_episode.py again, then export once more")
+        burned, burned_sha = rep.get("subtitles_file"), rep.get("subtitles_sha")
+        if burned and burned_sha:
+            now = clip_sha(resolve(edl_path, burned) if edl_path is not None else burned)
+            if now and now != burned_sha:                       # '' = the file is gone: nothing can be said
+                return (f"the subtitles burned into the picture are an earlier version of {burned} (the file was written again "
+                        f"after the mix): run mix_episode.py again with --ass {burned}, then export once more")
     if mix_path and _P(mix_path).exists():
         r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(mix_path)],
                            capture_output=True, text=True, encoding="utf-8", errors="replace")
@@ -83,6 +94,32 @@ def cut_signature(edl: dict) -> str:
     key = ";".join(f"{s['id']}:{s['in_frame']}:{s['out_frame']}:{s.get('src_fps', '')}:{s.get('video')}:{s.get('audio')}"
                    for s in edl.get("segments", []))
     return hashlib.sha1(key.encode("utf-8")).hexdigest()[:12]
+
+
+def sound_signature(edl: dict, edl_path) -> str:
+    """Changes whenever something the MIX is made from changes while the cut stays where it is: the music bed and the
+    ambience beds (their files, by content, and their settings), a stem, an L-cut, the loudness targets, a line's time or
+    gain. cut_signature() and clips_signature() see none of these."""
+    import hashlib
+    import json as _json
+
+    def file_sig(name) -> str:
+        return clip_sha(resolve(edl_path, name)) if name and name != "native" else ""
+
+    music = edl.get("music") or None
+    beds = edl.get("ambience") or {}
+    key = {"size": [edl.get("width"), edl.get("height")],
+           "music": dict(music, _sha=file_sig(music.get("file"))) if isinstance(music, dict) else music,
+           "ambience": {k: (dict(v, _sha=file_sig(v.get("file"))) if isinstance(v, dict) else v) for k, v in sorted(beds.items())}
+           if isinstance(beds, dict) else beds,
+           "loudness": edl.get("loudness"),
+           "segments": [{"id": s.get("id"), "audio": s.get("audio"), "audio_sha": file_sig(s.get("audio")),
+                         "nondialogue": s.get("nondialogue"), "nondialogue_sha": file_sig(s.get("nondialogue")),
+                         "l_cut": s.get("l_cut"), "j_cut": s.get("j_cut"), "scene": s.get("scene"),
+                         "lines": [[ln.get("start"), ln.get("end"), ln.get("gain_db"), bool(ln.get("locked")), ln.get("needs_review")]
+                                   for ln in s.get("lines") or []]}
+                        for s in edl.get("segments", [])]}
+    return hashlib.sha1(_json.dumps(key, sort_keys=True, ensure_ascii=False, default=str).encode("utf-8")).hexdigest()[:12]
 
 
 def clip_sha(path) -> str:

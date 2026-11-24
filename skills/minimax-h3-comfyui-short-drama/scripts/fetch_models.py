@@ -8,7 +8,8 @@
 The list is assets/workflows/models.json: for every file its HuggingFace repository, the folder under ComfyUI/models
 it belongs in, its size and its SHA-256 (as listed on HuggingFace on the date in that file). Sets: ref2va (the main
 video path), stills (= t2i, Qwen-Image 2.1, + edit, Qwen-Image-Edit-2511), refine (the latent upscaler), fl2va (first /
-last frame and text-only segments), zimage (Z-Image-Turbo, the Apache-2.0 text-to-picture model). Without --sets:
+last frame and text-only segments), zimage (Z-Image-Turbo, the Apache-2.0 text-to-picture model), music (ACE-Step 1.5
+XL turbo for the score). Without --sets:
 ref2va, stills and refine. A project that earns money: --sets ref2va edit zimage refine.
 
 Check (default) tells for each file: ok / missing / incomplete (smaller than it should be: an interrupted download,
@@ -150,7 +151,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0], formatter_class=argparse.RawDescriptionHelpFormatter,
                                  epilog=__doc__[__doc__.index("The list is"):])
     ap.add_argument("--comfyui", required=True, help="the ComfyUI folder (the one that holds main.py and models/)")
-    ap.add_argument("--sets", nargs="+", default=["ref2va", "stills", "refine"], help="ref2va, stills (= t2i + edit), refine, fl2va, zimage; default: ref2va stills refine. A project that earns money takes `ref2va edit zimage refine`: t2i is Qwen-Image 2.1 (research licence), zimage its Apache-2.0 replacement")
+    ap.add_argument("--sets", nargs="+", default=["ref2va", "stills", "refine"], help="ref2va, stills (= t2i + edit), refine, fl2va, zimage, music; default: ref2va stills refine. A project that earns money takes `ref2va edit zimage refine`: t2i is Qwen-Image 2.1 (research licence), zimage its Apache-2.0 replacement")
     ap.add_argument("--download", action="store_true", help="fetch what is missing or incomplete (default: only check)")
     ap.add_argument("--verify-hash", action="store_true", help="also compare the SHA-256 of files already on disk (slow)")
     a = ap.parse_args()

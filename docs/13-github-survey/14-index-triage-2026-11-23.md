@@ -187,6 +187,16 @@
 - `Skip DiT Blocks KJ`（11-23，实验节点）：按序号整块跳过 transformer block，靠 ComfyUI 的 DiT block replace 补丁；说明里列的支持模型是 Flux、Chroma、Wan、LTX、Qwen-Image、HunyuanVideo、SD3、Kandinsky5「等」，没有点名 H3，跳不到的块只记一条警告。没有试，不进流程。
 - 其余：`Get Workflow KJ`（把工作流取成字符串）、支持 H3-Image 的 tiny VAE（11-15）、几处重采样提速——和本流程无关。
 
+### 官方模板里的 H3 一族（35 个）和配乐模型
+
+- `Comfy-Org/workflow_templates` 在 2026-11-24 有 35 个名字里带 minimax / h3 的模板。`api_` 开头的 16 个是合作方云端接口（H3 Max 的换演员 Recast、改画幅 Reframe、运镜、对口型，H3-Image 的云端版，Pika H3 Flex 云端版等），按量付费、不在本地跑；本地的是 `video_` 12 个（H3 6、Pika H3 Flex 3、FastH3 3）、`image_` 6 个、`audio_minimax_music_3` 1 个。除 `image_minimax_h3_image_t2i`、Pika 的 `fl2va` / `t2v` 两个和配乐那一个之外，本目录之前都读过；这四个里只有配乐那个带来新东西。
+- **ComfyUI 0.37.2 就有两套本地文生音乐节点**（在真实的 0.37.2 上查的 `/object_info`，自带的模板包 0.11.69 里也有对应模板）：`TextEncodeAceStepAudio1.5`（模板 `audio_ace_step1_5_xl_turbo`）和 `MiniMaxMusic3TextEncode`（模板 `audio_minimax_music_3`）。
+- **ACE-Step 1.5 XL turbo**（MIT）：`UNETLoader(acestep_v1.5_xl_turbo_bf16)` → `ModelSamplingAuraFlow(3)`，`DualCLIPLoader(qwen_0.6b_ace15, qwen_4b_ace15, type ace)`，`TextEncodeAceStepAudio1.5(tags, lyrics, seed, bpm, duration, timesignature, language, keyscale, generate_audio_codes=true, cfg_scale 2, temperature 0.85, top_p 0.9)`，`EmptyAceStep1.5LatentAudio(seconds)`，KSampler 8 步 CFG 1 euler / simple。文件在 `Comfy-Org/ACE-Step-1.5`（旧名 `ace_step_1.5_ComfyUI_files`，HuggingFace 会转）：9.97 + 1.19 + 8.38 + 0.34 = 19.9 GB，四个下载链接逐个试过，大小和 SHA-256 与接口返回一致。纯器乐的写法是歌词填 `[Instrumental]`（上游 `docs/en/INFERENCE.md`、`cli.py`）；上游文档：caption 最多 512 字符，时长 10–600 s，BPM 30–300，人声语言 `unknown` = 自动。
+- **MiniMax Music 3**（2026-08-07 开放，`MiniMaxAI/MiniMax-Music3`）：8B 的全局语言模型 + 0.6B 的局部语言模型 + 2.4B flow matching，32 kHz 立体声，最长 5 分钟；输入是歌词（段落标签 `[Intro]` `[Verse]` `[Chorus]` `[Instrumental]` 等）加三段式描述（Global Metadata / Vocal Details / Arrangement）。ComfyUI 版在 `Comfy-Org/MiniMax-Music-3`：DiT fp16 4.91 GB（int8 2.50 GB）、文本编码器 pruned int8 9.20 GB、VAE 0.22 GB；模板 30 步 CFG 1.7，`max_duration` 是上限（节点说明：模型可以提前结束）。许可是 MiniMax-Music3 Community License（读了原文）：MIT 式授权加商用条款——商用产品界面显示 “MiniMax-Music3”，年收入超过 2000 万美元另行授权；没有地域条款。`Comfy-Org` 那个仓库的卡片标成 apache-2.0，以原仓库的 LICENSE 为准。
+- **结论**：垫在对白下面、长度要和成片一致的器乐配乐用 ACE-Step 1.5（时长、BPM、调都是显式入参）；带歌词的主题曲才考虑 Music 3。两个都没有在显卡上跑过。
+- **进了 skill**：`assets/workflows/acestep15_music.api.json`（从 0.37.2 自带的模板经真实前端导出；歌词默认 `[Instrumental]`、时长只填一处、输出 flac），`models.json` 多一组 `music`，`comfy_submit.py` 的预览列出时长 / BPM / 调 / 描述并拦下空描述，`project_status.py` 在剪辑齐了之后给出配乐命令。真实的 0.37.2 接受了这份工作流（29 种用法全过）；用同一个保存节点的无模型工作流验证了音频结果能取回到片段文件夹。
+- **顺带补的一处「悄悄走错」**：混音之后再加配乐、换配乐文件（同名）、调电平，或者字幕重新对时，原来的检查都只看剪辑点和片段，成片会被当成最新的。现在混音报告记下声音部分的指纹和烧进去的字幕文件，`project_status.py` 和带混音轨的导出会指出来。
+
 ## 仍未读
 
 表里只引了 README 第一句的仓库没有往下读。`henjicc/Henji-AI` 没克隆下来。H3-Image 那一类等用户把 ComfyUI 升到 0.45 以上、要用这个出图模型时再读。

@@ -213,6 +213,7 @@ def audio_seconds(path: Path) -> float | None:
 
 H3_REF, H3_I2V, H3_EMPTY = "MiniMaxH3ReferenceToVideo", "MiniMaxH3ImageToVideo", "EmptyMiniMaxH3LatentAV"
 H3_SHIFT = "MiniMaxH3SigmaShift"
+MUSIC_ENCODERS = ("TextEncodeAceStepAudio1.5", "MiniMaxMusic3TextEncode")    # text to music: tags / caption, lyrics, length
 H3_GUIDE = "MiniMaxH3AddGuide"
 H3_HIRES = "H3HiresFix"                     # tazmannner/ComfyUI-H3-ResCascade: latent upscale + second pass in one node
 REF_GROUPS = ("ref_images.", "ref_videos.", "ref_video_audios.", "ref_audios.")
@@ -619,6 +620,15 @@ def settings_summary(wf: dict) -> list[str]:
             extra = (f", {refs[0]} reference image(s), {refs[1]} audio" + (f", {vids} reference video(s)" if vids else "")) if cls == H3_REF else ""
             out.append(f"{cls} [{k}]: {lit.get('width')}x{lit.get('height')}, {lit.get('length')} frames{secs}"
                        + (f", ref_image_size {lit['ref_image_size']}" if "ref_image_size" in lit else "") + extra)
+        elif cls in MUSIC_ENCODERS:
+            said = " ".join(str(lit.get("tags", lit.get("caption", ""))).split())
+            sung = " ".join(str(lit.get("lyrics", "")).split())
+            secs = lit.get("duration", lit.get("max_duration"))
+            out.append(f"{cls} [{k}]: {secs if secs is not None else '?'} s" + (f", {lit['bpm']} BPM" if "bpm" in lit else "")
+                       + (f", {lit['keyscale']}" if "keyscale" in lit else "")
+                       + (f", {lit['timesignature']} beats to the bar" if "timesignature" in lit else "")
+                       + f"; lyrics: {(sung if len(sung) <= 50 else sung[:47] + '...') or '(none)'}"
+                       + f"; description ({len(said.split())} words): " + (said if len(said) <= 110 else said[:107] + "..."))
         elif "steps" in lit and ("cfg" in lit or "sampler_name" in lit):
             out.append(f"{cls} [{k}]: {lit.get('steps')} steps, cfg {lit.get('cfg')}, {lit.get('sampler_name', '?')} / {lit.get('scheduler', '?')}")
         elif cls == "BasicScheduler" and "steps" not in lit:
@@ -1209,11 +1219,13 @@ def unfilled_problems(wf: dict) -> list[str]:
     for k, v in view.items():
         cls, lit = str(v.get("class_type", "")), literals(view, v["inputs"])
         where = f"node {k} ({v.get('_meta', {}).get('title') or cls})"
-        for name in ("prompt", "text"):
+        for name in ("prompt", "text", "tags", "caption"):            # tags / caption: what a music encoder calls its prompt
             if name in v["inputs"] and isinstance(lit.get(name), str) and not lit[name].strip() \
                     and (cls in (H3_REF, H3_I2V) or k in pos) and not (k in neg and k not in pos):
-                out.append(f"{where}: the prompt is empty - give it with "
-                           + ("--media <segment>.media.json" if cls in (H3_REF, H3_I2V) else f"--set {k}.{name}=@<text file>"))
+                what = "the prompt" if name in ("prompt", "text") else f"the description of the music (`{name}`)"
+                out.append(f"{where}: {what} is empty - give it with "
+                           + ("--media <segment>.media.json" if cls in (H3_REF, H3_I2V)
+                              else f"--set {k}.{name}=@<text file>" + ("" if name in ("prompt", "text") else f" or --set \"{k}.{name}=<the words>\"")))
             text = lit.get(name) if name in v["inputs"] and isinstance(lit.get(name), str) else ""
             if text.strip() and not re.search(r"\s", text.strip()) and (cls in (H3_REF, H3_I2V) or k in pos) \
                     and (re.search(r"\.(txt|md|json|prompt)$", text.strip(), re.I) or Path(text.strip()).is_file()):

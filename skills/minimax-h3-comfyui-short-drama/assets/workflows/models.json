@@ -1,12 +1,13 @@
 {
- "_about": "Files the shipped workflows load: where they come from on HuggingFace, where they go under ComfyUI/models, and their size and SHA-256 as listed there on 2026-11-23. Read by scripts/fetch_models.py.",
+ "_about": "Files the shipped workflows load: where they come from on HuggingFace, where they go under ComfyUI/models, and their size and SHA-256 as listed there on 2026-11-23 (the music set: 2026-11-24). Read by scripts/fetch_models.py.",
  "sets": {
   "ref2va": "MiniMax H3 reference-to-video drafts (h3_ref2va*.api.json)",
   "t2i": "Qwen-Image 2.1, text to picture: busts, scene masters, props (qwen21_t2i.api.json; research licence - not for projects that earn money)",
   "edit": "Qwen-Image-Edit-2511: views, first frames, keyframes (qwen_edit2511_*.api.json; Apache-2.0)",
   "refine": "latent upscaler for the refine workflows (*_refine*.api.json)",
   "fl2va": "MiniMax H3 first/last-frame and text-only segments (h3_fl2va*.api.json)",
-  "zimage": "Z-Image-Turbo, the Apache-2.0 text-to-image model for projects that earn money (zimage_turbo_t2i.api.json)"
+  "zimage": "Z-Image-Turbo, the Apache-2.0 text-to-image model for projects that earn money (zimage_turbo_t2i.api.json)",
+  "music": "ACE-Step 1.5 XL turbo, text to music for the score (acestep15_music.api.json; MIT)"
  },
  "files": [
   {
@@ -144,6 +145,38 @@
    "folder": "vae",
    "size": 335304388,
    "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
+  },
+  {
+   "set": "music",
+   "repo": "Comfy-Org/ACE-Step-1.5",
+   "path": "split_files/diffusion_models/acestep_v1.5_xl_turbo_bf16.safetensors",
+   "folder": "diffusion_models",
+   "size": 9974719892,
+   "sha256": "86a1afb0a1f711f0e3304ff65d874df3ae6783db683dcf982513fb9b6d14ae71"
+  },
+  {
+   "set": "music",
+   "repo": "Comfy-Org/ACE-Step-1.5",
+   "path": "split_files/text_encoders/qwen_0.6b_ace15.safetensors",
+   "folder": "text_encoders",
+   "size": 1191588248,
+   "sha256": "fd4590c82153b8ddb67e15a2e7aaa8afa8b83a858c8a9b82a4831063156aa7a7"
+  },
+  {
+   "set": "music",
+   "repo": "Comfy-Org/ACE-Step-1.5",
+   "path": "split_files/text_encoders/qwen_4b_ace15.safetensors",
+   "folder": "text_encoders",
+   "size": 8379154232,
+   "sha256": "ffe5ffb855086c2ab55e467e9859fb01894781020a0376484dd19de166b79873"
+  },
+  {
+   "set": "music",
+   "repo": "Comfy-Org/ACE-Step-1.5",
+   "path": "split_files/vae/ace_1.5_vae.safetensors",
+   "folder": "vae",
+   "size": 337431732,
+   "sha256": "6de92e3a862acd287e08b024ac90f0783a8635451b728721a33ff03565bcb2bb"
   }
  ],
  "aliases": {
