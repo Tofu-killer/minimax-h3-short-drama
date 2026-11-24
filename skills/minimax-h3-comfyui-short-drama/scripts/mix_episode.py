@@ -257,9 +257,19 @@ def main():
         conform = "" if abs(p["src_fps"] - fps) < 1e-3 else f"  ({p['src_fps']:g} fps clip conformed)"
         print(f"  {p['id']:>6}  t={p['start_s']:8.3f}s  {p['frames']:4d}f  clip[{s['in_frame']},{s['out_frame']})  "
               f"audio={s.get('audio') or '-'}  l_cut={s.get('l_cut', 0) or 0}  scene={s.get('scene') or '-'}{conform}")
+    # a score that stops before the film does is heard by everyone: it is not looped unless the edit list says so
+    music_short = ""
+    if music and not music.get("loop"):
+        m_len = stream_duration(resolve(music["file"]), "a")
+        if 0 < m_len < total - 0.5:
+            music_short = (f"the music ({music['file']}) is {m_len:.1f} s long, the cut {total:.1f} s: it stops {total - m_len:.1f} s before "
+                           f"the film ends, and the fade-out set for the end never plays. Make one as long as the cut (the score "
+                           f"workflow: --set 120.value={math.ceil(total) + 2}), or set \"loop\": true for a bed that may repeat")
     if a.dry_run:
         if edl_lib.subtitles_stale(edl, edl_path):
             print("WARN  the cuts or the clips changed after the subtitles were timed: run retime_subtitles.py before mixing with --ass")
+        if music_short:
+            print(f"WARN  {music_short}")
         return
 
     keep = Path(a.keep_temp) if a.keep_temp else None
@@ -268,6 +278,8 @@ def main():
     with tempfile.TemporaryDirectory() as td:
         tmp = (keep or Path(td)).resolve()
         warnings: list[str] = []
+        if music_short:
+            warnings.append(music_short)
         for p in plan:                                       # what make_edl.py found out about the clip travels to the master
             if p["seg"].get("take_check"):
                 warnings.append(f"{p['id']}: {p['seg']['take_check']} (found by make_edl.py; run it again after choosing the clip)")

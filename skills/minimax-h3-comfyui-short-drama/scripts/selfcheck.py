@@ -881,8 +881,16 @@ def main():
                     back = _edl_s.mix_is_stale(base, report_path=rep_file, edl_path=edl_file)
                 good = clean is None and back is None and all(x and "sound in the edit list changed" in x for x in said) \
                     and bool(burned) and "burned into the picture" in burned
+                # a score that ends before the film: said before anything is rendered; a bed that loops is not complained about
+                run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=330:duration=1", "short_music.wav"], work)
+                brief = json.loads(json.dumps(base))
+                brief["music"] = {"file": "short_music.wav", "gain_db": -10, "loop": False}
+                (work / "edit/ep_short_music.edl.json").write_text(json.dumps(brief, ensure_ascii=False), encoding="utf-8")
+                short = run([sys.executable, str(HERE / "mix_episode.py"), "edit/ep_short_music.edl.json", "--out", "final/x.mp4", "--dry-run"], work)
+                looped = run([sys.executable, str(HERE / "mix_episode.py"), "edit/ep.edl.json", "--out", "final/x.mp4", "--dry-run"], work)
+                good = good and "before the film ends" in short.stdout and "120.value=" in short.stdout and "before the film ends" not in looped.stdout
                 record("a mix is checked against its music, levels, line times and burned subtitles, not only against the cut",
-                       "PASS" if good else "FAIL", "" if good else f"clean {clean} | {said} | {burned} | back {back}")
+                       "PASS" if good else "FAIL", "" if good else f"clean {clean} | {said} | {burned} | back {back} | {short.stdout.strip()[-200:]}")
             if importlib.util.find_spec("opentimelineio"):
                 ok, note = script("export_otio.py", ["edit/ep.edl.json", "--out", "edit/ep", "--mix", "final/ep.mix.wav"], work)
                 record("export_otio.py", "PASS" if ok else "FAIL", note)
