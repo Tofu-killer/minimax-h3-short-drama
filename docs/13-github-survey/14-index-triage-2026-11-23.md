@@ -187,6 +187,11 @@
 - `Skip DiT Blocks KJ`（11-23，实验节点）：按序号整块跳过 transformer block，靠 ComfyUI 的 DiT block replace 补丁；说明里列的支持模型是 Flux、Chroma、Wan、LTX、Qwen-Image、HunyuanVideo、SD3、Kandinsky5「等」，没有点名 H3，跳不到的块只记一条警告。没有试，不进流程。
 - 其余：`Get Workflow KJ`（把工作流取成字符串）、支持 H3-Image 的 tiny VAE（11-15）、几处重采样提速——和本流程无关。
 
+### ComfyUI 主仓库与模型仓库
+
+- `Comfy-Org/ComfyUI` 主干最近 120 个提交（2026-11-06 起）里和 H3 有关的：11-10 支持 MiniMax-H3-Image（已知，≥ 0.45）；11-19 加了 `ModelMergeMiniMaxH3`（按块合并两份 H3 权重的节点，本流程用不到）；11-20 合作方节点加了 Creatify Boreal-H3（云端）；11-23 把模板包升到 0.11.118（带上面那个换角色模板）。`nodes_minimax_h3.py` 里视频那几个节点没有改动。
+- HuggingFace 上本流程用到的仓库的最后修改时间：`lightx2v/Minimax-h3-Turbo` 11-16、`Comfy-Org/MiniMax-H3` 11-15（那次只是加 Pika 模板的链接）、`LBH-123-AI/Minimax_h3_latent_Upscaler` 11-10、`Kijai/MiniMax-H3-experimental` 11-09——`models.json` 里的文件名、大小、哈希都还对得上。
+
 ### 官方模板里的 H3 一族（35 个）和配乐模型
 
 - `Comfy-Org/workflow_templates` 在 2026-11-24 有 35 个名字里带 minimax / h3 的模板。`api_` 开头的 16 个是合作方云端接口（H3 Max 的换演员 Recast、改画幅 Reframe、运镜、对口型，H3-Image 的云端版，Pika H3 Flex 云端版等），按量付费、不在本地跑；本地的是 `video_` 12 个（H3 6、Pika H3 Flex 3、FastH3 3）、`image_` 6 个、`audio_minimax_music_3` 1 个。本地的 19 个里，除 `image_minimax_h3_image_t2i`、Pika 的 `fl2va` / `t2v` 两个和配乐那一个之外，本目录之前都读过，这四个里只有配乐那个带来新东西；`api_` 的 16 个之前只按产品（H3 Max、Pika H3 Flex 等）写过，这次也只读了索引里的说明，没有逐个打开。
