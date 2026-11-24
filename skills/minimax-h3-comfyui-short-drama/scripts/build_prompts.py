@@ -174,7 +174,10 @@ def main():
     # said on every build, not only on the one that changed the prompt: a first frame made for the planned ending of a
     # segment that was then accepted with another one
     try:
-        first_checks = take_records.stale_first_frames(json.loads(Path(a.episode).read_text(encoding="utf-8")), Path(a.episode))
+        raw_now = json.loads(Path(a.episode).read_text(encoding="utf-8"))
+        first_checks = take_records.stale_first_frames(raw_now, Path(a.episode))
+        for sid, why in take_records.unread_first_shots(raw_now).items():
+            print(f"FIRST SHOT - {why}; then build again")
     except (OSError, json.JSONDecodeError):
         first_checks = {}
     for sid, c in first_checks.items():

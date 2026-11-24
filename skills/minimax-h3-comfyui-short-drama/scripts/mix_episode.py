@@ -34,7 +34,14 @@ music{file, gain_db, fade_in, fade_out, loop, duck{depth_db, pre, post, attack, 
 loudness{dialogue_lufs, program_lufs, true_peak}.
 Build the EDL with make_edl.py, run retime_subtitles.py (fills line times), then mix.
 
-Exit codes: 0 ok, 1 acceptance failed, 2 bad or missing input, 3 ffmpeg/ffprobe missing. Standard library + ffmpeg.
+Before mixing, the clips are compared with the takes the storyboard records as accepted at that moment (the edit
+list names its storyboard): a clip that is not the accepted take nor a clean second pass of it, or a segment of the
+storyboard that is not in the edit, is a WARN - and the run ends with exit code 4, so that a film made of something
+else than what was chosen is not mistaken for the finished one. A cut made on purpose before the takes are settled:
+--rough-cut (same warnings, exit code 0).
+
+Exit codes: 0 ok, 1 acceptance failed, 2 bad or missing input, 3 ffmpeg/ffprobe missing, 4 technically sound but not
+the film that was chosen (see above). Standard library + ffmpeg.
 """
 from __future__ import annotations
 
@@ -204,6 +211,9 @@ def main():
     ap.add_argument("--stems-out", help="also write dialogue / effects / music stems (pre-master, time-aligned) to this folder")
     ap.add_argument("--keep-temp", help="keep intermediate files in this folder")
     ap.add_argument("--dry-run", action="store_true", help="print the plan and stop")
+    ap.add_argument("--rough-cut", action="store_true",
+                    help="a cut made on purpose before every take is accepted: clips that are not accepted takes are still "
+                         "reported, but the run ends with exit code 0 instead of 4")
     a = ap.parse_args()
 
     for tool in ("ffmpeg", "ffprobe"):
@@ -635,6 +645,7 @@ def main():
         # written last: the report carries every warning, also the ones found after the encode
         wrong_clips = [w_ for w_ in warnings if "checked against the storyboard as it is now" in w_ or "found by make_edl.py" in w_]
         report["clips_not_accepted"] = len(wrong_clips)
+        report["rough_cut"] = bool(a.rough_cut)
         out.with_suffix(".mix.report.json").write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
         for w_ in warnings:
             print("WARN ", w_)
@@ -646,8 +657,9 @@ def main():
                  f"warnings are about)" if warnings else ""))
         if wrong_clips:
             print(f"!!  {len(wrong_clips)} segment(s) of this film hold a clip that is not an accepted take, or the film lacks a segment "
-                  f"(the WARN lines that name the storyboard): the file is technically sound and is not the film that was chosen")
-        sys.exit(0 if ok else 1)
+                  f"(the WARN lines that name the storyboard): the file is technically sound and is not the film that was chosen"
+                  + ("" if a.rough_cut else " - exit code 4 (a rough cut on purpose: --rough-cut)"))
+        sys.exit(1 if not ok else 4 if wrong_clips and not a.rough_cut else 0)
 
 
 if __name__ == "__main__":

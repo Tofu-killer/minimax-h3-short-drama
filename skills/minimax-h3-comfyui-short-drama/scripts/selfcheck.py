@@ -803,10 +803,22 @@ def main():
             told = told and rough.get("episode") == "ep_guard.json" and f"WARN  {s2['id']}:" not in m_ok.stdout \
                 and f"WARN  {s2['id']}: the storyboard records no accepted take" in m_rough.stdout \
                 and "checked against the storyboard as it is now" in m_rough.stdout
+            # ... and a film made of a clip that was not chosen ends with its own exit code, unless a rough cut was asked for
+            m_made = run([sys.executable, str(HERE / "mix_episode.py"), "edit/guard_rough.edl.json", "--out", "final/g_rough.mp4",
+                          "--preset", "ultrafast"], work)
+            m_meant = run([sys.executable, str(HERE / "mix_episode.py"), "edit/guard_rough.edl.json", "--out", "final/g_rough.mp4",
+                           "--preset", "ultrafast", "--rough-cut"], work)
+            try:
+                rough_rep = json.loads((work / "final/g_rough.mix.report.json").read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                rough_rep = {}
+            told = told and m_made.returncode == 4 and "is not the film that was chosen" in m_made.stdout and m_meant.returncode == 0 \
+                and rough_rep.get("clips_not_accepted", 0) >= 1 and rough_rep.get("rough_cut") is True
             record("make_edl.py compares each clip with the accepted take (another seed warned; a refine, and a copy of it, pass)",
                    "PASS" if told else "FAIL", "" if told else f"{e1.stdout.strip()[-200:]} | {e3.stdout.strip()[-200:]} | {e5.stdout.strip()[-160:]} | "
                                                              f"twin: {e7.stdout.strip()[-200:]} / {e8.stdout.strip()[-120:]} | mix: "
-                                                             f"{(m_ok.stderr.strip() or m_ok.stdout.strip())[-160:]} / {(m_rough.stderr.strip() or m_rough.stdout.strip())[-200:]}")
+                                                             f"{(m_ok.stderr.strip() or m_ok.stdout.strip())[-160:]} / {(m_rough.stderr.strip() or m_rough.stdout.strip())[-200:]} | "
+                                                             f"made rc {m_made.returncode}: {(m_made.stderr.strip() or m_made.stdout.strip())[-200:]} / meant rc {m_meant.returncode}")
             # the overview of a project reads all of this back: what is accepted, which second pass belongs to it, what the
             # edit uses, and - for a storyboard nothing has been made from yet - the first step
             st_a = run([sys.executable, str(HERE / "project_status.py"), "ep_guard.json", "--prompts", "prompts/guard", "--takes", "takes/guard",
@@ -878,6 +890,18 @@ def main():
                 moved_ref = _tk.find_media("/a/root/that/is/gone/bible/first_s03.png")
                 alone = _tk.find_media("/a/root/that/is/gone/first_s03.png")
             seen = seen and moved_ref.as_posix() == "bible/first_s03.png" and alone.is_absolute()
+            # the first shot of the segment after a deviation is still the text written for the plan: said until it is edited
+            ff["segments"][0]["handover_note"] = {"segment": follower["id"], "first_shot_sha": _tk.first_shot_sha(follower)}
+            unread_then = _tk.unread_first_shots(ff)
+            follower["shots"][0]["action"] = str(follower["shots"][0].get("action", "")) + " He stops one step short of the window."
+            unread_now = _tk.unread_first_shots(ff)
+            # the hand-kept project record, read as plain lines
+            (work / "project.yaml").write_text("# notes\ncanvas: 1536x864   # true 16:9\ncommercial: true\nstyle: \"Live-action\"\n", encoding="utf-8")
+            kept_record = _tk.project_record(work)
+            seen = seen and list(unread_then) == [follower["id"]] and "still the text written for the planned ending" in unread_then[follower["id"]] \
+                and not unread_now and kept_record.get("canvas") == "1536x864" and kept_record.get("commercial") == "true" \
+                and kept_record.get("style") == "Live-action"
+            (work / "project.yaml").unlink()
             # a job that was queued for a segment and never fetched: named, and fetching it is the next step
             lost = work / "takes/guard" / s2["id"] / f"{s2['id']}_3001"
             lost.mkdir(parents=True, exist_ok=True)

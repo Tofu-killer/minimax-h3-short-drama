@@ -193,6 +193,51 @@ def stale_first_frames(raw: dict, episode: Path, stills_record: Path | None = No
     return out
 
 
+def project_record(folder: Path | None = None) -> dict:
+    """What project.yaml in the project root says, read as plain `key: value` lines (no YAML library): the record of
+    what is fixed for the project - canvas, whether it earns money, the draft settings. It is kept by hand; the tools
+    show it and compare the two things that change what they print (commercial, canvas). {} when there is none."""
+    f = (folder or Path()) / "project.yaml"
+    out: dict = {}
+    try:
+        for line in f.read_text(encoding="utf-8").splitlines():
+            m = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*?)\s*(?:#.*)?$", line)
+            if m and m.group(2):
+                out[m.group(1)] = m.group(2).strip().strip("\"'")
+    except OSError:
+        return {}
+    return out
+
+
+def first_shot_sha(seg: dict) -> str:
+    """Fingerprint of what a segment's first shot says (framing, action, performance, lines)."""
+    shot = (seg.get("shots") or [{}])[0]
+    said = [str(d.get("text", "")) for d in shot.get("dialogue") or []]
+    return text_sha(json.dumps([shot.get("framing"), shot.get("action"), shot.get("performance"), said], ensure_ascii=False))
+
+
+def unread_first_shots(raw: dict) -> dict:
+    """{segment id: why} for segments whose first shot is still, word for word, what it was when the segment before
+    them was accepted with an ending that deviates from the plan. That shot was written for the planned ending; the
+    prompt now opens with the observed state and goes on with an action written for another one. Said until the shot
+    is edited, the segment is accepted, or the note is taken out of the storyboard by hand (the text was read and is
+    right as it is)."""
+    out: dict = {}
+    segs = raw.get("segments") or []
+    for prev, seg in zip(segs, segs[1:]):
+        note = prev.get("handover_note") or {}
+        if prev.get("status") != "accepted_with_deviation" or str(seg.get("status") or "").startswith("accepted") \
+                or note.get("segment") != seg.get("id") or note.get("first_shot_sha") != first_shot_sha(seg):
+            continue
+        devs = [str(d) for d in prev.get("accepted_deviations") or []]
+        out[seg["id"]] = (f"the first shot of {seg['id']} is still the text written for the planned ending of {prev['id']}, which was "
+                          f"accepted with another one" + (f" ({'; '.join(devs)})" if devs else "") + f" - the prompt opens from "
+                          f"what was observed and then describes an action written for the plan. Re-read {seg['id']}'s first shot "
+                          f"and edit what no longer follows (read it and it is right as it is: delete \"handover_note\" from "
+                          f"{prev['id']} in the storyboard)")
+    return out
+
+
 def pending_takes(folder: Path) -> list:
     """[(take folder name, handle.json)] of the jobs that were queued for a segment and whose result was never fetched:
     a handle without a record beside it. The job may still be running, be finished on the server, or be gone."""

@@ -111,6 +111,8 @@ def main():
         for sid, c in _takes.stale_first_frames(_json.loads(_P(a.episode).read_text(encoding="utf-8")), _P(a.episode)).items():
             problems.append(f"segment {sid}: WARN {c['why']} - look at it before drafting {sid}: make it again, or confirm that it "
                             f"fits with plan_stills.py {a.episode} --fits {c['picture']}")
+        for sid, why in _takes.unread_first_shots(_json.loads(_P(a.episode).read_text(encoding="utf-8"))).items():
+            problems.append(f"segment {sid}: WARN {why}")
     except (OSError, ValueError):
         pass
     warnings = [p.replace(": WARN ", ": ", 1) for p in problems if ": WARN " in p]

@@ -656,6 +656,16 @@ def main():
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text, encoding="utf-8")
     print(f"{len(plan.items)} picture(s) in the storyboard: {done} on disk, {len(plan.items) - done} to make = {todo} candidates to generate")
+    said = take_records.project_record()
+    if str(said.get("commercial", "")).lower() in ("true", "yes", "1") and plan.t2i_name == "qwen21":
+        print("WARNING: project.yaml says commercial: true, and the busts, scene masters and props are planned with Qwen-Image 2.1 "
+              "(research licence, not for a project that earns money). Run this once with --t2i zimage (Z-Image-Turbo, "
+              "Apache-2.0): the choice is remembered")
+    m_cv = re.fullmatch(r"(\d+)\s*[xX]\s*(\d+)", str(said.get("canvas", "")).split()[0]) if said.get("canvas") else None
+    if m_cv and plan.canvas and (int(m_cv.group(1)), int(m_cv.group(2))) != tuple(plan.canvas):
+        print(f"NOTE project.yaml records canvas {m_cv.group(1)}x{m_cv.group(2)}; first frames and keyframes are planned at "
+              f"{plan.canvas[0]}x{plan.canvas[1]}. If the takes are made at {m_cv.group(1)}x{m_cv.group(2)}, say so once: "
+              f"--canvas {m_cv.group(1)}x{m_cv.group(2)}")
     for sid, c in plan.checks.items():
         print(f"CHECK {sid}: {c['why']}. Look at the picture against that ending. If the pose or the positions differ: change {sid}'s "
               f"first_frame_prompt (and its first shot) to the observed ending and run this again - it is then listed to make again. "

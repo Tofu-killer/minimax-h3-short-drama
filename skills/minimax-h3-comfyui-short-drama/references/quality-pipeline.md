@@ -45,7 +45,7 @@
 
 ## 4. Stage 3 · 放大精修到 1920×1088
 
-**首选 ResCascade 的 `H3 Hires Fix`**——放大和二采在一个节点里做完。**工作流用附带的** `assets/workflows/h3_ref2va_refine.api.json`（草稿用的是带 Sage 的版本就用 `h3_ref2va_sage_refine.api.json`）：它就是草稿工作流加上这个节点，`comfy_submit.py <它> --media <同一个 .media.json> --seed <中选那条的 seed> --tag <段>_refine`。下面的接法是 2026-11-21 读它 main 分支源码（`hires.py`）和 README 得到的；2026-11-23 把当天的版本装进一台真实的 ComfyUI 0.37.2，节点能加载、附带的精修工作流通过了服务器校验；同一天稍后用微型的随机权重模型把它们实际执行到了出片（控制台打印 `[H3HiresFix] (16, 28) -> (22, 40), sigmas [0.45, 0.225, 0.0]`）。**真实权重下的二采没有跑过**：画质、耗时、显存要第一次用时确认。
+**首选 ResCascade 的 `H3 Hires Fix`**——放大和二采在一个节点里做完。**工作流用附带的** `assets/workflows/h3_ref2va_refine.api.json`（草稿用的是带 Sage 的版本就用 `h3_ref2va_sage_refine.api.json`）：它就是草稿工作流加上这个节点，`comfy_submit.py <它> --media <同一个 .media.json> --from-latent <中选那条 take 的文件夹>`（草稿是带 `--keep-latent` 抽的——默认做法，一采不重跑；没存 latent 才改成 `--seed <中选那条的 seed>`，两条路的区别见 §2）；不给 `--tag` 时片段放进 `<段>_refine_<seed>`。下面的接法是 2026-11-21 读它 main 分支源码（`hires.py`）和 README 得到的；2026-11-23 把当天的版本装进一台真实的 ComfyUI 0.37.2，节点能加载、附带的精修工作流通过了服务器校验；同一天稍后用微型的随机权重模型把它们实际执行到了出片（控制台打印 `[H3HiresFix] (16, 28) -> (22, 40), sigmas [0.45, 0.225, 0.0]`）。**真实权重下的二采没有跑过**：画质、耗时、显存要第一次用时确认。
 
 - **节点的名字和输入**（真实 `/object_info`）：类名 `H3HiresFix`，界面里搜「H3 Hires Fix (1 MP -> bigger, audio pinned)」。必填 `model`、`positive`、`latent`、`width`（1920）、`height`（1088）、`sigma_start`（0.45）、`seed`、`lbh_model`（下拉里是 `models/latent_upscale_models/` 下的文件，没放权重时只有 `(none)`）；可选 `images`、`vae`、`schedule_steps`（20）、`steps_override`（0）、`face_atlas`、`face_margin`（2.0）。输出 `latent`、`sigmas`。
 

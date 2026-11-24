@@ -139,6 +139,7 @@ def segment_report(ep, seg, raw_seg: dict, ep_path: Path, prompts: Path, takes: 
         in_take = (p.parent / "run.json").exists()            # else a file accepted from somewhere else: name the file itself
         rep["accepted"] = {"take": p.parent.name if in_take else str(p), "file": str(p), "seed": acc.get("seed"), "on_disk": p.exists(),
                            "deviation": seg.status == "accepted_with_deviation",
+                           "deviations": [str(d) for d in raw_seg.get("accepted_deviations") or []],
                            # the file was replaced since it was accepted: everything built on it was built on something else
                            "changed": bool(p.exists() and acc.get("sha256") and take_records.sha256_file(p) != acc["sha256"])}
     rep["second_passes"] = []
@@ -223,12 +224,19 @@ def next_step(rep: dict, ep_path: Path, prompts: Path, takes: Path, selects: Pat
         return (f"make the missing file(s) first - pictures: {py('plan_stills.py')} {cli(ep_path)} lists each with its command; "
                 f"a voice sample is recorded, or cut from an accepted take (references/audio-and-post.md)"
                 + (f". Also before this segment is drafted: {voice_first(voices)}" if voices else ""))
+    reread = "first re-read this segment's first shot (the `shot 1` line above) and edit it in the storyboard. Then: " \
+        if rep.get("unread_shot") else ""
     if rep["prompt"] in ("missing", "changed"):
-        return before + f"build the prompts: {py('build_prompts.py')} {cli(ep_path)} --out {cli(prompts)}" + (" --allow-planned" if from_plan else "")
+        return reread + before + f"build the prompts: {py('build_prompts.py')} {cli(ep_path)} --out {cli(prompts)}" \
+            + (" --allow-planned" if from_plan else "")
     if rep["prompt"] == "blocked":
         return "fix what stops the build (see the prompt line), then build the prompts again"
     if not rep["accepted"]:
         good = [d for d in rep["drafts"] if d not in rep["drafts_out_of_date"]]
+        if rep.get("unread_shot") and not good:      # the prompt is built, from a first shot nobody has read again
+            return ("before any draft: re-read this segment's first shot (the `shot 1` line above), edit it in the storyboard where "
+                    f"it no longer follows, and build the prompts again: {py('build_prompts.py')} {cli(ep_path)} --out {cli(prompts)}"
+                    + (" --allow-planned" if from_plan else ""))
         if rep.get("first_check") and not good:      # drafts come from this picture: settle it before any GPU time is spent
             return (f"before any draft, the first frame: {rep['first_check']['why']}. Look at it against that ending - make it "
                     f"again (change this segment's first_frame_prompt and its first shot to the observed ending, then "
@@ -329,6 +337,15 @@ def main():
     print(f"{ep.title} - {len(ep.segments)} segment(s), {total} s  ({ep_path})")
     print(f"  prompts {prompts} | takes {takes} | selects {selects} | edit list {edl_path}"
           + ("" if edl_path.exists() else " (not made yet)"))
+    record = take_records.project_record()
+    if record:                               # kept by hand, read by no other script: shown so that it is not dug for
+        short = [f"{k}: {record[k][:60]}" for k in ("canvas", "commercial", "comfyui") if k in record]
+        long = [f"{k}: {record[k][:300]}" for k in ("draft", "draft_ref2va", "draft_fl2va", "refine", "camera") if k in record]
+        if short or long:
+            print("  project.yaml (the project's own record, kept by hand; the commands below take their settings from the takes "
+                  "already made, not from it): " + " | ".join(short))
+            for line in long:
+                print("      " + line)
     # voice samples come before everything they change: say so at the top and again at each segment that waits for one
     status_of = {seg.id: seg.status for seg in ep.segments}
     accepted_file = {r["id"]: str((r.get("accepted_take") or {}).get("path") or "") for r in raw["segments"]}
@@ -349,6 +366,7 @@ def main():
     reports, prev = [], None
     ways = ways_so_far(takes)
     first_checks = take_records.stale_first_frames(raw, ep_path)
+    unread = take_records.unread_first_shots(raw)
     joins = {}                               # an accepted take that opens from a state the segment before it no longer ends in
     for line in stale_join_problems(ep):
         m_join = re.match(r"segment (\S+): WARN (.*)", line)
@@ -361,12 +379,14 @@ def main():
         rep = segment_report(ep, seg, raw_seg, ep_path, prompts, takes, entries.get(seg.id))
         rep["first_check"] = first_checks.get(seg.id)
         rep["join"] = joins.get(seg.id, "")
+        rep["unread_shot"] = unread.get(seg.id, "")
         rep["next"] = next_step(rep, ep_path, prompts, takes, selects, edl_path, prev, from_plan,
                                 [v for v in voices if seg.id in v["later"]], ways)
         reports.append(rep)
         acc = rep["accepted"]
         head = (f"accepted{' with a deviation' if acc['deviation'] else ''}: {acc['take']}"
                 + (f", seed {acc['seed']}" if acc.get("seed") is not None else "")
+                + (f" (ends differently from the plan: {'; '.join(acc['deviations'])[:220]})" if acc.get("deviations") else "")
                 + ("" if acc["on_disk"] else "  !! NOT ON DISK") + ("  !! THE FILE WAS REPLACED since" if acc.get("changed") else "")) \
             if acc else ("rejected" if seg.status == "rejected" else "not accepted")
         print(f"\n{seg.id}  {seg.duration} s {seg.mode}  -  {head}")
@@ -377,6 +397,8 @@ def main():
             print(f"     first      !! {rep['first_check']['why']}")
         if rep["join"]:
             print(f"     cut        !! {rep['join'][:260]}")
+        if rep["unread_shot"]:
+            print(f"     shot 1     !! {rep['unread_shot']}")
         print(f"     prompt     {rep['prompt_note']}")
         if rep["script_drift"]:
             print(f"     !!         {rep['script_drift']}")

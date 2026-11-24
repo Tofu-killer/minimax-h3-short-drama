@@ -256,6 +256,12 @@ def main():
             seg["accepted_deviations"] = a.deviation
         else:
             seg.pop("accepted_deviations", None)
+        # the segment that follows was written for the planned ending: remember what its first shot says now, so that
+        # the tools can keep saying "re-read it" until it is edited (this hint used to be printed once, here)
+        if a.deviation and nxt and not str(nxt.get("status") or "").startswith("accepted"):
+            seg["handover_note"] = {"segment": nxt["id"], "first_shot_sha": take_records.first_shot_sha(nxt)}
+        else:
+            seg.pop("handover_note", None)
         ep_path.write_text(json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"{a.segment}: {seg['status']}, observed end state written to {ep_path} (confidence {a.confidence})"
               + (" - accepted although it was made from an earlier prompt (--stale-ok)" if stale else ""))
