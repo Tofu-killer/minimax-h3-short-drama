@@ -19,6 +19,7 @@
 | 10 | 首帧：只当 `<Picture 1>`（默认）对加 `--anchor` 钉在第 0 帧 | 开场构图贴不贴首帧；脸有没有多出一个人；口型 | 带首帧的段默认加不加 `--anchor`；接上一段尾帧的段同样比一次 |
 | 11 | 精修：中选的那条用 `h3_ref2va_sage_refine.api.json`（或不带 Sage 的那份）加 `--from-latent <那条 take 的文件夹>`（第 6 项的草稿要带 `--keep-latent`），先 5 s 段、再 10 s 段；再用 `--seed` 重跑一采的做法出一条作对比 | 预览写着「continues the take in …」；出来是不是同一条片段；两种做法的结果是否一样；显存够不够；多花多久 | 10 s 以上的段能不能整段二采，还是要走分块（`quality-pipeline.md` §4） |
 | 12 | 后期：对真实片段跑 `qc_probe.py` → `qc_dialogue.py` → `make_edl.py` → `retime_subtitles.py` → `mix_episode.py`，导出剪映草稿并打开 | 验收行 OK；字幕时间对；剪映里能打开 | 交付链路可用；切点对账在真实 H3 片段上准不准 |
+| 13 | **配乐（要用才做）**：`fetch_models.py --comfyui <ComfyUI 目录> --sets music --download`，再用 `acestep15_music.api.json` 出一条 20 s 的试听（`--set "94.tags=<描述>" --set 120.value=20 --out audio/_trial --tag score`） | 是不是纯器乐（歌词框是 `[Instrumental]`）；长度对不对；结尾是收住还是被截断；耗时和显存 | 这个工作流只通过了服务器校验，没有出过声音：不对就把看到的记下来，先用现成的音乐文件写进剪辑单 |
 
 用到 `i2va` / `fl2va` 的项目再加两项：`h3_fl2va.api.json` 出一条（FL2V v1.0 768p LoRA + shift 6 / 3，预览里应能看到 `MiniMaxH3SigmaShift … 6.0 / 3.0`、没有 advice；ComfyUI 控制台里没有 `ERROR lora`，默认开着 DynamicVRAM 时还有一行 `Model MiniMaxH3 prepared for dynamic VRAM loading. … 208 patches attached.`——带着 `--disable-dynamic-vram` / `--highvram` / `--gpu-only` 启动的没有这一行）；首帧比例故意差 5% 出一条，确认预览会提醒、画面确实被拉伸；`i2va` 段的精修用 `h3_fl2va_sage_refine.api.json`（或不带 Sage 的那份），做法和第 11 项一样，控制台应有一行 `dropped N pass-1 keyframe(s)`。
 
