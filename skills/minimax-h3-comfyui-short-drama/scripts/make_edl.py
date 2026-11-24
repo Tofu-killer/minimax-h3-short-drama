@@ -312,12 +312,12 @@ def main():
                 lines.append({"speaker": d["speaker"], "name": "旁白" if d["speaker"] == "narrator" else names.get(d["speaker"], d["speaker"]),
                               "text": d["text"], "shot": sh["index"], **({"en": d["en"]} if d.get("en") else {})})
         segments.append({"id": sid, "video": str(clip), "clip_sha": edl_lib.clip_sha(clip), "frames_total": info["frames"],
-                         "src_fps": round(info["fps"], 4),
+                         "src_fps": round(info["fps"], 4), "src_size": f"{info['width']}x{info['height']}",
                          "in_frame": in_f, "out_frame": out_f,
                          "audio": "native" if info["has_audio"] else None, "nondialogue": None,
                          "l_cut": a.l_cut if lines else 0.0, "j_cut": 0.0, "scene": seg.get("scene_id"), "lines": lines})
-        print(f"{sid}: {clip.name} {info['frames']} frames -> use [{in_f}, {out_f}) = {(out_f - in_f) / info['fps']:.3f}s"
-              f"{' (end freeze cut)' if cut else ''}, {len(lines)} line(s)")
+        print(f"{sid}: {clip.name} {info['width']}x{info['height']}, {info['frames']} frames -> use [{in_f}, {out_f}) = "
+              f"{(out_f - in_f) / info['fps']:.3f}s{' (end freeze cut)' if cut else ''}, {len(lines)} line(s)")
         lost = keep_locked_lines(segments[-1], before.get(sid))
         if lost:
             print(f"  note {sid}: {lost}")
@@ -334,6 +334,16 @@ def main():
     out_path.write_text(json.dumps(edl, ensure_ascii=False, indent=1), encoding="utf-8")
     _fps, _plan, total = edl_lib.timeline(edl)
     print(f"wrote {out_path}: {len(segments)} segment(s), {total} frames = {total / a.fps:.3f}s")
+    sizes: dict[str, list[str]] = {}
+    for e in segments:                                       # one size for the whole film, or some segments were left unrefined
+        if e.get("src_size"):
+            sizes.setdefault(e["src_size"], []).append(e["id"])
+    if len(sizes) > 1:
+        biggest = max(sizes, key=lambda z: int(z.split("x")[0]) * int(z.split("x")[1]))
+        rest = "; ".join(f"{z}: {', '.join(ids)}" for z, ids in sizes.items() if z != biggest)
+        print(f"note: the clips are not all the same size - {biggest}: {', '.join(sizes[biggest])}; {rest}. mix_episode.py scales "
+              f"everything to the delivery size, so a smaller clip is shown enlarged: if it is a draft whose refine was not made or "
+              f"not picked, the film will be soft there")
     if doubts:
         print(f"CHECK: {', '.join(doubts)} - the clip in the edit is not a clean second pass of the take that was accepted "
               f"(WARN lines above say what it is). To use another clip: --pick <segment>=<clip> (rebuilds that segment's entry only)")
